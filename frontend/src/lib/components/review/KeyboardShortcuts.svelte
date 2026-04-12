@@ -1,4 +1,7 @@
 <script lang="ts">
+	import '@shoelace-style/shoelace/dist/components/button/button.js';
+	import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
+
 	import { onMount, onDestroy } from 'svelte';
 
 	interface Props {
@@ -57,42 +60,35 @@
 	});
 </script>
 
-{#if showHelp}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-		<div class="w-80 rounded-lg bg-white p-6 shadow-xl">
-			<h3 class="mb-4 text-lg font-semibold">Sneltoetsen</h3>
-			<div class="space-y-2 text-sm">
-				<div class="flex justify-between">
-					<span>Accepteren / Lakken</span>
-					<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">A</kbd>
-				</div>
-				<div class="flex justify-between">
-					<span>Afwijzen / Niet lakken</span>
-					<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">R</kbd>
-				</div>
-				<div class="flex justify-between">
-					<span>Uitstellen</span>
-					<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">D</kbd>
-				</div>
-				<div class="flex justify-between">
-					<span>Volgende detectie</span>
-					<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">&rarr;</kbd>
-				</div>
-				<div class="flex justify-between">
-					<span>Vorige detectie</span>
-					<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">&larr;</kbd>
-				</div>
-				<div class="flex justify-between">
-					<span>Dit venster</span>
-					<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">?</kbd>
-				</div>
-			</div>
-			<button
-				class="mt-4 w-full rounded bg-primary py-2 text-sm text-white"
-				onclick={() => (showHelp = false)}
-			>
-				Sluiten
-			</button>
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<sl-dialog label="Sneltoetsen" open={showHelp} onsl-request-close={() => (showHelp = false)}>
+	<div class="space-y-2 text-sm">
+		<div class="flex justify-between">
+			<span>Accepteren / Lakken</span>
+			<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">A</kbd>
+		</div>
+		<div class="flex justify-between">
+			<span>Afwijzen / Niet lakken</span>
+			<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">R</kbd>
+		</div>
+		<div class="flex justify-between">
+			<span>Uitstellen</span>
+			<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">D</kbd>
+		</div>
+		<div class="flex justify-between">
+			<span>Volgende detectie</span>
+			<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">&rarr;</kbd>
+		</div>
+		<div class="flex justify-between">
+			<span>Vorige detectie</span>
+			<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">&larr;</kbd>
+		</div>
+		<div class="flex justify-between">
+			<span>Dit venster</span>
+			<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">?</kbd>
 		</div>
 	</div>
-{/if}
+	<sl-button slot="footer" variant="primary" onclick={() => (showHelp = false)}>
+		Sluiten
+	</sl-button>
+</sl-dialog>

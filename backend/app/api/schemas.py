@@ -5,54 +5,25 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 # ---------------------------------------------------------------------------
-# Dossier
-# ---------------------------------------------------------------------------
-
-
-class DossierCreate(BaseModel):
-    title: str
-    request_number: str
-    organization: str
-
-
-class DossierResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: uuid.UUID
-    title: str
-    request_number: str
-    organization: str
-    status: Literal["open", "in_review", "completed"]
-    created_at: datetime
-    updated_at: datetime
-
-
-class DossierStats(BaseModel):
-    total: int = 0
-    by_tier: dict[str, int] = {}
-    by_status: dict[str, int] = {}
-
-
-class DossierWithStatsResponse(DossierResponse):
-    document_count: int = 0
-    detection_counts: DossierStats = DossierStats()
-
-
-# ---------------------------------------------------------------------------
 # Document
 # ---------------------------------------------------------------------------
+
+
+class DocumentRegister(BaseModel):
+    filename: str
+    page_count: int = 0
 
 
 class DocumentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    dossier_id: uuid.UUID
     filename: str
     page_count: int
     document_date: datetime | None
     status: Literal["uploaded", "processing", "review", "approved", "exported"]
     created_at: datetime
+    five_year_warning: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -81,12 +52,7 @@ class DetectionResponse(BaseModel):
 
     id: uuid.UUID
     document_id: uuid.UUID
-    entity_text: str
-    entity_type: Literal[
-        "persoon", "bsn", "telefoonnummer", "email", "adres", "iban",
-        "gezondheid", "datum", "postcode", "kenteken", "creditcard",
-        "paspoort", "rijbewijs",
-    ]
+    entity_type: str
     tier: Literal["1", "2", "3"]
     confidence: float
     woo_article: str | None
@@ -98,17 +64,35 @@ class DetectionResponse(BaseModel):
     propagated_from: uuid.UUID | None
     reviewer_id: str | None
     reviewed_at: datetime | None
+    is_environmental: bool = False
 
 
 # ---------------------------------------------------------------------------
-# Public official
+# Analyze (client-first: ephemeral text processing)
 # ---------------------------------------------------------------------------
 
 
-class PublicOfficialResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class AnalyzeTextItem(BaseModel):
+    text: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
 
-    id: uuid.UUID
-    dossier_id: uuid.UUID
-    name: str
-    role: str | None
+
+class AnalyzePage(BaseModel):
+    page_number: int
+    full_text: str
+    text_items: list[AnalyzeTextItem]
+
+
+class AnalyzeRequest(BaseModel):
+    document_id: uuid.UUID
+    pages: list[AnalyzePage]
+
+
+class AnalyzeResponse(BaseModel):
+    document_id: uuid.UUID
+    detection_count: int
+    page_count: int
+    status: str = "completed"

@@ -1,7 +1,6 @@
 """Anthropic LLM provider — Claude API fallback."""
 
 import json
-import logging
 
 from app.config import settings
 from app.llm.prompts import (
@@ -17,8 +16,9 @@ from app.llm.provider import (
     RoleClassification,
     SentenceClassification,
 )
+from app.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _ollama_tools_to_anthropic(tools: list[dict]) -> list[dict]:
@@ -98,7 +98,7 @@ class AnthropicProvider(LLMProvider):
         )
 
         if not args:
-            logger.warning("No tool call in Anthropic role classification response")
+            logger.warning("llm.role_classification.no_tool_call", provider="anthropic")
             return RoleClassification(
                 role="citizen",
                 should_redact=True,
@@ -132,7 +132,7 @@ class AnthropicProvider(LLMProvider):
         )
 
         if not args:
-            logger.warning("No tool call in Anthropic content analysis response")
+            logger.warning("llm.content_analysis.no_tool_call", provider="anthropic")
             return ContentAnalysisResult(
                 summary_nl="Automatische analyse niet mogelijk voor deze passage."
             )

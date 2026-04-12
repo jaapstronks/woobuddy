@@ -1,4 +1,6 @@
 <script lang="ts">
+	import '@shoelace-style/shoelace/dist/components/progress-bar/progress-bar.js';
+
 	import type { DetectionTier } from '$lib/types';
 
 	interface TierProgress {
@@ -20,9 +22,9 @@
 	};
 
 	const tierColors: Record<DetectionTier, string> = {
-		1: 'bg-gray-600',
-		2: 'bg-warning',
-		3: 'bg-primary'
+		1: '#4b5563',
+		2: 'var(--color-warning)',
+		3: 'var(--color-primary)'
 	};
 </script>
 
@@ -32,12 +34,10 @@
 		{@const done = tp.reviewed === tp.total}
 		<div class="flex items-center gap-2">
 			<span class="font-medium text-neutral">{tierLabels[tp.tier]}:</span>
-			<div class="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200">
-				<div
-					class="h-full rounded-full transition-all {tierColors[tp.tier]}"
-					style="width: {pct}%"
-				></div>
-			</div>
+			<sl-progress-bar
+				value={pct}
+				style="--height: 6px; --indicator-color: {tierColors[tp.tier]}; width: 4rem;"
+			></sl-progress-bar>
 			<span class:text-success={done} class:font-medium={done}>
 				{tp.reviewed}/{tp.total}
 				{#if done}&#10003;{/if}

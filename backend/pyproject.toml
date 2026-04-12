@@ -22,10 +22,12 @@ dependencies = [
     # Validation
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
-    # Object storage
-    "miniopy-async>=1.21",
     # Utilities
     "python-multipart>=0.0.20",
+    # Structured logging
+    "structlog>=24.4.0",
+    # Rate limiting
+    "slowapi>=0.1.9",
 ]
 
 [project.optional-dependencies]

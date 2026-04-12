@@ -2,8 +2,6 @@
 // Domain types — mirrors the backend database schema
 // ---------------------------------------------------------------------------
 
-export type DossierStatus = 'open' | 'in_review' | 'completed';
-
 export type DocumentStatus =
 	| 'uploaded'
 	| 'processing'
@@ -11,7 +9,7 @@ export type DocumentStatus =
 	| 'approved'
 	| 'exported';
 
-export type DetectionTier = 1 | 2 | 3;
+export type DetectionTier = '1' | '2' | '3';
 
 export type ReviewStatus =
 	| 'pending'
@@ -68,24 +66,14 @@ export type ConfidenceLevel = 'high' | 'medium' | 'low';
 // Domain models
 // ---------------------------------------------------------------------------
 
-export interface Dossier {
-	id: string;
-	title: string;
-	request_number: string;
-	organization: string;
-	status: DossierStatus;
-	created_at: string;
-	updated_at: string;
-}
-
 export interface Document {
 	id: string;
-	dossier_id: string;
 	filename: string;
 	page_count: number;
 	document_date: string | null;
 	status: DocumentStatus;
 	created_at: string;
+	five_year_warning: boolean;
 }
 
 export interface BoundingBox {
@@ -99,10 +87,11 @@ export interface BoundingBox {
 export interface Detection {
 	id: string;
 	document_id: string;
-	entity_text: string;
+	entity_text?: string;
 	entity_type: EntityType;
 	tier: DetectionTier;
 	confidence: number;
+	confidence_level?: ConfidenceLevel;
 	woo_article: WooArticleCode | null;
 	review_status: ReviewStatus;
 	bounding_boxes: BoundingBox[];
@@ -110,43 +99,39 @@ export interface Detection {
 	propagated_from: string | null;
 	reviewer_id: string | null;
 	reviewed_at: string | null;
+	is_environmental: boolean;
 }
 
-export interface PublicOfficial {
-	id: string;
-	dossier_id: string;
-	name: string;
-	role: string | null;
-}
+// ---------------------------------------------------------------------------
+// Client-side text extraction (pdf.js output, matches backend ExtractionResult)
+// ---------------------------------------------------------------------------
 
-export interface MotivationText {
-	id: string;
-	detection_id: string;
+export interface ExtractedTextItem {
 	text: string;
-	is_edited: boolean;
+	x0: number;
+	y0: number;
+	x1: number;
+	y1: number;
+}
+
+export interface PageExtraction {
+	pageNumber: number;
+	fullText: string;
+	textItems: ExtractedTextItem[];
+}
+
+export interface ExtractionResult {
+	pages: PageExtraction[];
+	pageCount: number;
+	fullText: string;
 }
 
 // ---------------------------------------------------------------------------
 // API request/response types
 // ---------------------------------------------------------------------------
 
-export interface CreateDossierRequest {
-	title: string;
-	request_number: string;
-	organization: string;
-}
-
 export interface UpdateDetectionRequest {
 	review_status: ReviewStatus;
 	woo_article?: WooArticleCode;
 	motivation_text?: string;
-}
-
-export interface DossierWithStats extends Dossier {
-	document_count: number;
-	detection_counts: {
-		total: number;
-		by_tier: Record<DetectionTier, number>;
-		by_status: Record<ReviewStatus, number>;
-	};
 }

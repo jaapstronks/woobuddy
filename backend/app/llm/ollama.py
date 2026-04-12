@@ -1,7 +1,6 @@
 """Ollama LLM provider — Gemma 4 via local Ollama instance."""
 
 import json
-import logging
 
 import httpx
 
@@ -19,8 +18,9 @@ from app.llm.provider import (
     RoleClassification,
     SentenceClassification,
 )
+from app.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class OllamaProvider(LLMProvider):
@@ -100,7 +100,7 @@ class OllamaProvider(LLMProvider):
 
         args = self._extract_tool_call(response, "classify_person_role")
         if not args:
-            logger.warning("No tool call in role classification response, using fallback")
+            logger.warning("llm.role_classification.no_tool_call", provider="ollama")
             return RoleClassification(
                 role="citizen",
                 should_redact=True,
@@ -135,7 +135,7 @@ class OllamaProvider(LLMProvider):
 
         args = self._extract_tool_call(response, "annotate_content")
         if not args:
-            logger.warning("No tool call in content analysis response")
+            logger.warning("llm.content_analysis.no_tool_call", provider="ollama")
             return ContentAnalysisResult(
                 summary_nl="Automatische analyse niet mogelijk voor deze passage."
             )

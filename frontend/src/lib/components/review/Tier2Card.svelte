@@ -1,4 +1,7 @@
 <script lang="ts">
+	import '@shoelace-style/shoelace/dist/components/button/button.js';
+	import '@shoelace-style/shoelace/dist/components/badge/badge.js';
+
 	import type { Detection, WooArticleCode } from '$lib/types';
 	import { CONFIDENCE_LABELS, CONFIDENCE_COLORS } from '$lib/utils/confidence';
 	import { confidenceToLevel } from '$lib/utils/tiers';
@@ -8,10 +11,9 @@
 		detection: Detection;
 		onAccept: (id: string) => void;
 		onReject: (id: string) => void;
-		onPropagate: (id: string) => void;
 	}
 
-	let { detection, onAccept, onReject, onPropagate }: Props = $props();
+	let { detection, onAccept, onReject }: Props = $props();
 
 	const isPending = $derived(detection.review_status === 'pending');
 	const isAccepted = $derived(
@@ -51,9 +53,7 @@
 			{detection.entity_type}
 		</span>
 		{#if article}
-			<span class="rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary">
-				{detection.woo_article}
-			</span>
+			<sl-badge variant="primary" pill>{detection.woo_article}</sl-badge>
 		{/if}
 		<span
 			class="ml-auto rounded px-1.5 py-0.5 text-xs"
@@ -85,30 +85,16 @@
 	<!-- Action buttons -->
 	{#if isPending}
 		<div class="mt-3 flex items-center gap-2">
-			<button
-				class="flex-1 rounded bg-danger px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-danger/90"
-				onclick={() => onAccept(detection.id)}
-			>
+			<sl-button variant="danger" class="flex-1" onclick={() => onAccept(detection.id)}>
 				Lakken
-			</button>
-			<button
-				class="flex-1 rounded border border-success px-3 py-1.5 text-sm font-medium text-success transition-colors hover:bg-success/10"
-				onclick={() => onReject(detection.id)}
-			>
+			</sl-button>
+			<sl-button variant="success" outline class="flex-1" onclick={() => onReject(detection.id)}>
 				Niet lakken
-			</button>
+			</sl-button>
 		</div>
 	{:else if isAccepted}
-		<div class="mt-3 flex items-center gap-2">
-			<span class="flex-1 text-center text-xs text-danger font-medium">Gelakt</span>
-			{#if detection.entity_type === 'persoon' && !isPropagated}
-				<button
-					class="rounded border border-primary px-2 py-1 text-xs text-primary hover:bg-primary/10"
-					onclick={() => onPropagate(detection.id)}
-				>
-					Propageer naam
-				</button>
-			{/if}
+		<div class="mt-3">
+			<span class="block text-center text-xs text-danger font-medium">Gelakt</span>
 		</div>
 	{:else if isRejected}
 		<p class="mt-3 text-center text-xs text-success font-medium">Zichtbaar gehouden</p>

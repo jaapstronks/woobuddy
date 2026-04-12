@@ -1,4 +1,6 @@
 <script lang="ts">
+	import '@shoelace-style/shoelace/dist/components/button/button.js';
+
 	import type { Detection } from '$lib/types';
 	import { WOO_ARTICLES } from '$lib/utils/woo-articles';
 
@@ -33,12 +35,9 @@
 		</div>
 
 		{#if isRedacted}
-			<button
-				class="shrink-0 rounded border border-gray-300 px-2 py-1 text-xs text-neutral transition-colors hover:border-success hover:text-success"
-				onclick={() => onUnredact(detection.id)}
-			>
+			<sl-button size="small" variant="default" onclick={() => onUnredact(detection.id)}>
 				Ontlakken
-			</button>
+			</sl-button>
 		{:else}
 			<span class="shrink-0 rounded bg-success/10 px-2 py-1 text-xs text-success">
 				Zichtbaar

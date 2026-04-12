@@ -1,23 +1,43 @@
 <script lang="ts">
+	import '@shoelace-style/shoelace/dist/components/button/button.js';
+	import '@shoelace-style/shoelace/dist/components/badge/badge.js';
+	import '@shoelace-style/shoelace/dist/components/select/select.js';
+	import '@shoelace-style/shoelace/dist/components/option/option.js';
+
 	import type { Detection, WooArticleCode } from '$lib/types';
 	import { WOO_ARTICLES, getArticleLabel, isRelativeGround } from '$lib/utils/woo-articles';
+	import MotivationEditor from './MotivationEditor.svelte';
+	import InterestWeighingChecklist from './InterestWeighingChecklist.svelte';
+	import FactOpinionIndicator from './FactOpinionIndicator.svelte';
 
 	interface Props {
 		detection: Detection;
+		motivationText?: string;
 		onRedact: (id: string, article: WooArticleCode) => void;
 		onKeep: (id: string) => void;
 		onDefer: (id: string) => void;
+		onSaveMotivation?: (id: string, text: string) => void;
 	}
 
-	let { detection, onRedact, onKeep, onDefer }: Props = $props();
+	let { detection, motivationText = '', onRedact, onKeep, onDefer, onSaveMotivation }: Props = $props();
 
-	let selectedArticle = $state<WooArticleCode | null>(detection.woo_article);
+	let selectedArticle = $state<WooArticleCode | null>(null);
 	let showLegalText = $state(false);
+	let weighingComplete = $state(false);
+
+	// Reset local UI state when a different detection is shown
+	$effect(() => {
+		selectedArticle = detection.woo_article;
+		showLegalText = false;
+		weighingComplete = false;
+	});
 
 	const isPending = $derived(detection.review_status === 'pending' || detection.review_status === 'deferred');
 	const isRedacted = $derived(
 		detection.review_status === 'accepted' || detection.review_status === 'auto_accepted'
 	);
+	const needsWeighing = $derived(selectedArticle !== null && isRelativeGround(selectedArticle));
+	const canRedact = $derived(selectedArticle !== null && (!needsWeighing || weighingComplete));
 
 	// Parse reasoning for possible annotations
 	const annotations = $derived.by(() => {
@@ -51,7 +71,7 @@
 	});
 
 	const availableArticles = $derived(
-		Object.values(WOO_ARTICLES).filter((a) => a.tier === 3)
+		Object.values(WOO_ARTICLES).filter((a) => a.tier === '3')
 	);
 </script>
 
@@ -66,7 +86,7 @@
 	<div class="mb-3 flex items-center justify-between">
 		<span class="text-sm font-semibold text-primary">Inhoudelijke beoordeling</span>
 		{#if detection.review_status === 'deferred'}
-			<span class="rounded bg-warning/20 px-2 py-0.5 text-xs text-warning">Uitgesteld</span>
+			<sl-badge variant="warning" pill>Uitgesteld</sl-badge>
 		{/if}
 	</div>
 
@@ -74,6 +94,14 @@
 	<div class="mb-3 rounded bg-white p-3 text-sm leading-relaxed border border-gray-100">
 		{detection.entity_text}
 	</div>
+
+	<!-- Environmental information warning (Art. 5.1 lid 6-7) -->
+	{#if detection.is_environmental}
+		<div class="mb-3 rounded border border-green-300 bg-green-50 p-2 text-xs text-green-800">
+			<strong>Milieu-informatie (art. 5.1 lid 6-7 Woo):</strong> Deze passage bevat mogelijk
+			milieu-informatie. Hiervoor gelden beperktere weigeringsmogelijkheden.
+		</div>
+	{/if}
 
 	<!-- Annotations / possible grounds -->
 	{#if annotations.length > 0}
@@ -92,38 +120,15 @@
 	<!-- Fact vs opinion (art. 5.2) -->
 	{#if sentenceClassifications.length > 0}
 		<div class="mb-3">
-			<h4 class="mb-1 text-xs font-semibold uppercase text-neutral">Feit-mening analyse</h4>
-			{#each sentenceClassifications as sc}
-				<div class="mb-1 flex items-start gap-2 text-xs">
-					<span
-						class="mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-medium"
-						class:bg-blue-100={sc.type === 'fact'}
-						class:text-blue-700={sc.type === 'fact'}
-						class:bg-amber-100={sc.type === 'opinion'}
-						class:text-warning={sc.type === 'opinion'}
-						class:bg-purple-100={sc.type === 'mixed'}
-						class:text-purple-700={sc.type === 'mixed'}
-						class:bg-gray-100={sc.type !== 'fact' && sc.type !== 'opinion' && sc.type !== 'mixed'}
-					>
-						{sc.type}
-					</span>
-					<div>
-						<p class="text-gray-700">{sc.sentence}...</p>
-						<p class="text-neutral">{sc.explanation}</p>
-					</div>
-				</div>
-			{/each}
+			<FactOpinionIndicator classifications={sentenceClassifications} />
 		</div>
 	{/if}
 
 	<!-- Legal text (collapsible) -->
 	{#if selectedArticle}
-		<button
-			class="mb-3 text-xs text-primary underline"
-			onclick={() => (showLegalText = !showLegalText)}
-		>
+		<sl-button size="small" variant="text" class="mb-3" onclick={() => (showLegalText = !showLegalText)}>
 			{showLegalText ? 'Verberg' : 'Toon'} wettekst
-		</button>
+		</sl-button>
 		{#if showLegalText}
 			<div class="mb-3 rounded bg-gray-50 p-2 text-xs text-neutral">
 				<strong>Art. {selectedArticle}</strong> —
@@ -134,48 +139,61 @@
 
 	<!-- Decision buttons -->
 	{#if isPending}
-		<div class="space-y-2">
+		<div class="space-y-3">
 			<!-- Article selection -->
-			<div>
-				<label class="block text-xs font-medium text-neutral mb-1">Weigeringsgrond</label>
-				<select
-					bind:value={selectedArticle}
-					class="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-				>
-					<option value={null}>Kies een grond...</option>
-					{#each availableArticles as art}
-						<option value={art.code}>{art.code} — {art.ground}</option>
-					{/each}
-				</select>
-			</div>
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<!-- svelte-ignore a11y_label_has_associated_control -->
+			<sl-select
+				label="Weigeringsgrond"
+				placeholder="Kies een grond..."
+				value={selectedArticle ?? ''}
+				onsl-change={(e: Event) => { selectedArticle = ((e.target as HTMLSelectElement).value || null) as WooArticleCode | null; }}
+			>
+				{#each availableArticles as art}
+					<sl-option value={art.code}>{art.code} — {art.ground}</sl-option>
+				{/each}
+			</sl-select>
 
-			<!-- Interest weighing reminder for relative grounds -->
+			<!-- Interest weighing checklist for relative grounds -->
 			{#if selectedArticle && isRelativeGround(selectedArticle)}
-				<div class="rounded border border-warning/30 bg-warning/10 p-2 text-xs text-warning">
-					Let op: bij relatieve gronden is een belangenafweging vereist.
-				</div>
+				<InterestWeighingChecklist
+					article={selectedArticle}
+					onComplete={() => { weighingComplete = true; }}
+				/>
+			{/if}
+
+			<!-- Motivation text editor -->
+			{#if onSaveMotivation}
+				<MotivationEditor
+					detectionId={detection.id}
+					initialText={motivationText}
+					onSave={onSaveMotivation}
+				/>
 			{/if}
 
 			<div class="flex gap-2">
-				<button
-					class="flex-1 rounded bg-danger px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
-					disabled={!selectedArticle}
+				<sl-button
+					variant="danger"
+					class="flex-1"
+					disabled={!canRedact}
 					onclick={() => selectedArticle && onRedact(detection.id, selectedArticle)}
 				>
 					Lakken
-				</button>
-				<button
-					class="flex-1 rounded border border-success px-3 py-2 text-sm font-medium text-success hover:bg-success/10"
+				</sl-button>
+				<sl-button
+					variant="success"
+					outline
+					class="flex-1"
 					onclick={() => onKeep(detection.id)}
 				>
 					Niet lakken
-				</button>
-				<button
-					class="rounded border border-neutral px-3 py-2 text-sm text-neutral hover:bg-gray-100"
+				</sl-button>
+				<sl-button
+					variant="default"
 					onclick={() => onDefer(detection.id)}
 				>
 					Uitstellen
-				</button>
+				</sl-button>
 			</div>
 		</div>
 	{:else if isRedacted}

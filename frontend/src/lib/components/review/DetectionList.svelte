@@ -11,8 +11,8 @@
 		onAccept: (id: string) => void;
 		onReject: (id: string) => void;
 		onDefer: (id: string) => void;
-		onPropagate: (id: string) => void;
 		onRedactWithArticle: (id: string, article: WooArticleCode) => void;
+		onSaveMotivation?: (id: string, text: string) => void;
 	}
 
 	let {
@@ -22,16 +22,24 @@
 		onAccept,
 		onReject,
 		onDefer,
-		onPropagate,
-		onRedactWithArticle
+		onRedactWithArticle,
+		onSaveMotivation
 	}: Props = $props();
 
 	// Group detections by tier
 	const grouped = $derived.by(() => {
-		const tier1 = detections.filter((d) => d.tier === 1);
-		const tier2 = detections.filter((d) => d.tier === 2);
-		const tier3 = detections.filter((d) => d.tier === 3);
+		const tier1 = detections.filter((d) => d.tier === '1');
+		const tier2 = detections.filter((d) => d.tier === '2');
+		const tier3 = detections.filter((d) => d.tier === '3');
 		return { tier1, tier2, tier3 };
+	});
+
+	// Scroll selected card into view
+	$effect(() => {
+		if (selectedId) {
+			const el = document.querySelector(`[data-detection-id="${selectedId}"]`);
+			el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+		}
 	});
 </script>
 
@@ -46,6 +54,7 @@
 			<div class="space-y-1">
 				{#each grouped.tier1 as det (det.id)}
 					<button
+						data-detection-id={det.id}
 						class="w-full text-left"
 						class:ring-2={det.id === selectedId}
 						class:ring-primary={det.id === selectedId}
@@ -69,6 +78,7 @@
 			<div class="space-y-2">
 				{#each grouped.tier2 as det (det.id)}
 					<button
+						data-detection-id={det.id}
 						class="w-full text-left"
 						class:ring-2={det.id === selectedId}
 						class:ring-primary={det.id === selectedId}
@@ -79,7 +89,6 @@
 							detection={det}
 							{onAccept}
 							{onReject}
-							{onPropagate}
 						/>
 					</button>
 				{/each}
@@ -97,6 +106,7 @@
 			<div class="space-y-3">
 				{#each grouped.tier3 as det (det.id)}
 					<button
+						data-detection-id={det.id}
 						class="w-full text-left"
 						class:ring-2={det.id === selectedId}
 						class:ring-primary={det.id === selectedId}
@@ -108,6 +118,7 @@
 							onRedact={onRedactWithArticle}
 							onKeep={onReject}
 							{onDefer}
+							{onSaveMotivation}
 						/>
 					</button>
 				{/each}

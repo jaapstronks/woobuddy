@@ -1,4 +1,7 @@
 <script lang="ts">
+	import '@shoelace-style/shoelace/dist/components/button/button.js';
+	import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
+
 	import type { WooArticleCode } from '$lib/types';
 	import { WOO_ARTICLES, isRelativeGround } from '$lib/utils/woo-articles';
 
@@ -65,29 +68,24 @@
 
 		<div class="space-y-2">
 			{#each checklistItems as item}
-				<label class="flex items-start gap-2 text-xs cursor-pointer">
-					<input
-						type="checkbox"
-						bind:checked={checked[item.key]}
-						class="mt-0.5 accent-primary"
-					/>
-					<span class:text-neutral={!checked[item.key]} class:text-gray-800={checked[item.key]}>
-						{item.label}
-						{#if item.required}
-							<span class="text-danger">*</span>
-						{/if}
-					</span>
-				</label>
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<sl-checkbox
+					checked={checked[item.key] || undefined}
+					onsl-change={(e: Event) => { checked[item.key] = (e.target as HTMLInputElement).checked; }}
+					class="text-xs"
+				>
+					{item.label}
+					{#if item.required}
+						<span class="text-danger">*</span>
+					{/if}
+				</sl-checkbox>
 			{/each}
 		</div>
 
 		{#if allRequiredChecked}
-			<button
-				class="mt-3 w-full rounded bg-primary py-1.5 text-xs font-medium text-white"
-				onclick={handleComplete}
-			>
+			<sl-button variant="primary" class="mt-3" style="width: 100%;" onclick={handleComplete}>
 				Belangenafweging afgerond
-			</button>
+			</sl-button>
 		{:else}
 			<p class="mt-2 text-xs italic text-warning">
 				Alle verplichte punten (*) moeten zijn aangevinkt

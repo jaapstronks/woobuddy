@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Upload } from 'lucide-svelte';
+	import { ArrowRight } from 'lucide-svelte';
 </script>
 
 <section class="relative flex min-h-[85vh] items-center justify-center px-6 pt-20">
@@ -16,13 +16,10 @@
 
 		<a
 			href="/try"
-			class="group mt-10 flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-300 bg-landing-accent/50 px-8 py-12 transition-all hover:border-primary hover:bg-landing-accent"
+			class="group mt-10 inline-flex items-center gap-3 rounded-xl bg-primary px-8 py-4 text-lg font-semibold text-white shadow-lg transition-all hover:bg-primary-light hover:shadow-xl"
 		>
-			<Upload size={48} class="text-gray-400 transition-colors group-hover:text-primary" />
-			<span class="mt-4 text-lg font-medium text-gray-700 group-hover:text-primary">
-				Sleep een PDF hierheen of klik om te uploaden
-			</span>
-			<span class="mt-1 text-sm text-gray-500">PDF, max. 50 MB</span>
+			Probeer het zelf
+			<ArrowRight size={20} class="transition-transform group-hover:translate-x-1" />
 		</a>
 	</div>
 </section>

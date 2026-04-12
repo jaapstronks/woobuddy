@@ -1,7 +1,20 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    event,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -13,8 +26,6 @@ class Base(DeclarativeBase):
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
-
-DossierStatus = Enum("open", "in_review", "completed", name="dossier_status", create_type=True)
 
 DocumentStatus = Enum(
     "uploaded", "processing", "review", "approved", "exported",
@@ -34,56 +45,45 @@ ReviewStatus = Enum(
 # ---------------------------------------------------------------------------
 
 
-class Dossier(Base):
-    __tablename__ = "dossiers"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    title: Mapped[str] = mapped_column(String(500))
-    request_number: Mapped[str] = mapped_column(String(100))
-    organization: Mapped[str] = mapped_column(String(300))
-    status: Mapped[str] = mapped_column(DossierStatus, default="open")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-    documents: Mapped[list["Document"]] = relationship(
-        back_populates="dossier", cascade="all, delete-orphan"
-    )
-    public_officials: Mapped[list["PublicOfficial"]] = relationship(
-        back_populates="dossier", cascade="all, delete-orphan"
-    )
-
-
 class Document(Base):
     __tablename__ = "documents"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    dossier_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("dossiers.id", ondelete="CASCADE"))
     filename: Mapped[str] = mapped_column(String(500))
-    minio_key_original: Mapped[str] = mapped_column(String(1000))
-    minio_key_redacted: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     page_count: Mapped[int] = mapped_column(Integer, default=0)
     document_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(DocumentStatus, default="uploaded")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    dossier: Mapped["Dossier"] = relationship(back_populates="documents")
     detections: Mapped[list["Detection"]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
     )
 
 
 class Detection(Base):
+    """A single detection record.
+
+    SECURITY (client-first architecture): detection rows contain positions,
+    types, tiers and decisions — never the actual extracted text. There is
+    deliberately no `entity_text` column. The application-level SQLAlchemy
+    event below enforces this as defense-in-depth.
+    """
+
     __tablename__ = "detections"
     __table_args__ = (
         Index("ix_detections_document_tier", "document_id", "tier"),
         Index("ix_detections_review_status", "review_status"),
+        # Guard against future regressions: if a stray entity_text column ever
+        # reappears, this is the second line of defense. See the event hook
+        # below for the primary guard.
+        CheckConstraint(
+            "reasoning IS NULL OR length(reasoning) < 5000",
+            name="ck_detections_reasoning_bounded",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
-    entity_text: Mapped[str] = mapped_column(Text)
     entity_type: Mapped[str] = mapped_column(String(50))
     tier: Mapped[str] = mapped_column(DetectionTier)
     confidence: Mapped[float] = mapped_column(Float)
@@ -97,44 +97,20 @@ class Detection(Base):
     )
     reviewer_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_environmental: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     document: Mapped["Document"] = relationship(back_populates="detections")
-    motivation_text: Mapped["MotivationText | None"] = relationship(
-        back_populates="detection", uselist=False
-    )
 
 
-class PublicOfficial(Base):
-    __tablename__ = "public_officials"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    dossier_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("dossiers.id", ondelete="CASCADE"))
-    name: Mapped[str] = mapped_column(String(300))
-    role: Mapped[str | None] = mapped_column(String(200), nullable=True)
-
-    dossier: Mapped["Dossier"] = relationship(back_populates="public_officials")
-
-
-class AuditLog(Base):
-    __tablename__ = "audit_log"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    action: Mapped[str] = mapped_column(String(100))
-    actor: Mapped[str] = mapped_column(String(200), default="system")
-    target_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    target_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-
-class MotivationText(Base):
-    __tablename__ = "motivation_texts"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    detection_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("detections.id", ondelete="CASCADE"), unique=True
-    )
-    text: Mapped[str] = mapped_column(Text)
-    is_edited: Mapped[bool] = mapped_column(default=False)
-
-    detection: Mapped["Detection"] = relationship(back_populates="motivation_text")
+# Defense-in-depth: reject any attempt to set `entity_text` on a Detection
+# instance. The column no longer exists, but an `__init__` call that still
+# passes the keyword (legacy code, stray kwargs) would otherwise silently
+# set a transient attribute and be a subtle way to re-introduce PII at rest
+# if someone later reads `getattr(det, 'entity_text', None)` and persists it.
+@event.listens_for(Detection, "init")
+def _block_entity_text_on_init(target: Detection, args: tuple, kwargs: dict) -> None:
+    if "entity_text" in kwargs:
+        raise ValueError(
+            "Detection records must never contain entity_text "
+            "(client-first architecture). Store only metadata."
+        )

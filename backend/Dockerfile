@@ -16,7 +16,8 @@ RUN pip install --no-cache-dir .
 COPY app/ ./app/
 
 # Non-root user
-RUN useradd --create-home appuser
+RUN useradd --create-home appuser && \
+    chown -R appuser /usr/local/lib/python3.12/site-packages/deduce/data/lookup/cache
 USER appuser
 
 EXPOSE 8000

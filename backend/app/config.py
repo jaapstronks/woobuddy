@@ -19,15 +19,13 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://woobuddy:woobuddy@localhost:5432/woobuddy"
 
-    # MinIO
-    minio_endpoint: str = "localhost:9000"
-    minio_access_key: str = "woobuddy"
-    minio_secret_key: str = "woobuddy-secret"
-    minio_bucket: str = "documents"
-    minio_secure: bool = False
-
     # CORS
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+
+    # Shared secret required on every API call. The SvelteKit server proxy
+    # attaches this header; browsers cannot forge it cross-origin. Leave empty
+    # in local development if the frontend calls the backend directly.
+    proxy_shared_secret: str = ""
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

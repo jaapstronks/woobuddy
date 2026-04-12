@@ -7,11 +7,12 @@ Deduce is initialized once at module level (not per-request) because
 it takes ~2s to load lookup tables.
 """
 
-import logging
 import re
 from dataclasses import dataclass
 
-logger = logging.getLogger(__name__)
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -42,7 +43,7 @@ def _validate_bsn(digits: str) -> bool:
     if len(digits) != 9 or digits[0] == "0":
         return False
     weights = [9, 8, 7, 6, 5, 4, 3, 2, -1]
-    total = sum(int(d) * w for d, w in zip(digits, weights))
+    total = sum(int(d) * w for d, w in zip(digits, weights, strict=True))
     return total % 11 == 0 and total != 0
 
 
@@ -227,7 +228,7 @@ def _get_deduce():
         from deduce import Deduce
 
         _deduce_instance = Deduce()
-        logger.info("Deduce NER engine initialized")
+        logger.info("ner.deduce_loaded")
     return _deduce_instance
 
 
@@ -279,8 +280,8 @@ def detect_tier2(text: str) -> list[NERDetection]:
             confidence = 0.80
             woo_article = "5.1.2e"
             reasoning = (
-                f"Persoonsnaam gedetecteerd door NER. "
-                f"Classificatie nodig: burger, ambtenaar, of publiek functionaris."
+                "Persoonsnaam gedetecteerd door NER. "
+                "Classificatie nodig: burger, ambtenaar, of publiek functionaris."
             )
         elif entity_type == "adres":
             confidence = 0.75

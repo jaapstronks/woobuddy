@@ -1,4 +1,7 @@
 <script lang="ts">
+	import '@shoelace-style/shoelace/dist/components/button/button.js';
+	import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
+
 	interface Props {
 		detectionId: string;
 		initialText: string;
@@ -7,28 +10,33 @@
 
 	let { detectionId, initialText, onSave }: Props = $props();
 
+	// Intentionally seeds local state from the initial prop value; the $effect
+	// below re-seeds it whenever detectionId changes.
+	// svelte-ignore state_referenced_locally
 	let text = $state(initialText);
-	let dirty = $derived(text !== initialText);
+	const dirty = $derived(text !== initialText);
+
+	// Reset when switching to a different detection
+	$effect(() => {
+		// Re-run when detectionId changes
+		detectionId;
+		text = initialText;
+	});
 </script>
 
 <div class="rounded-lg border border-gray-200 bg-white p-3">
-	<label class="mb-1 block text-xs font-medium text-neutral" for="motivation-{detectionId}">
-		Motiveringstekst
-	</label>
-	<textarea
-		id="motivation-{detectionId}"
-		bind:value={text}
-		class="w-full rounded border border-gray-200 p-2 text-sm leading-relaxed focus:border-primary focus:outline-none"
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<sl-textarea
+		label="Motiveringstekst"
+		value={text}
 		rows="4"
-	></textarea>
+		onsl-input={(e: Event) => { text = (e.target as HTMLTextAreaElement).value; }}
+	></sl-textarea>
 	{#if dirty}
 		<div class="mt-2 flex justify-end">
-			<button
-				class="rounded bg-primary px-3 py-1 text-xs text-white hover:bg-primary-light"
-				onclick={() => onSave(detectionId, text)}
-			>
+			<sl-button size="small" variant="primary" onclick={() => onSave(detectionId, text)}>
 				Opslaan
-			</button>
+			</sl-button>
 		</div>
 	{/if}
 </div>

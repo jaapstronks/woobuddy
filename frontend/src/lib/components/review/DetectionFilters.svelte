@@ -1,4 +1,8 @@
 <script lang="ts">
+	import '@shoelace-style/shoelace/dist/components/select/select.js';
+	import '@shoelace-style/shoelace/dist/components/option/option.js';
+	import '@shoelace-style/shoelace/dist/components/button/button.js';
+
 	import type { DetectionTier, ReviewStatus, EntityType } from '$lib/types';
 	import { TIERS } from '$lib/utils/tiers';
 
@@ -32,7 +36,7 @@
 <div class="flex flex-wrap items-center gap-2 text-xs">
 	<!-- Tier filter -->
 	<div class="flex gap-1">
-		{#each [1, 2, 3] as tier}
+		{#each ['1', '2', '3'] as const as tier}
 			<button
 				class="rounded px-2 py-1 transition-colors"
 				class:bg-primary={currentTier === tier}
@@ -49,35 +53,37 @@
 	<span class="text-gray-300">|</span>
 
 	<!-- Status filter -->
-	<select
-		class="rounded border border-gray-200 bg-white px-2 py-1 text-xs"
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<sl-select
+		size="small"
+		placeholder="Alle statussen"
 		value={currentStatus ?? ''}
-		onchange={(e) =>
-			onFilterChange('status', e.currentTarget.value || null)}
+		clearable
+		onsl-change={(e: Event) => onFilterChange('status', (e.target as HTMLSelectElement).value || null)}
 	>
-		<option value="">Alle statussen</option>
 		{#each statusOptions as opt}
-			<option value={opt.value}>{opt.label}</option>
+			<sl-option value={opt.value}>{opt.label}</sl-option>
 		{/each}
-	</select>
+	</sl-select>
 
 	<!-- Entity type filter -->
-	<select
-		class="rounded border border-gray-200 bg-white px-2 py-1 text-xs"
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<sl-select
+		size="small"
+		placeholder="Alle types"
 		value={currentEntityType ?? ''}
-		onchange={(e) =>
-			onFilterChange('entityType', e.currentTarget.value || null)}
+		clearable
+		onsl-change={(e: Event) => onFilterChange('entityType', (e.target as HTMLSelectElement).value || null)}
 	>
-		<option value="">Alle types</option>
 		{#each entityOptions as etype}
-			<option value={etype}>{etype}</option>
+			<sl-option value={etype}>{etype}</sl-option>
 		{/each}
-	</select>
+	</sl-select>
 
 	<!-- Clear -->
 	{#if hasFilters}
-		<button class="text-primary underline" onclick={onClear}>
+		<sl-button size="small" variant="text" onclick={onClear}>
 			Wis filters
-		</button>
+		</sl-button>
 	{/if}
 </div>

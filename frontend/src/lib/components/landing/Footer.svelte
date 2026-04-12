@@ -8,7 +8,7 @@
 
 		<nav class="flex gap-6 text-sm text-neutral">
 			<a href="https://github.com/jaapstronks/woobuddy" class="hover:text-primary" target="_blank" rel="noopener noreferrer">GitHub</a>
-			<a href="/app" class="hover:text-primary">App</a>
+			<a href="/try" class="hover:text-primary">Probeer</a>
 		</nav>
 
 		<p class="text-xs text-gray-400">

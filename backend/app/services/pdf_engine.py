@@ -7,14 +7,38 @@ Redaction uses PyMuPDF's built-in redaction annotations and is irreversible —
 always work on a copy.
 """
 
-import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
 import fitz  # PyMuPDF
 
-logger = logging.getLogger(__name__)
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
+
+
+class PdfValidationError(ValueError):
+    """Raised when PyMuPDF cannot parse the provided bytes as a PDF.
+
+    The message is intentionally generic — callers should NOT echo the
+    underlying fitz exception text to clients, because on some versions it
+    can contain fragments of the document's raw stream.
+    """
+
+
+def _open_pdf_safe(pdf_bytes: bytes) -> "fitz.Document":
+    """Open a PDF stream, converting fitz errors into `PdfValidationError`.
+
+    Keeping this wrapper in one place means every call site routes invalid
+    PDFs through the same clean error path — no fitz exception text ever
+    reaches an HTTP response.
+    """
+    try:
+        return fitz.open(stream=pdf_bytes, filetype="pdf")
+    except Exception as cause:  # pragma: no cover - defensive; fitz raises many types
+        logger.warning("pdf.invalid_stream", size=len(pdf_bytes))
+        raise PdfValidationError("Ongeldig PDF-bestand") from cause
 
 # Common Dutch date patterns for the five-year rule
 _DATE_PATTERNS = [
@@ -75,7 +99,7 @@ def extract_text(pdf_bytes: bytes) -> ExtractionResult:
 
     Uses page.get_text("dict") for character-level position data.
     """
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    doc = _open_pdf_safe(pdf_bytes)
     result = ExtractionResult(page_count=len(doc))
     all_text_parts: list[str] = []
     earliest_date: datetime | None = None
@@ -139,8 +163,14 @@ def _find_date_in_text(text: str) -> datetime | None:
             continue
         try:
             groups = match.groups()
-            if len(groups) == 3 and isinstance(groups[1], str) and groups[1].lower() in _DUTCH_MONTHS:
-                day, month_str, year = int(groups[0]), _DUTCH_MONTHS[groups[1].lower()], int(groups[2])
+            if (
+                len(groups) == 3
+                and isinstance(groups[1], str)
+                and groups[1].lower() in _DUTCH_MONTHS
+            ):
+                day = int(groups[0])
+                month = _DUTCH_MONTHS[groups[1].lower()]
+                year = int(groups[2])
             elif len(groups) == 3 and len(groups[0]) == 4:
                 year, month, day = int(groups[0]), int(groups[1]), int(groups[2])
             else:
@@ -150,6 +180,46 @@ def _find_date_in_text(text: str) -> datetime | None:
         except (ValueError, IndexError):
             continue
     return None
+
+
+def extraction_from_client_data(pages_data: list[dict]) -> ExtractionResult:
+    """Build an ExtractionResult from client-provided text extraction data.
+
+    The client extracts text via pdf.js and sends it as JSON. This function
+    converts that into the same ExtractionResult the pipeline already expects,
+    so run_pipeline() and detect_all() require zero changes.
+    """
+    result = ExtractionResult(page_count=len(pages_data))
+    all_text_parts: list[str] = []
+    earliest_date: datetime | None = None
+
+    for page_data in pages_data:
+        page_num = page_data.get("page_number", 0)
+        full_text = page_data.get("full_text", "")
+        spans = [
+            TextSpan(
+                text=item["text"],
+                page=page_num,
+                x0=item["x0"],
+                y0=item["y0"],
+                x1=item["x1"],
+                y1=item["y1"],
+            )
+            for item in page_data.get("text_items", [])
+        ]
+        result.pages.append(
+            PageText(page_number=page_num, full_text=full_text, spans=spans)
+        )
+        all_text_parts.append(full_text)
+
+        if earliest_date is None:
+            found = _find_date_in_text(full_text)
+            if found:
+                earliest_date = found
+
+    result.full_text = "\n\n".join(all_text_parts)
+    result.document_date = earliest_date
+    return result
 
 
 def find_span_for_text(
@@ -220,7 +290,7 @@ def apply_redactions(
 
     This operation is IRREVERSIBLE. Always call on a copy, never the original.
     """
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    doc = _open_pdf_safe(pdf_bytes)
 
     for r in redactions:
         page_num = r["page"]
@@ -248,7 +318,7 @@ def apply_redactions(
 
 def get_page_count(pdf_bytes: bytes) -> int:
     """Return the number of pages in a PDF."""
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    doc = _open_pdf_safe(pdf_bytes)
     count = len(doc)
     doc.close()
     return count

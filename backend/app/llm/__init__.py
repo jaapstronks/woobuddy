@@ -6,12 +6,11 @@ Usage:
     result = await provider.classify_role(...)
 """
 
-import logging
-
 from app.config import settings
 from app.llm.provider import LLMProvider
+from app.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _provider: LLMProvider | None = None
 
@@ -26,11 +25,19 @@ def get_llm_provider() -> LLMProvider:
         from app.llm.anthropic import AnthropicProvider
 
         _provider = AnthropicProvider()
-        logger.info("Using Anthropic LLM provider (model: %s)", settings.anthropic_model)
+        logger.info(
+            "llm.provider_selected",
+            provider="anthropic",
+            model=settings.anthropic_model,
+        )
     else:
         from app.llm.ollama import OllamaProvider
 
         _provider = OllamaProvider()
-        logger.info("Using Ollama LLM provider (model: %s)", settings.ollama_model)
+        logger.info(
+            "llm.provider_selected",
+            provider="ollama",
+            model=settings.ollama_model,
+        )
 
     return _provider

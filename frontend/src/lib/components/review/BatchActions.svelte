@@ -1,4 +1,6 @@
 <script lang="ts">
+	import '@shoelace-style/shoelace/dist/components/button/button.js';
+
 	interface Props {
 		tier1PendingCount: number;
 		tier2HighConfidenceCount: number;
@@ -11,20 +13,14 @@
 
 <div class="flex flex-wrap gap-2">
 	{#if tier1PendingCount > 0}
-		<button
-			class="rounded border border-gray-300 px-3 py-1.5 text-xs text-neutral transition-colors hover:border-primary hover:text-primary"
-			onclick={onAcceptAllTier1}
-		>
+		<sl-button size="small" variant="default" onclick={onAcceptAllTier1}>
 			Bevestig alle Trap 1 ({tier1PendingCount})
-		</button>
+		</sl-button>
 	{/if}
 
 	{#if tier2HighConfidenceCount > 0}
-		<button
-			class="rounded border border-gray-300 px-3 py-1.5 text-xs text-neutral transition-colors hover:border-primary hover:text-primary"
-			onclick={onAcceptHighConfidenceTier2}
-		>
+		<sl-button size="small" variant="default" onclick={onAcceptHighConfidenceTier2}>
 			Bevestig hoog-vertrouwen Trap 2 ({tier2HighConfidenceCount})
-		</button>
+		</sl-button>
 	{/if}
 </div>

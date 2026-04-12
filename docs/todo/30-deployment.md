@@ -1,0 +1,49 @@
+# 27 — Deployment Setup
+
+- **Priority:** P2
+- **Size:** M (1–3 days)
+- **Source:** Testing & Polish briefing, Section 5
+- **Depends on:** #01 (Testing — CI should exist before CD), #24 (Auth)
+- **Blocks:** Nothing
+
+## Why
+
+The app needs to be accessible on the internet for real users. Deployment infrastructure must be set up before launch.
+
+## Scope
+
+### Hosting platform
+
+- [ ] Choose between Railway (simplest) and Fly.io (EU regions, more control)
+- [ ] Configure two services: SvelteKit (Node.js adapter) + FastAPI
+- [ ] Managed PostgreSQL addon
+- [ ] **No S3/MinIO needed for document storage** — under client-first architecture, PDFs never leave the browser. The only server-side storage is PostgreSQL for metadata. If temporary artifact storage is needed (e.g., dossier ZIP assembly), use ephemeral local storage or a small S3 bucket with auto-expiry.
+
+### LLM inference (key decision)
+
+- [ ] Evaluate: dedicated GPU VPS (Hetzner, ~150/month) running Ollama vs. Anthropic API fallback
+- [ ] Document the decision and cost tradeoffs
+- [ ] Configure the chosen option
+
+### Domain & DNS
+
+- [ ] Register `woobuddy.nl` (Dutch registrar)
+- [ ] Point DNS to hosting platform
+- [ ] SSL via Let's Encrypt (platform-managed)
+
+### CI/CD
+
+- [ ] GitHub Actions workflow: test → build → deploy on push to main
+- [ ] Staging environment for pre-production testing
+
+### Environment management
+
+- [ ] Production environment variables documented and securely stored
+- [ ] Separate dev/staging/production configs
+
+## Acceptance Criteria
+
+- App is accessible at `woobuddy.nl` with HTTPS
+- Deployments happen automatically on push to main
+- Database is backed up on a schedule
+- PDF storage works with cloud S3-compatible service

@@ -1,47 +1,121 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { ShieldCheck, ArrowLeft } from 'lucide-svelte';
+	import { ShieldCheck, ArrowLeft, RotateCw } from 'lucide-svelte';
 	import FileUpload from '$lib/components/shared/FileUpload.svelte';
 	import Spinner from '$lib/components/shared/Spinner.svelte';
-	import { createDossier, uploadDocuments, triggerDetection } from '$lib/api/client';
+	import { registerDocument, analyzeDocument, ApiError } from '$lib/api/client';
+	import { storePdf, PdfStoreError } from '$lib/services/pdf-store';
+	import {
+		extractText,
+		loadPdfDocument,
+		verifyPdfMagicBytes,
+		PdfError
+	} from '$lib/services/pdf-text-extractor';
+	import type { PageExtraction } from '$lib/types';
+
+	// Warn about long extraction time for large PDFs.
+	const LARGE_PDF_BYTES = 20 * 1024 * 1024;
+	const LARGE_PDF_PAGES = 100;
 
 	let files = $state<File[]>([]);
 	let uploading = $state(false);
 	let progress = $state<string | null>(null);
+	let progressDetail = $state<string | null>(null);
 	let error = $state<string | null>(null);
+	let canRetryAnalyze = $state(false);
+
+	// When analyze fails we keep the extracted pages + registered doc id in
+	// memory so the retry button can re-run only the analyze step — the PDF
+	// never gets re-read from disk and is not re-uploaded.
+	let pendingDocId: string | null = null;
+	let pendingPages: PageExtraction[] | null = null;
 
 	function handleFiles(selected: File[]) {
 		files = selected;
 		error = null;
+		canRetryAnalyze = false;
+		pendingDocId = null;
+		pendingPages = null;
+	}
+
+	function describeError(e: unknown): string {
+		if (e instanceof PdfError) return e.message;
+		if (e instanceof PdfStoreError) return e.message;
+		if (e instanceof ApiError) return e.message;
+		if (e instanceof Error) return e.message;
+		return 'Er ging iets mis';
 	}
 
 	async function handleUpload() {
 		if (files.length === 0) return;
 		uploading = true;
 		error = null;
+		canRetryAnalyze = false;
+		progressDetail = null;
+
+		const file = files[0];
+		const isLarge = file.size >= LARGE_PDF_BYTES;
 
 		try {
-			progress = 'Tijdelijk dossier aanmaken...';
-			const dossier = await createDossier({
-				title: `Snel proberen — ${files[0].name}`,
-				request_number: 'TRY-' + Date.now(),
-				organization: 'Demo'
-			});
+			progress = 'Tekst extraheren...';
+			progressDetail = isLarge
+				? 'Dit is een groot bestand, de eerste stap kan even duren.'
+				: null;
 
-			progress = 'Document uploaden...';
-			const docs = await uploadDocuments(dossier.id, files);
+			const bytes = await file.arrayBuffer();
+			// Magic-byte check before pdf.js so non-PDFs (JPEG renamed .pdf,
+			// HTML, etc.) get rejected with a clean Dutch error instead of a
+			// raw pdf.js parser exception.
+			await verifyPdfMagicBytes(bytes);
+			const pdfDoc = await loadPdfDocument(bytes);
 
-			if (docs.length > 0) {
-				progress = 'Persoonsgegevens detecteren...';
-				await triggerDetection(docs[0].id);
-
-				progress = 'Klaar! Doorsturen naar review...';
-				await goto(`/app/dossier/${dossier.id}/review/${docs[0].id}`);
+			if (pdfDoc.numPages >= LARGE_PDF_PAGES && !progressDetail) {
+				progressDetail = `Dit document heeft ${pdfDoc.numPages} pagina\u2019s, tekstextractie duurt iets langer.`;
 			}
+
+			const extraction = await extractText(pdfDoc);
+
+			progress = 'Document registreren...';
+			progressDetail = null;
+			const doc = await registerDocument(file.name, extraction.pageCount);
+
+			// Store PDF locally in IndexedDB (client-first: PDF never leaves browser)
+			await storePdf(doc.id, file.name, bytes);
+
+			// Stash the extraction so a failing analyze step can be retried
+			// without rerunning pdf.js or re-registering the document.
+			pendingDocId = doc.id;
+			pendingPages = extraction.pages;
+
+			await runAnalyze();
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Er ging iets mis';
+			error = describeError(e);
 			uploading = false;
 			progress = null;
+			progressDetail = null;
+		}
+	}
+
+	async function runAnalyze() {
+		if (!pendingDocId || !pendingPages) return;
+		uploading = true;
+		error = null;
+		canRetryAnalyze = false;
+		progress = 'Persoonsgegevens detecteren...';
+		progressDetail = null;
+
+		try {
+			await analyzeDocument(pendingDocId, pendingPages);
+			progress = 'Klaar! Doorsturen naar review...';
+			await goto(`/review/${pendingDocId}`);
+		} catch (e) {
+			error = describeError(e);
+			// Offer a retry that skips extraction, registration, and IndexedDB
+			// storage. The user pays only for the analyze round-trip again.
+			canRetryAnalyze = e instanceof ApiError || e instanceof Error;
+			uploading = false;
+			progress = null;
+			progressDetail = null;
 		}
 	}
 </script>
@@ -72,14 +146,23 @@
 	<div class="mt-8 w-full max-w-lg">
 		{#if error}
 			<div class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-				{error}
+				<p>{error}</p>
+				{#if canRetryAnalyze}
+					<button
+						onclick={runAnalyze}
+						class="mt-3 inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+					>
+						<RotateCw size={14} />
+						Analyse opnieuw proberen
+					</button>
+				{/if}
 			</div>
 		{/if}
 
 		{#if !uploading}
 			<FileUpload onfiles={handleFiles} />
 
-			{#if files.length > 0}
+			{#if files.length > 0 && !canRetryAnalyze}
 				<button
 					onclick={handleUpload}
 					class="mt-4 w-full rounded-lg bg-primary px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-primary-light"
@@ -91,7 +174,9 @@
 			<div class="flex flex-col items-center rounded-2xl border border-gray-200 bg-white px-8 py-12">
 				<Spinner size="lg" />
 				<p class="mt-4 text-lg font-medium text-gray-900">{progress}</p>
-				<p class="mt-1 text-sm text-neutral">Even geduld, dit kan een paar seconden duren.</p>
+				<p class="mt-1 text-sm text-neutral">
+					{progressDetail ?? 'Even geduld, dit kan een paar seconden duren.'}
+				</p>
 			</div>
 		{/if}
 	</div>
