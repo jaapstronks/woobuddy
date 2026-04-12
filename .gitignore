@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Build output
+frontend/build/
+frontend/.svelte-kit/
+backend/dist/
+*.egg-info/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Docker
+docker-compose.override.yml
+
+# Test / Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+coverage/
+.nyc_output/
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# MinIO data (local dev)
+minio_data/
+
+# PostgreSQL data (local dev)
+pgdata/
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/
+
+# Playwright MCP
+.playwright-mcp/

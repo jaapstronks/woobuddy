@@ -1,0 +1,27 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+ * Shoelace theme overrides
+ * --------------------------------------------------------------------------- */
+:root {
+	--sl-color-primary-600: #1b4f72;
+	--sl-color-success-600: #27ae60;
+	--sl-color-danger-600: #c0392b;
+	--sl-color-warning-600: #f39c12;
+	--sl-font-sans: system-ui, -apple-system, sans-serif;
+	--sl-border-radius-medium: 6px;
+}
+
+/* ---------------------------------------------------------------------------
+ * WOO Buddy design tokens (mapped to Tailwind via @theme)
+ * --------------------------------------------------------------------------- */
+@theme {
+	--color-bg: #fafbfc;
+	--color-primary: #1b4f72;
+	--color-primary-light: #2e86c1;
+	--color-danger: #c0392b;
+	--color-success: #27ae60;
+	--color-warning: #f39c12;
+	--color-neutral: #5d6d7e;
+	--color-landing-accent: #ebf5fb;
+}
