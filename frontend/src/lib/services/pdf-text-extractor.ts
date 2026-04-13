@@ -117,7 +117,6 @@ export async function extractText(pdfDoc: PDFDocumentProxy): Promise<ExtractionR
 		const textContent = await page.getTextContent();
 
 		const textItems: ExtractedTextItem[] = [];
-		const textParts: string[] = [];
 
 		for (const item of textContent.items) {
 			if (!('str' in item) || !item.str.trim()) continue;
@@ -142,10 +141,23 @@ export async function extractText(pdfDoc: PDFDocumentProxy): Promise<ExtractionR
 			const y1 = pageHeight - yBottom;
 
 			textItems.push({ text, x0, y0, x1, y1 });
-			textParts.push(text);
 		}
 
-		const fullText = textParts.join(' ');
+		// Build fullText by detecting visually-adjacent text items on the same
+		// line and joining them WITHOUT a space. pdf.js splits long tokens
+		// (URLs, IBANs, phone numbers) across multiple text items; joining
+		// blindly with " " inserts a phantom space that breaks regex and NER
+		// matching. If the next item starts where the previous one ended (same
+		// line, touching x-coordinates), it's a continuation of the same word.
+		const SAME_LINE_TOLERANCE = 2; // points
+		const ADJACENT_X_TOLERANCE = 1.5; // points
+		const fullText = textItems.reduce((acc, item, idx) => {
+			if (idx === 0) return item.text;
+			const prev = textItems[idx - 1];
+			const sameLine = Math.abs(item.y0 - prev.y0) < SAME_LINE_TOLERANCE;
+			const touching = sameLine && item.x0 - prev.x1 < ADJACENT_X_TOLERANCE;
+			return acc + (touching ? '' : ' ') + item.text;
+		}, '');
 		pages.push({
 			pageNumber: pageIdx, // 0-indexed to match PyMuPDF convention
 			fullText,

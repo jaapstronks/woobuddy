@@ -47,16 +47,39 @@ def _validate_bsn(digits: str) -> bool:
     return total % 11 == 0 and total != 0
 
 
-# IBAN: NL + 2 check digits + 4 letter bank code + 10 digits
-_IBAN_PATTERN = re.compile(r"\b(NL\d{2}[A-Z]{4}\d{10})\b", re.IGNORECASE)
+# IBAN: NL + 2 check digits + 4 letter bank code + 10 digits.
+# Banks print IBANs in two forms: compact (NL91ABNA0417164300) or grouped
+# with spaces for readability (NL68 RABO 0338 1615 89). We accept both —
+# a single optional space between each group.
+_IBAN_PATTERN = re.compile(
+    r"\b(NL\d{2}\s?[A-Z]{4}(?:\s?\d{4}){2}\s?\d{2})\b",
+    re.IGNORECASE,
+)
 
-# Phone: Dutch mobile and landline
+# Phone: Dutch mobile and landline.
+# Note on word boundaries: `\b` is a zero-width match between a word
+# character (\w) and a non-word character. It does NOT fire between a
+# space and a `+`, because both are non-word characters. So `\b\+31...`
+# fails to match "op +31...". International patterns use explicit
+# `(?<!\w)` / `(?!\w)` lookarounds instead.
 _PHONE_PATTERNS = [
     re.compile(r"\b(0[1-9]\d{1,2}[-\s]?\d{6,7})\b"),  # landline: 020-1234567
     re.compile(r"\b(06[-\s]?\d{8})\b"),  # mobile: 06-12345678
-    re.compile(r"\b(\+31[-\s]?6[-\s]?\d{8})\b"),  # international mobile
-    re.compile(r"\b(\+31[-\s]?\d{1,2}[-\s]?\d{6,7})\b"),  # international landline
+    # International mobile: +31 6 12345678, +316-12345678, +31612345678
+    re.compile(r"(?<!\w)(\+31[-\s]?6[-\s]?\d{8})(?!\w)"),
+    # International landline with any grouping of spaces/dashes:
+    # +3120 1234567, +31-20-1234567, +31 40 792 00 35, +31 20 123 4567
+    re.compile(r"(?<!\w)(\+31[-\s]?\d{1,3}(?:[-\s]?\d{2,4}){2,4})(?!\w)"),
 ]
+
+# URL: match http(s) URLs including hyphens and slashes. Tier 1 so the full
+# URL gets a proper bbox even when Deduce's URL detection truncates at an
+# embedded space (pdf.js occasionally splits long URLs across text items —
+# the frontend now smart-joins them, but this regex is a backstop).
+# We match greedy-to-whitespace and strip trailing sentence punctuation
+# in code, rather than trying to encode that in a single regex.
+_URL_PATTERN = re.compile(r"(?<!\w)(https?://[^\s<>\"'`]+)")
+_URL_TRAILING_PUNCT = ".,;:!?)]}>"
 
 # Email
 _EMAIL_PATTERN = re.compile(
@@ -194,6 +217,29 @@ def detect_tier1(text: str) -> list[NERDetection]:
                 reasoning="Kenteken gedetecteerd.",
             ))
 
+    # URL (http/https)
+    for m in _URL_PATTERN.finditer(text):
+        url = m.group(1)
+        # Strip trailing sentence punctuation so "see https://example.com."
+        # doesn't include the period. Do this in a loop to handle multiple.
+        end_offset = 0
+        while url and url[-1] in _URL_TRAILING_PUNCT:
+            url = url[:-1]
+            end_offset += 1
+        if not url:
+            continue
+        detections.append(NERDetection(
+            text=url,
+            entity_type="url",
+            tier="1",
+            confidence=0.95,
+            woo_article="5.1.2e",
+            source="regex",
+            start_char=m.start(1),
+            end_char=m.end(1) - end_offset,
+            reasoning="URL gedetecteerd.",
+        ))
+
     # Credit card
     for m in _CREDIT_CARD_PATTERN.finditer(text):
         digits_only = re.sub(r"[\s\-]", "", m.group(1))
@@ -272,7 +318,7 @@ def detect_tier2(text: str) -> list[NERDetection]:
         entity_type = _DEDUCE_TAG_MAP.get(tag, tag)
 
         # Skip types already handled by Tier 1 regex
-        if entity_type in ("bsn", "telefoon", "postcode"):
+        if entity_type in ("bsn", "telefoon", "postcode", "url"):
             continue
 
         # Persons are the primary Tier 2 entity

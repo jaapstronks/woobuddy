@@ -94,6 +94,14 @@ class TestIBAN:
         iban_results = [r for r in results if r.entity_type == "iban"]
         assert len(iban_results) == 0
 
+    def test_spaced_iban_detected(self):
+        """Banks often print IBANs grouped with spaces — both forms must match."""
+        text = "Bankrekeningnummer: NL68 RABO 0338 1615 89"
+        results = detect_tier1(text)
+        iban_results = [r for r in results if r.entity_type == "iban"]
+        assert len(iban_results) == 1
+        assert iban_results[0].text.replace(" ", "") == "NL68RABO0338161589"
+
 
 # ---------------------------------------------------------------------------
 # Tier 1: Phone numbers
@@ -114,14 +122,24 @@ class TestPhone:
         assert len(phone_results) >= 1
 
     def test_international_mobile_detected(self):
-        """International format +31 is not detected due to \\b not matching before +.
-        This is a known limitation — the regex word boundary doesn't fire
-        before a non-word character like +. Domestic format 06-XXXXXXXX works."""
-        text = "Bereikbaar op +316-12345678"
+        """International +31 mobile formats are detected via lookbehind
+        (previously blocked by \\b, which does not fire between a space
+        and a `+` because both are non-word characters)."""
+        for text in [
+            "Bereikbaar op +316-12345678",
+            "Bel +31 6 12345678",
+            "Nummer: +31612345678",
+        ]:
+            results = detect_tier1(text)
+            phone_results = [r for r in results if r.entity_type == "telefoon"]
+            assert len(phone_results) >= 1, f"Expected phone in {text!r}"
+
+    def test_international_landline_with_spaced_groups(self):
+        """+31 40 792 00 35 — international landline with multiple space groups."""
+        text = "Telefoonnummer +31 40 792 00 35"
         results = detect_tier1(text)
         phone_results = [r for r in results if r.entity_type == "telefoon"]
-        # Known limitation: \b before + doesn't create a word boundary match
-        assert len(phone_results) == 0
+        assert len(phone_results) >= 1
 
     def test_short_number_not_detected(self):
         """Numbers with too few digits should not match as phone numbers."""
@@ -150,6 +168,40 @@ class TestEmail:
         results = detect_tier1(text)
         email_results = [r for r in results if r.entity_type == "email"]
         assert len(email_results) == 1
+
+
+# ---------------------------------------------------------------------------
+# Tier 1: URL
+# ---------------------------------------------------------------------------
+
+
+class TestUrl:
+    def test_linkedin_url_detected(self):
+        """Long hyphenated URL should be fully captured (the exact failure
+        mode from the real CIIIC document: URL bbox was truncated)."""
+        text = "Zie https://www.linkedin.com/in/natasja-paulssen-hallema-20880353/ voor details"
+        results = detect_tier1(text)
+        url_results = [r for r in results if r.entity_type == "url"]
+        assert len(url_results) == 1
+        assert url_results[0].text == (
+            "https://www.linkedin.com/in/natasja-paulssen-hallema-20880353/"
+        )
+        assert url_results[0].woo_article == "5.1.2e"
+
+    def test_url_trailing_period_stripped(self):
+        """'see https://example.com.' should capture the URL without the period."""
+        text = "Bezoek https://example.com."
+        results = detect_tier1(text)
+        url_results = [r for r in results if r.entity_type == "url"]
+        assert len(url_results) == 1
+        assert url_results[0].text == "https://example.com"
+
+    def test_tier2_skips_url(self):
+        """URLs are Tier 1; Deduce's url tag should be skipped to avoid duplicates."""
+        text = "Kijk op https://www.voorbeeld.nl voor meer"
+        results = detect_tier2(text)
+        url_results = [r for r in results if r.entity_type == "url"]
+        assert len(url_results) == 0
 
 
 # ---------------------------------------------------------------------------
