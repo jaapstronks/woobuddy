@@ -40,6 +40,7 @@ def _open_pdf_safe(pdf_bytes: bytes) -> "fitz.Document":
         logger.warning("pdf.invalid_stream", size=len(pdf_bytes))
         raise PdfValidationError("Ongeldig PDF-bestand") from cause
 
+
 # Common Dutch date patterns for the five-year rule
 _DATE_PATTERNS = [
     # "15 maart 2024", "1 januari 2023"
@@ -55,9 +56,18 @@ _DATE_PATTERNS = [
 ]
 
 _DUTCH_MONTHS = {
-    "januari": 1, "februari": 2, "maart": 3, "april": 4,
-    "mei": 5, "juni": 6, "juli": 7, "augustus": 8,
-    "september": 9, "oktober": 10, "november": 11, "december": 12,
+    "januari": 1,
+    "februari": 2,
+    "maart": 3,
+    "april": 4,
+    "mei": 5,
+    "juni": 6,
+    "juli": 7,
+    "augustus": 8,
+    "september": 9,
+    "oktober": 10,
+    "november": 11,
+    "december": 12,
 }
 
 
@@ -207,9 +217,7 @@ def extraction_from_client_data(pages_data: list[dict]) -> ExtractionResult:
             )
             for item in page_data.get("text_items", [])
         ]
-        result.pages.append(
-            PageText(page_number=page_num, full_text=full_text, spans=spans)
-        )
+        result.pages.append(PageText(page_number=page_num, full_text=full_text, spans=spans))
         all_text_parts.append(full_text)
 
         if earliest_date is None:
@@ -222,13 +230,55 @@ def extraction_from_client_data(pages_data: list[dict]) -> ExtractionResult:
     return result
 
 
+# y0 tolerance for considering two text items to be on the same visual
+# line. 3 PDF points is ~1 line-height of baseline jitter — wider than
+# that and we're looking at the next line.
+_SAME_LINE_TOL = 3.0
+
+
+def _is_word_boundary_match(haystack: str, needle: str) -> bool:
+    """True if `needle` appears in `haystack` with non-alphanumeric
+    characters (or the string edges) on both sides.
+
+    This prevents "Vries" from matching inside "Vriesland" — the kind
+    of false positive that causes the bbox of a person detection to
+    snap onto an unrelated word.
+    """
+    if not needle:
+        return False
+    n = len(needle)
+    idx = 0
+    while True:
+        idx = haystack.find(needle, idx)
+        if idx == -1:
+            return False
+        left_ok = idx == 0 or not haystack[idx - 1].isalnum()
+        right = idx + n
+        right_ok = right == len(haystack) or not haystack[right].isalnum()
+        if left_ok and right_ok:
+            return True
+        idx += 1
+
+
 def find_span_for_text(
     pages: list[PageText], search_text: str, page_hint: int | None = None
 ) -> list[dict]:
-    """Find bounding boxes for a text string in the extracted spans.
+    """Find bounding boxes for a text string in the extracted text items.
 
-    Returns a list of {"page": int, "x0": float, "y0": float, "x1": float, "y1": float}.
-    Uses substring matching — the search text may span multiple spans.
+    Matching rules (deliberately strict to avoid paragraph-sized bboxes
+    when an entity matches loosely — see the Tier 2 false-positive bug
+    where Deduce hits were snapping onto whole paragraphs):
+
+    - **Word-boundary check**: "Vries" does not match inside "Vriesland".
+    - **Single-line merges only**: when a match spans multiple text
+      items, only items on the same visual line (y0 within
+      `_SAME_LINE_TOL`) are combined. A bbox never spans multiple lines.
+    - **Anchored merge start**: a merged match must begin inside the
+      first item of the merge (either the first word of the search
+      text lines up with a word boundary in that item, or the whole
+      item is itself a prefix of the search text). This ensures the
+      resulting bbox starts where the entity actually begins, rather
+      than at some unrelated earlier item.
     """
     results: list[dict] = []
     search_lower = search_text.lower().strip()
@@ -239,44 +289,75 @@ def find_span_for_text(
         [pages[page_hint]] if page_hint is not None and 0 <= page_hint < len(pages) else pages
     )
 
-    for page_text in pages_to_check:
-        # First try exact span match
-        for span in page_text.spans:
-            if search_lower in span.text.lower():
-                results.append({
-                    "page": span.page,
-                    "x0": span.x0,
-                    "y0": span.y0,
-                    "x1": span.x1,
-                    "y1": span.y1,
-                })
+    first_word = search_lower.split(" ", 1)[0] if " " in search_lower else search_lower
 
-        # If no exact match, try merging adjacent spans.
-        # Long tokens (URLs, IBANs, phones) are often split across several
-        # text items by the PDF renderer. We try BOTH space-joined and
-        # no-space-joined concatenations, because:
-        #   - "Jan de Vries" needs the spaces to match;
-        #   - "https://www.linkedin.com/in/natasja-paulssen-hallema-..."
-        #     needs NO spaces between the fragments.
+    for page_text in pages_to_check:
+        # 1) Single-item match — the common case.
+        for span in page_text.spans:
+            if _is_word_boundary_match(span.text.lower(), search_lower):
+                results.append(
+                    {
+                        "page": span.page,
+                        "x0": span.x0,
+                        "y0": span.y0,
+                        "x1": span.x1,
+                        "y1": span.y1,
+                    }
+                )
+
+        # 2) Multi-item same-line merge, anchored at an item that
+        #    plausibly starts the match.
         if not results:
-            for i, span in enumerate(page_text.spans):
-                merged_parts: list[str] = [span.text]
-                merged_bbox = [span.x0, span.y0, span.x1, span.y1]
-                for j in range(i + 1, min(i + 10, len(page_text.spans))):
-                    merged_parts.append(page_text.spans[j].text)
-                    merged_bbox[2] = max(merged_bbox[2], page_text.spans[j].x1)
-                    merged_bbox[3] = max(merged_bbox[3], page_text.spans[j].y1)
+            spans = page_text.spans
+            for i, start in enumerate(spans):
+                start_lower = start.text.lower()
+
+                # Only consider starting items that contribute the start
+                # of the match. Two ways to qualify:
+                #   (a) the first word of the search text appears at a
+                #       word boundary inside this item ("...Jan" or
+                #       "Jan" itself when search is "Jan de Vries");
+                #   (b) the item's whole text is a prefix of the search
+                #       text (covers no-space joins for split tokens).
+                if not (
+                    _is_word_boundary_match(start_lower, first_word)
+                    or search_lower.startswith(start_lower)
+                ):
+                    continue
+
+                merged_parts: list[str] = [start.text]
+                x0, y0, x1, y1 = start.x0, start.y0, start.x1, start.y1
+
+                for j in range(i + 1, min(i + 12, len(spans))):
+                    nxt = spans[j]
+                    # Same-line guard — never cross a line break.
+                    if abs(nxt.y0 - start.y0) > _SAME_LINE_TOL:
+                        break
+                    merged_parts.append(nxt.text)
+                    x0 = min(x0, nxt.x0)
+                    x1 = max(x1, nxt.x1)
+                    y0 = min(y0, nxt.y0)
+                    y1 = max(y1, nxt.y1)
+
                     with_space = " ".join(merged_parts).lower()
                     without_space = "".join(merged_parts).lower()
-                    if search_lower in with_space or search_lower in without_space:
-                        results.append({
-                            "page": span.page,
-                            "x0": merged_bbox[0],
-                            "y0": merged_bbox[1],
-                            "x1": merged_bbox[2],
-                            "y1": merged_bbox[3],
-                        })
+
+                    if _is_word_boundary_match(with_space, search_lower) or _is_word_boundary_match(
+                        without_space, search_lower
+                    ):
+                        results.append(
+                            {
+                                "page": start.page,
+                                "x0": x0,
+                                "y0": y0,
+                                "x1": x1,
+                                "y1": y1,
+                            }
+                        )
                         break
+
+                if results:
+                    break  # one hit on this page is enough
 
         if results:
             break  # found on this page, stop
