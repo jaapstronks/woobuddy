@@ -1,10 +1,8 @@
 """Tests for the LLM engine — pipeline orchestration.
 
-Tests the run_pipeline function with mocked NER/pdf dependencies to verify:
-- Tier assignment (Tier 1 = auto_accepted, Tier 2 = pending)
-- Public official filtering (persons on the list → rejected)
-- Environmental content detection
-- Bounding box resolution
+Tests run with `use_llm_verification=False` so they don't depend on a
+running Ollama instance. The LLM verification path has its own tests
+in test_llm_verification.py which mock the provider.
 """
 
 import pytest
@@ -72,11 +70,6 @@ class TestEnvironmentalDetection:
 
 
 # ---------------------------------------------------------------------------
-# Tier 3 passage finding
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
 # Pipeline orchestration
 # ---------------------------------------------------------------------------
 
@@ -87,7 +80,7 @@ class TestRunPipeline:
         """Tier 1 detections from regex should be auto_accepted."""
         extraction = _make_extraction("Het BSN is 111222333 in dit document.")
 
-        result = await run_pipeline(extraction)
+        result = await run_pipeline(extraction, use_llm_verification=False)
         tier1 = [d for d in result.detections if d.tier == "1"]
         assert len(tier1) >= 1
         for d in tier1:
@@ -100,7 +93,7 @@ class TestRunPipeline:
             "De heer Jan de Vries heeft een verzoek ingediend bij de gemeente."
         )
 
-        result = await run_pipeline(extraction)
+        result = await run_pipeline(extraction, use_llm_verification=False)
         persons = [d for d in result.detections if d.entity_type == "persoon"]
         assert len(persons) >= 1
         for p in persons:
@@ -116,7 +109,11 @@ class TestRunPipeline:
         """
         extraction = _make_extraction("Jan de Vries heeft een verzoek ingediend bij de gemeente.")
 
-        result = await run_pipeline(extraction, public_official_names=["Jan de Vries"])
+        result = await run_pipeline(
+            extraction,
+            public_official_names=["Jan de Vries"],
+            use_llm_verification=False,
+        )
         persons = [d for d in result.detections if d.entity_type == "persoon"]
         jan = [p for p in persons if "Jan de Vries" in p.entity_text]
         assert len(jan) >= 1
@@ -128,7 +125,11 @@ class TestRunPipeline:
         """Public official matching should be case-insensitive."""
         extraction = _make_extraction("Het voorstel van Jan de Vries is besproken.")
 
-        result = await run_pipeline(extraction, public_official_names=["jan de vries"])
+        result = await run_pipeline(
+            extraction,
+            public_official_names=["jan de vries"],
+            use_llm_verification=False,
+        )
         persons = [d for d in result.detections if d.entity_type == "persoon"]
         jan = [p for p in persons if "jan de vries" in p.entity_text.lower()]
         assert len(jan) >= 1
@@ -141,21 +142,21 @@ class TestRunPipeline:
             "De luchtkwaliteit in het plangebied is onderzocht. BSN: 111222333."
         )
 
-        result = await run_pipeline(extraction)
+        result = await run_pipeline(extraction, use_llm_verification=False)
         assert result.has_environmental_content is True
 
     @pytest.mark.asyncio
     async def test_no_environmental_flag_for_normal_text(self):
         extraction = _make_extraction("BSN: 111222333 in een ambtelijk document.")
 
-        result = await run_pipeline(extraction)
+        result = await run_pipeline(extraction, use_llm_verification=False)
         assert result.has_environmental_content is False
 
     @pytest.mark.asyncio
     async def test_page_count_from_extraction(self):
         extraction = _make_extraction("Tekst", page_count=5)
 
-        result = await run_pipeline(extraction)
+        result = await run_pipeline(extraction, use_llm_verification=False)
         assert result.page_count == 5
 
     @pytest.mark.asyncio
@@ -163,7 +164,7 @@ class TestRunPipeline:
         """Detections should have bounding boxes from the extraction spans."""
         extraction = _make_extraction("BSN: 111222333")
 
-        result = await run_pipeline(extraction)
+        result = await run_pipeline(extraction, use_llm_verification=False)
         bsn_dets = [d for d in result.detections if d.entity_type == "bsn"]
         # bboxes may be empty if span text doesn't match — but the list should exist
         for d in bsn_dets:
@@ -173,7 +174,7 @@ class TestRunPipeline:
     async def test_empty_text_returns_empty_result(self):
         extraction = _make_extraction("")
 
-        result = await run_pipeline(extraction)
+        result = await run_pipeline(extraction, use_llm_verification=False)
         assert len(result.detections) == 0
 
     @pytest.mark.asyncio
@@ -183,7 +184,7 @@ class TestRunPipeline:
             "De heer Jan de Vries, BSN 111222333, heeft een klacht ingediend."
         )
 
-        result = await run_pipeline(extraction)
+        result = await run_pipeline(extraction, use_llm_verification=False)
         tiers = {d.tier for d in result.detections}
         assert "1" in tiers
         assert "2" in tiers
