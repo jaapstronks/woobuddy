@@ -251,16 +251,24 @@ def find_span_for_text(
                     "y1": span.y1,
                 })
 
-        # If no exact match, try merging adjacent spans
+        # If no exact match, try merging adjacent spans.
+        # Long tokens (URLs, IBANs, phones) are often split across several
+        # text items by the PDF renderer. We try BOTH space-joined and
+        # no-space-joined concatenations, because:
+        #   - "Jan de Vries" needs the spaces to match;
+        #   - "https://www.linkedin.com/in/natasja-paulssen-hallema-..."
+        #     needs NO spaces between the fragments.
         if not results:
             for i, span in enumerate(page_text.spans):
-                merged = span.text
+                merged_parts: list[str] = [span.text]
                 merged_bbox = [span.x0, span.y0, span.x1, span.y1]
                 for j in range(i + 1, min(i + 10, len(page_text.spans))):
-                    merged += " " + page_text.spans[j].text
+                    merged_parts.append(page_text.spans[j].text)
                     merged_bbox[2] = max(merged_bbox[2], page_text.spans[j].x1)
                     merged_bbox[3] = max(merged_bbox[3], page_text.spans[j].y1)
-                    if search_lower in merged.lower():
+                    with_space = " ".join(merged_parts).lower()
+                    without_space = "".join(merged_parts).lower()
+                    if search_lower in with_space or search_lower in without_space:
                         results.append({
                             "page": span.page,
                             "x0": merged_bbox[0],
