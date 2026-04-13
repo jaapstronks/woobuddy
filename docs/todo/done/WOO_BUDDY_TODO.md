@@ -1,4 +1,12 @@
-# WOO Buddy — Personal Todo List
+# WOO Buddy — Personal Todo List (historical)
+
+> **⚠️ HISTORICAL — dormant LLM setup**
+>
+> This file describes the Ollama + Gemma local-LLM setup that was required before the April 2026 pivot (see `docs/reference/woo-redactietool-analyse.md` and `done/35-deactivate-llm.md`). The LLM layer is now dormant: nothing in the live pipeline calls Ollama, and none of the setup steps below are required for running the current application.
+>
+> The file is kept here as reference for anyone reviving the dormant path in `backend/app/llm/`. Sections 1, 8, and the Ollama parts of sections 2 and 6 describe that revival path. Section 3 (sample Woo documents) remains useful as reference material for any detection work, with or without an LLM.
+>
+> **To run WOO Buddy today:** `docker compose up` (see the top-level `README.md`). No Ollama, no GPU, no model download required.
 
 Everything you need to do yourself. This assumes Claude Code handles the actual coding from the briefing, and the domain registration is already on your radar.
 
@@ -303,7 +311,7 @@ This is a manual effort — Claude Code can build the harness, but you need to d
 Things you don't need to decide yet but should keep in mind:
 
 - **Authentication**: Not needed for prototype, but for production deployment at a municipality, you'll want something. OIDC with the organization's identity provider is the most likely path.
-- **Hosting for demo**: If you want woobuddy.nl to show a live demo, you'll need hosting. A single VPS with Docker Compose works, but you'd need a GPU for Ollama — or switch to the Anthropic fallback for the demo instance.
+- **Hosting for demo**: If you want woobuddy.nl to show a live demo, you'll need hosting. A single VPS with Docker Compose works, plus a GPU-capable box running Ollama on a private network. Hosted third-party LLMs are out of scope — document text must never leave the operator's infrastructure.
 - **CI/CD**: GitHub Actions for testing and building Docker images. Not needed for phase 1.
 - **Branding**: The ShieldCheck placeholder works for now. Consider commissioning a proper logo once the product is functional.
 - **Community**: If this gains traction with municipalities, you'll want a contribution guide, issue templates, and potentially a discussion forum or Discord.

@@ -1,9 +1,9 @@
-# 33 — Microsoft SSO & 2FA
+# 42 — Microsoft SSO & 2FA
 
 - **Priority:** P3
 - **Size:** M (1–3 days)
 - **Source:** Auth & Billing briefing, social login + 2FA sections
-- **Depends on:** #24 (Authentication)
+- **Depends on:** #32 (Authentication)
 - **Blocks:** Nothing
 
 ## Why

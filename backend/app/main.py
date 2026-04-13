@@ -9,6 +9,7 @@ from app.api.analyze import router as analyze_router
 from app.api.detections import router as detections_router
 from app.api.documents import router as documents_router
 from app.api.export import router as export_router
+from app.api.page_reviews import router as page_reviews_router
 from app.config import settings
 from app.db.session import engine
 from app.logging_config import configure_logging, get_logger
@@ -23,17 +24,18 @@ from app.security import (
 configure_logging()
 logger = get_logger(__name__)
 
-# Tier 3 LLM content analysis is currently disabled in services/llm_engine.py.
-# When re-enabled, flip this to True so the health endpoint probes the provider.
-LLM_TIER_ENABLED = False
-
 
 async def _probe_llm_status() -> str:
     """Return one of: "ok", "unreachable", "disabled".
 
-    Probing is best-effort and bounded by the provider's own timeout.
+    The LLM layer is dormant by default (`settings.llm_tier2_enabled` and
+    `settings.llm_tier3_enabled` both False). While dormant we report
+    `"disabled"` without importing the provider at all — nothing in the
+    live pipeline should touch Ollama. When an operator flips a flag for
+    experimentation, this probe becomes a best-effort reachability check,
+    bounded by the provider's own timeout.
     """
-    if not LLM_TIER_ENABLED:
+    if not (settings.llm_tier2_enabled or settings.llm_tier3_enabled):
         return "disabled"
     try:
         from app.llm import get_llm_provider
@@ -51,6 +53,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # Create database tables (dev convenience — use Alembic in production)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Lightweight, idempotent schema patch for columns that post-date the
+        # original create_all. Alembic lives in the tree but isn't wired to a
+        # version chain yet; until it is, new nullable columns get an
+        # `IF NOT EXISTS` ALTER here so a running dev/pilot database picks
+        # them up on the next restart without a manual migration.
+        from sqlalchemy import text
+
+        await conn.execute(
+            text("ALTER TABLE detections ADD COLUMN IF NOT EXISTS original_bounding_boxes JSONB")
+        )
     logger.info("db.tables_ensured")
 
     # Pre-initialize Deduce NER (~2s load time). Non-fatal — if this fails the
@@ -63,8 +75,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     except Exception:
         logger.warning("ner.deduce_init_failed", reason="will_lazy_init")
 
-    # Advisory LLM reachability probe. Never fatal; Tier 3 is dormant today, but
-    # we log a warning so operators notice when the provider is unreachable.
+    # Advisory LLM reachability probe. Never fatal; the LLM layer is dormant
+    # by default, in which case the probe short-circuits to "disabled" without
+    # importing the provider. A warning is only logged when an operator has
+    # flipped a flag on and the provider is actually unreachable.
     llm_status = await _probe_llm_status()
     if llm_status == "unreachable":
         logger.warning(
@@ -113,17 +127,20 @@ def create_app() -> FastAPI:
     app.include_router(documents_router)
     app.include_router(detections_router)
     app.include_router(export_router)
+    app.include_router(page_reviews_router)
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:
         """Advisory health endpoint.
 
-        Always returns 200 so load balancers don't flap when the LLM provider
-        is down (the app keeps working on Tier 1/2 without it). The `ollama`
-        field surfaces LLM reachability for the frontend banner.
+        Always returns 200. The `llm` field reports "disabled" while the
+        LLM layer is dormant (the default), and reachability when an
+        operator has flipped `llm_tier2_enabled`/`llm_tier3_enabled` on
+        for experimentation. The legacy `ollama` field is kept as an
+        alias so existing frontend banners don't break.
         """
         llm_status = await _probe_llm_status()
-        return {"status": "ok", "ollama": llm_status}
+        return {"status": "ok", "llm": llm_status, "ollama": llm_status}
 
     return app
 

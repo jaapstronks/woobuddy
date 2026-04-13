@@ -1,7 +1,8 @@
 """Abstract LLM provider interface.
 
-All LLM providers (Ollama, Anthropic) implement this interface so they
-can be swapped via the LLM_PROVIDER environment variable.
+The project only ships a local Ollama implementation — document text must
+never be sent to third-party hosted models. The abstraction remains in place
+so alternative local backends can be swapped in without touching callers.
 """
 
 from abc import ABC, abstractmethod

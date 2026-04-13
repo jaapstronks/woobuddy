@@ -1,8 +1,14 @@
 """Tests for the Tier 2 LLM verification pass in run_pipeline.
 
-These inject a fake LLMProvider so the tests run offline — no Ollama
-required. They verify the three branches that matter for the review
-UX:
+The LLM layer is **dormant by default** (pivot 2026-04 — see
+`docs/todo/done/35-deactivate-llm.md` and `backend/app/llm/README.md`).
+These tests exercise the parked revival path: they inject a fake
+`LLMProvider` and call `run_pipeline(..., use_llm_verification=True)`
+explicitly, so the dormant default never hides a regression in the
+behavior we'd restore if an operator flipped the flag.
+
+Tests run offline — no Ollama required. They verify the three branches
+that matter for the review UX when the layer is active:
 
 1. `not_a_person` → detection is dropped entirely.
 2. `public_official` + `should_redact=False` → detection ends up
@@ -90,8 +96,8 @@ async def test_llm_drops_non_person_detections():
         }
     )
 
-    with patch("app.services.llm_engine.get_llm_provider", return_value=provider):
-        result = await run_pipeline(extraction)
+    with patch("app.llm.get_llm_provider", return_value=provider):
+        result = await run_pipeline(extraction, use_llm_verification=True)
 
     persons = [d for d in result.detections if d.entity_type == "persoon"]
     assert persons == [], "Detections classified as not_a_person must not appear in the result"
@@ -114,8 +120,8 @@ async def test_llm_public_official_marked_rejected():
         }
     )
 
-    with patch("app.services.llm_engine.get_llm_provider", return_value=provider):
-        result = await run_pipeline(extraction)
+    with patch("app.llm.get_llm_provider", return_value=provider):
+        result = await run_pipeline(extraction, use_llm_verification=True)
 
     persons = [d for d in result.detections if d.entity_type == "persoon"]
     assert len(persons) >= 1
@@ -141,8 +147,8 @@ async def test_llm_citizen_kept_pending_with_reasoning():
         }
     )
 
-    with patch("app.services.llm_engine.get_llm_provider", return_value=provider):
-        result = await run_pipeline(extraction)
+    with patch("app.llm.get_llm_provider", return_value=provider):
+        result = await run_pipeline(extraction, use_llm_verification=True)
 
     persons = [d for d in result.detections if d.entity_type == "persoon"]
     jan = next(p for p in persons if "Jan de Vries" in p.entity_text)
@@ -160,8 +166,8 @@ async def test_llm_failure_falls_back_to_deduce_reasoning():
     provider = _FakeProvider()
     provider.raise_on.add("Jan de Vries")
 
-    with patch("app.services.llm_engine.get_llm_provider", return_value=provider):
-        result = await run_pipeline(extraction)
+    with patch("app.llm.get_llm_provider", return_value=provider):
+        result = await run_pipeline(extraction, use_llm_verification=True)
 
     persons = [d for d in result.detections if d.entity_type == "persoon"]
     assert len(persons) >= 1, "LLM failure must not make detections disappear"
@@ -176,7 +182,7 @@ async def test_llm_not_called_when_disabled():
     extraction = _make_extraction("Jan de Vries heeft een verzoek ingediend.")
     provider = _FakeProvider()
 
-    with patch("app.services.llm_engine.get_llm_provider", return_value=provider):
+    with patch("app.llm.get_llm_provider", return_value=provider):
         await run_pipeline(extraction, use_llm_verification=False)
 
     assert provider.calls == [], "LLM must not be called when use_llm_verification=False"
@@ -189,10 +195,11 @@ async def test_public_officials_list_short_circuits_llm():
     extraction = _make_extraction("Jan de Vries heeft het besluit ondertekend.")
     provider = _FakeProvider()
 
-    with patch("app.services.llm_engine.get_llm_provider", return_value=provider):
+    with patch("app.llm.get_llm_provider", return_value=provider):
         result = await run_pipeline(
             extraction,
             public_official_names=["Jan de Vries"],
+            use_llm_verification=True,
         )
 
     # No LLM calls for Jan — he's on the list. Other detections might

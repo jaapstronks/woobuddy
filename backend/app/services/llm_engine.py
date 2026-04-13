@@ -1,26 +1,35 @@
 """LLM engine — orchestrates the full detection pipeline.
 
-Runs Tier 1 (regex) and Tier 2 (Deduce NER + local LLM verification).
-Tier 3 (LLM content analysis) is temporarily disabled for fast mode;
-when re-enabled it can be wired back into run_pipeline().
+Runs Tier 1 (regex) and Tier 2 (Deduce NER + heuristic filters). Tier 3
+is reserved and currently unused.
 
-Tier 2 person detections are verified by a local LLM (via
-`LLMProvider.classify_role`) to filter out the false positives that
-Deduce — a Dutch medical de-identification library — routinely
-produces on non-medical prose: institutions, locations, and fragments
-tagged as `persoon`. The LLM's verdict also feeds the redact/keep
-decision when the text really is a name.
+The LLM person-role classification pass is **dormant by default**. The
+live pipeline is regex + Deduce + heuristics; there is no Ollama call on
+the default code path. Set `settings.llm_tier2_enabled=True` to re-enable
+the verification pass for experimentation. See `app/llm/README.md` for
+why the code is kept in-tree.
+
+When the LLM layer is dormant, Deduce `persoon` detections surface as
+`review_status="pending"` and the reviewer decides. The rule-based
+replacement for LLM role classification (public-official lists,
+structure heuristics, function titles) lands in todos #36–#40.
 """
 
 import asyncio
 import re
 from dataclasses import dataclass, field
 
-from app.llm import get_llm_provider
+from app.config import settings
 from app.llm.provider import LLMProvider, RoleClassification
 from app.logging_config import get_logger
 from app.services.ner_engine import NERDetection, detect_all
 from app.services.pdf_engine import ExtractionResult, find_span_for_text
+
+# NOTE: `app.llm.provider` is import-safe when the layer is dormant — it only
+# declares the abstract interface and dataclasses. The concrete Ollama
+# implementation lives in `app.llm.ollama` and is imported lazily, inside the
+# verification pass below, so a dormant pipeline never pulls in the HTTP client
+# or triggers the provider factory's log line.
 
 logger = get_logger(__name__)
 
@@ -197,21 +206,28 @@ def _verdict_to_pipeline_detection(
 async def run_pipeline(
     extraction: ExtractionResult,
     public_official_names: list[str] | None = None,
-    use_llm_verification: bool = True,
+    use_llm_verification: bool | None = None,
 ) -> PipelineResult:
-    """Run the full three-tier detection pipeline on an extracted document.
+    """Run the detection pipeline on an extracted document.
 
     Args:
         extraction: Result from pdf_engine.extract_text().
         public_official_names: Names from the dossier's public officials
-            list. These always short-circuit to "niet lakken" without
-            calling the LLM.
-        use_llm_verification: If True (default), Tier 2 `persoon`
-            detections that are not on the public officials list are
-            passed through the local LLM for false-positive filtering
-            and role classification. Tests pass False to avoid
-            depending on a running Ollama instance.
+            list. These short-circuit to "niet lakken" without calling
+            any classifier. Empty by default — the per-document
+            reference list UI was stripped during simplification and
+            will return as todo #40.
+        use_llm_verification: If True, Tier 2 `persoon` detections that
+            are not on the public officials list are passed through the
+            local LLM for false-positive filtering and role
+            classification. **Dormant by default** — when None, the
+            value is read from `settings.llm_tier2_enabled`, which
+            defaults to False. Callers that want deterministic behavior
+            (tests) can pass an explicit True/False.
     """
+    if use_llm_verification is None:
+        use_llm_verification = settings.llm_tier2_enabled
+
     result = PipelineResult(page_count=extraction.page_count)
     official_names_lower = {n.lower() for n in (public_official_names or [])}
 
@@ -309,6 +325,11 @@ async def run_pipeline(
 
     # --- Tier 2 LLM verification pass ---
     if persons_needing_llm:
+        # Lazy import so the dormant path never touches `app.llm.ollama`
+        # (and thus httpx/ollama client setup). Only runs when the flag
+        # explicitly enables verification.
+        from app.llm import get_llm_provider
+
         provider = get_llm_provider()
         verdicts = await asyncio.gather(
             *[

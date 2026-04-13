@@ -1,9 +1,9 @@
-# 26 — Email Service
+# 38 — Email Service
 
 - **Priority:** P2
 - **Size:** M (1–3 days)
 - **Source:** Testing & Polish briefing, Section 4
-- **Depends on:** #24 (Auth — email verification needs email delivery)
+- **Depends on:** #32 (Auth — email verification needs email delivery)
 - **Blocks:** Nothing (auth can use basic SMTP initially)
 
 ## Why

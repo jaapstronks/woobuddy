@@ -1,10 +1,10 @@
-# 05 — Authentication (Better Auth)
+# 32 — Authentication (Better Auth)
 
 - **Priority:** P0
 - **Size:** L (3–7 days)
 - **Source:** Auth & Billing briefing, "Authentication: Better Auth" section
 - **Depends on:** Nothing (can run in parallel with Phase A)
-- **Blocks:** #25, #26, #27, #28, #33
+- **Blocks:** #33, #34, #36, #37, #42
 
 ## Why
 
@@ -15,7 +15,7 @@ The app currently has no user model. `reviewed_by` fields are free-text strings,
 Better Auth is a solid choice. The reasoning is sound:
 - Own database (no external auth service) — critical for government trust
 - First-class SvelteKit + Svelte 5 support
-- Organization plugin included (needed for #25)
+- Organization plugin included (needed for #33)
 - MIT licensed, actively maintained
 - The alternatives (Auth.js, Lucia, Clerk) all have the drawbacks the briefing identifies
 
@@ -72,6 +72,6 @@ Better Auth is a solid choice. The reasoning is sound:
 
 ## Not in Scope
 
-- Microsoft social login (see #33)
-- 2FA / passkeys (see #33)
-- Organization model (see #25)
+- Microsoft social login (see #42)
+- 2FA / passkeys (see #42)
+- Organization model (see #33)

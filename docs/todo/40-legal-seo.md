@@ -1,4 +1,4 @@
-# 28 — Legal Pages & SEO
+# 40 — Legal Pages & SEO
 
 - **Priority:** P2
 - **Size:** S (< 1 day)

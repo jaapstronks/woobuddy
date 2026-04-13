@@ -6,26 +6,29 @@ WOO Buddy is een open-source, self-hostable webapplicatie die Nederlandse overhe
 
 ## Hoe het werkt
 
-WOO Buddy gebruikt een **drietrapsraket** voor detectie:
+WOO Buddy gebruikt een **drietrapsraket** voor detectie. **Er komt geen taalmodel aan te pas** — detectie is volledig gebaseerd op regex, Nederlandse woordenlijsten (Meertens voornamen, CBS achternamen) en structuurherkenning (e-mailheaders, handtekeningblokken, aanhef). De waarde van de tool zit in een snelle, betrouwbare review-workflow, niet in een slimmer model.
 
 | Tier | Wat | Detectie | Standaardgedrag |
 |------|-----|----------|-----------------|
-| **1** | Harde identifiers (BSN, IBAN, telefoon, e-mail) | Regex + validatie | Automatisch gelakt |
-| **2** | Contextuele persoonsgegevens (namen, adressen) | NER + rolclassificatie | Gesuggereerd |
-| **3** | Inhoudelijke oordelen (beleidsopvattingen, bedrijfsgegevens) | LLM-analyse | Geannoteerd |
+| **1** | Harde identifiers (BSN, IBAN, telefoon, e-mail, postcode, kenteken) | Regex + validatie (elfproef, Luhn) | Automatisch gelakt |
+| **2** | Contextuele persoonsgegevens (namen, adressen, functies) | Deduce NER + voornamen-/achternamenlijsten + structuurherkenning + regel-gebaseerde publiek-functionaris filter | Gesuggereerd |
+| **3** | Gereserveerd | — | — |
 
-Elke tier krijgt een eigen UX — van automatische lakking (Tier 1) tot volledige beslissingsondersteuning (Tier 3).
+Elke tier krijgt een eigen UX — van automatische lakking (Tier 1) tot bulksweeps en per-kaart bevestiging (Tier 2). Waarom geen taalmodel: zie `docs/reference/woo-redactietool-analyse.md`.
 
 ### Client-first architectuur
 
-PDF's verlaten nooit de browser van de gebruiker. De server slaat geen documentinhoud op: tekstextractie gebeurt client-side, analyse is vluchtig, en alleen beslissingen (bbox-coördinaten, entiteitstype, tier, artikel) worden in de database bewaard. Zie `docs/todo/00-client-first-architecture.md` voor de volledige specificatie.
+PDF's verlaten nooit de browser van de gebruiker. De server slaat geen documentinhoud op: tekstextractie gebeurt client-side, analyse is vluchtig, en alleen beslissingen (bbox-coördinaten, entiteitstype, tier, artikel) worden in de database bewaard. Zie `docs/todo/done/00-client-first-architecture.md` voor de volledige specificatie.
+
+**Uw documenten verlaten nooit uw infrastructuur en er komt geen taalmodel aan te pas.** Dat is de hele privacy-propositie, in één zin — geen verwerkersovereenkomst voor een modelhoster, geen GPU-beheer, geen uitleg over waar data naartoe gaat.
 
 ## Techstack
 
 - **Frontend**: SvelteKit (Svelte 5 runes), Tailwind CSS v4, Shoelace, pdf.js
 - **Backend**: FastAPI, PyMuPDF, Deduce (Nederlandse NER), SQLAlchemy v2
-- **LLM**: Gemma 4 via Ollama (lokaal, geen data verlaat de machine) — Anthropic API als alternatief
-- **Infrastructuur**: PostgreSQL 16, Docker Compose
+- **Infrastructuur**: PostgreSQL 16 (alleen metadata), Docker Compose
+
+> De LLM-laag (Ollama + Gemma) in `backend/app/llm/` is sinds april 2026 dormant. De code blijft in de repo staan als geparkeerd pad voor toekomstig experiment, maar wordt niet aangeroepen in het actieve detectiepad. Zie `backend/app/llm/README.md`.
 
 ---
 
@@ -70,30 +73,7 @@ Open de ingebouwde terminal in VS Code (⌃+`) en draai:
 cp .env.example .env
 ```
 
-### 5. Kies je LLM-route
-
-Tier 3 (de inhoudelijke content-analyse) heeft een taalmodel nodig. Je hebt twee opties:
-
-**Optie A — Lokaal met Ollama (privacyvriendelijk, maar ±18 GB download):**
-
-```bash
-brew install ollama
-ollama serve &
-ollama pull gemma4:26b
-```
-
-**Optie B — Cloud via Anthropic (sneller van start, geen grote download):**
-
-Open `.env` in VS Code en pas aan:
-
-```
-LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
-Voor een eerste rondrit is **Optie B** het snelst — dan draai je binnen tien minuten. Ollama kun je er later altijd nog bij zetten.
-
-### 6. Start alles op
+### 5. Start alles op
 
 In de VS Code terminal:
 
@@ -107,7 +87,7 @@ Open in je browser: **http://localhost:3000**
 
 Upload een PDF op `/try` en je komt vanzelf in het reviewscherm terecht.
 
-### 7. Stoppen en opnieuw starten
+### 6. Stoppen en opnieuw starten
 
 - Stoppen: `Ctrl+C` in de terminal waar docker draait, of `docker compose down`
 - Opnieuw starten: `docker compose up`
@@ -168,8 +148,8 @@ woobuddy/
 ├── backend/                 # FastAPI applicatie
 │   ├── app/
 │   │   ├── api/             # Route handlers
-│   │   ├── services/        # PDF-, NER- en LLM-engines
-│   │   ├── llm/             # LLM-provider abstractie
+│   │   ├── services/        # PDF- en detectie-engines (regex, Deduce, structuur)
+│   │   ├── llm/             # Dormant LLM-laag (geparkeerd revival-pad)
 │   │   ├── models/          # SQLAlchemy-modellen + Pydantic-schemas
 │   │   └── db/              # Database sessie + migraties
 │   └── tests/

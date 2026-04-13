@@ -1,9 +1,9 @@
-# 20 — Draft Comments
+# 27 — Draft Comments
 
 - **Priority:** P3
 - **Size:** M (1–3 days)
 - **Source:** Draft Workflow briefing, "Draft annotations" section
-- **Depends on:** #18 (Draft preview), #24 (Auth)
+- **Depends on:** #26 (Draft preview), #32 (Auth)
 - **Blocks:** Nothing
 
 ## Why
@@ -29,7 +29,7 @@ Supports the common workflow where a jurist reviews the draft and leaves notes w
 
 - [ ] Original reviewer sees comments on next visit
 - [ ] Can resolve by adjusting the redaction or marking as "afgehandeld"
-- [ ] Unresolved comments block document approval (in #16 completeness check)
+- [ ] Unresolved comments block document approval (in #25 completeness check)
 
 ## Acceptance Criteria
 

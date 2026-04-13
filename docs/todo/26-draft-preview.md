@@ -1,10 +1,10 @@
-# 19 — Draft Preview & Side-by-Side
+# 26 — Draft Preview & Side-by-Side
 
 - **Priority:** P2
 - **Size:** M (1–3 days)
 - **Source:** Draft Workflow briefing, "Draft preview" + "Side-by-side mode" sections
-- **Depends on:** #16 (Document lifecycle — draft status)
-- **Blocks:** #19 (Draft comments)
+- **Depends on:** #25 (Document lifecycle — draft status)
+- **Blocks:** #27 (Draft comments)
 
 ## Why
 
@@ -41,5 +41,5 @@ Before approving, the reviewer (or their supervisor) needs to see what the redac
 
 ## Not in Scope
 
-- Draft comments on the preview (see #19)
+- Draft comments on the preview (see #27)
 - Server-side PDF generation for the preview (impossible under client-first — server doesn't have the PDF)

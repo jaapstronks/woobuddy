@@ -1,10 +1,10 @@
-# 06 — Organizations & Data Scoping
+# 33 — Organizations & Data Scoping
 
 - **Priority:** P0
 - **Size:** L (3–7 days)
 - **Source:** Auth & Billing briefing, "Organizations" + "Revised Data Model" sections
-- **Depends on:** #24 (Authentication)
-- **Blocks:** #26, #27, #28
+- **Depends on:** #32 (Authentication)
+- **Blocks:** #34, #36, #37
 
 ## Why
 

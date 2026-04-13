@@ -1,4 +1,4 @@
-# 32 — Mobile Responsive Polish
+# 24 — Mobile Responsive Polish
 
 - **Priority:** P3
 - **Size:** S (< 1 day)

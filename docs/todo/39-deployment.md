@@ -1,9 +1,9 @@
-# 27 — Deployment Setup
+# 39 — Deployment Setup
 
 - **Priority:** P2
 - **Size:** M (1–3 days)
 - **Source:** Testing & Polish briefing, Section 5
-- **Depends on:** #01 (Testing — CI should exist before CD), #24 (Auth)
+- **Depends on:** #01 (Testing — CI should exist before CD), #32 (Auth)
 - **Blocks:** Nothing
 
 ## Why
@@ -21,7 +21,7 @@ The app needs to be accessible on the internet for real users. Deployment infras
 
 ### LLM inference (key decision)
 
-- [ ] Evaluate: dedicated GPU VPS (Hetzner, ~150/month) running Ollama vs. Anthropic API fallback
+- [ ] Evaluate GPU hosting options for Ollama: dedicated GPU VPS (Hetzner, ~150/month) or customer-operated on-prem/private-cloud GPU box. Hosted third-party LLMs are out of scope — document text must never leave the operator's infrastructure.
 - [ ] Document the decision and cost tradeoffs
 - [ ] Configure the chosen option
 

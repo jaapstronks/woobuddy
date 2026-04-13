@@ -1,4 +1,4 @@
-# 31 — Landing Page Animations
+# 23 — Landing Page Animations
 
 - **Priority:** P3
 - **Size:** S (< 1 day)

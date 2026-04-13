@@ -1,9 +1,9 @@
-# 24 — Redaction Inventory (CSV/XLSX)
+# 31 — Redaction Inventory (CSV/XLSX)
 
 - **Priority:** P3
 - **Size:** S (< 1 day)
 - **Source:** Draft Workflow briefing, "What gets exported" section
-- **Depends on:** #17 (Redaction log — same data, different output format)
+- **Depends on:** #19 (Redaction log — same data, different output format)
 - **Blocks:** Nothing
 
 ## Why

@@ -1,9 +1,9 @@
-# 29 — Analytics (Plausible)
+# 41 — Analytics (Plausible)
 
 - **Priority:** P3
 - **Size:** S (< 1 day)
 - **Source:** Testing & Polish briefing, "Analytics" section
-- **Depends on:** #30 (Deployment — needs a live site)
+- **Depends on:** #39 (Deployment — needs a live site)
 - **Blocks:** Nothing
 
 ## Why

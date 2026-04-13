@@ -1,9 +1,9 @@
-# 21 — Export Versioning & Re-Export
+# 28 — Export Versioning & Re-Export
 
 - **Priority:** P2
 - **Size:** M (1–3 days)
 - **Source:** Draft Workflow briefing, "Re-Export" section
-- **Depends on:** #00 (Client-first architecture — exports are ephemeral), #16 (Document lifecycle)
+- **Depends on:** #00 (Client-first architecture — exports are ephemeral), #25 (Document lifecycle)
 - **Blocks:** Nothing
 
 ## Why

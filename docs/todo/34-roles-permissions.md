@@ -1,9 +1,9 @@
-# 07 — Roles & Permissions
+# 34 — Roles & Permissions
 
 - **Priority:** P1
 - **Size:** M (1–3 days)
 - **Source:** Auth & Billing briefing, "Roles and permissions" section
-- **Depends on:** #25 (Organizations)
+- **Depends on:** #33 (Organizations)
 - **Blocks:** Nothing directly
 
 ## Why

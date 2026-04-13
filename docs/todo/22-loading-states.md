@@ -1,4 +1,4 @@
-# 30 — Loading States & Skeleton Screens
+# 22 — Loading States & Skeleton Screens
 
 - **Priority:** P2
 - **Size:** M (1–3 days)

@@ -5,8 +5,14 @@
 WOO Buddy helps Dutch government employees redact privacy-sensitive information in Woo (Wet open overheid) documents. It uses a three-tier detection model where each tier has different detection methods, confidence levels, and UX patterns.
 
 - **Tier 1** (hard identifiers): Regex + validation. Auto-redacted. Opt-out by reviewer.
-- **Tier 2** (contextual personal data): Deduce NER + role classification. Suggested. One-click confirm/reject.
-- **Tier 3** (content judgments): LLM analysis. Annotated with decision support. Human decides.
+- **Tier 2** (contextual personal data): Deduce NER + wordlists (Meertens voornamen, CBS achternamen) + structure heuristics (e-mailheaders, handtekeningblokken, aanhef) + a rule-based public-official filter. Suggested. One-click confirm/reject.
+- **Tier 3** (content judgments): Reserved. **No LLM in the active pipeline.** Kept as a slot for future rule-based content signals (e.g. beleidsopvatting-verdacht zinnen). See `backend/app/llm/README.md` for the dormant revival path.
+
+### No LLM in the live pipeline
+
+As of April 2026 (see `docs/reference/woo-redactietool-analyse.md` and `docs/todo/done/35-deactivate-llm.md`), WOO Buddy runs without any LLM in the default code path. Detection is regex + Deduce + wordlists + structure heuristics. The Ollama provider in `backend/app/llm/` is kept in-tree but dormant — flip `settings.llm_tier2_enabled`/`llm_tier3_enabled` to revive it for experimentation.
+
+Do not reintroduce LLM calls into the live pipeline without an explicit product decision to the contrary. Rule-based replacements for what the LLM used to do (person-role classification, false-positive filtering) live in todos #12–#17.
 
 ## Branding
 
@@ -21,7 +27,7 @@ WOO Buddy helps Dutch government employees redact privacy-sensitive information 
 This is the foundational architectural principle. Every feature must respect it:
 
 - **Text extraction** happens client-side via pdf.js `getTextContent()`.
-- **NER/LLM analysis** is ephemeral: client sends extracted text → server processes → returns detections → discards text.
+- **NER + rule-based analysis** is ephemeral: client sends extracted text → server processes → returns detections → discards text. No LLM is involved.
 - **The database stores decisions, not content.** Detection records contain bbox coordinates, entity type, tier, article, review status. They do NOT contain `entity_text`.
 - **Export is streaming:** PDF sent to server → PyMuPDF redacts in memory → redacted PDF streamed back → original never written to disk.
 - **Server logs must never contain document text.** No logging request bodies on `/api/analyze` or `/api/export/redact`.
@@ -35,7 +41,7 @@ Monorepo with two applications:
 - `frontend/` — SvelteKit (Svelte 5 with runes), TypeScript strict, Tailwind CSS v4, Shoelace web components, pdf.js
 - `backend/` — FastAPI, Python 3.12, async throughout
 
-Infrastructure: PostgreSQL 16 (metadata only — no document content), Ollama + Gemma 4 (local LLM). No MinIO or persistent file storage for documents.
+Infrastructure: PostgreSQL 16 (metadata only — no document content). No LLM in the live pipeline (dormant Ollama code kept in `backend/app/llm/` for future revival). No MinIO or persistent file storage for documents.
 
 ### Single-document flow (current shape)
 
@@ -66,15 +72,15 @@ There is **no dossier concept, no document list, no cross-document state**. A do
 - **Async everywhere**: use `async def` for all route handlers and services.
 - **Pydantic v2** for request/response validation.
 - **SQLAlchemy v2** async with `asyncpg` driver.
-- The LLM layer is abstracted behind an `LLMProvider` interface in `app/llm/provider.py`. Providers (Ollama, Anthropic) are swappable via `LLM_PROVIDER` env var.
+- **No LLM in the live pipeline.** The LLM layer under `app/llm/` is dormant — kept as a parked revival path behind `settings.llm_tier2_enabled`/`llm_tier3_enabled` flags. See `app/llm/README.md`. Don't import from `app.llm.*` in new code unless you are explicitly working on the revival path; the default detection pipeline must not touch it.
 - **Deduce** (Dutch NER) must be initialized once at startup (in FastAPI lifespan), not per-request (~2s load time).
 - PDF redaction with PyMuPDF is **irreversible** and happens **in-memory only** during ephemeral export. Never write the original PDF to disk.
 
 ## Key design rules
 
-- Tier 3 must NOT show confidence percentages — use qualitative labels instead.
+- Tier 3 is reserved and has no active caller. Do not wire LLM analysis into it without a product decision.
 - Five-year rule (Art. 5.3): warn when a relative ground is applied to documents older than 5 years.
-- Public officials (college B&W, raadsleden, etc.) should NOT be redacted. (The per-dossier reference-list UI was stripped during simplification; reintroduce as part of a future todo.)
+- Public officials (college B&W, raadsleden, etc.) should NOT be redacted. Rule-based detection lives in todos #13 (functietitel + publiek-functionaris rule engine) and #17 (per-document reference list UI).
 
 ## Running locally
 

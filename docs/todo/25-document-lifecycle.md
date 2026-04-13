@@ -1,10 +1,10 @@
-# 16 — Document Lifecycle (Draft / Approve / Reopen)
+# 25 — Document Lifecycle (Draft / Approve / Reopen)
 
 - **Priority:** P1
 - **Size:** M (1–3 days)
 - **Source:** Draft Workflow briefing, "The Draft Workflow" + "Document-level approval" sections
-- **Depends on:** #00 (Client-first architecture), #24 (Auth — approval needs to know who approved)
-- **Blocks:** #18 (Draft preview), #20 (Export versioning), #21 (Concept export)
+- **Depends on:** #00 (Client-first architecture), #32 (Auth — approval needs to know who approved)
+- **Blocks:** #26 (Draft preview), #28 (Export versioning), #29 (Concept export)
 
 ## Why
 
@@ -37,7 +37,7 @@ Under client-first architecture, document lifecycle states are tracked server-si
 - [ ] Confirmation dialog (Dutch): explains the document needs re-approval after changes
 - [ ] Status reverts to "draft"
 - [ ] Audit log: who reopened, when, optional reason field — no content
-- [ ] Invalidates any current export metadata (see #20). Under client-first, there's no stored export to invalidate — just the metadata record.
+- [ ] Invalidates any current export metadata (see #28). Under client-first, there's no stored export to invalidate — just the metadata record.
 
 ### Visual lifecycle indicator
 

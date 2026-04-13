@@ -21,23 +21,13 @@ def get_llm_provider() -> LLMProvider:
     if _provider is not None:
         return _provider
 
-    if settings.llm_provider == "anthropic":
-        from app.llm.anthropic import AnthropicProvider
+    from app.llm.ollama import OllamaProvider
 
-        _provider = AnthropicProvider()
-        logger.info(
-            "llm.provider_selected",
-            provider="anthropic",
-            model=settings.anthropic_model,
-        )
-    else:
-        from app.llm.ollama import OllamaProvider
-
-        _provider = OllamaProvider()
-        logger.info(
-            "llm.provider_selected",
-            provider="ollama",
-            model=settings.ollama_model,
-        )
+    _provider = OllamaProvider()
+    logger.info(
+        "llm.provider_selected",
+        provider="ollama",
+        model=settings.ollama_model,
+    )
 
     return _provider

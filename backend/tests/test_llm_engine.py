@@ -1,9 +1,13 @@
 """Tests for the LLM engine — pipeline orchestration.
 
-Tests run with `use_llm_verification=False` so they don't depend on a
-running Ollama instance. The LLM verification path has its own tests
-in test_llm_verification.py which mock the provider.
+The LLM verification layer is dormant by default (pivot 2026-04, see
+`backend/app/llm/README.md`). These tests pass `use_llm_verification=False`
+explicitly so the assertions are stable regardless of the global flag.
+The LLM verification path itself is exercised in
+test_llm_verification.py with a mocked provider.
 """
+
+import sys
 
 import pytest
 
@@ -188,3 +192,29 @@ class TestRunPipeline:
         tiers = {d.tier for d in result.detections}
         assert "1" in tiers
         assert "2" in tiers
+
+
+# ---------------------------------------------------------------------------
+# Dormant LLM layer — default pipeline must not touch `app.llm.ollama`
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_default_pipeline_does_not_import_ollama_provider():
+    """With `llm_tier2_enabled=False` (the default), the dormant path
+    must not pull in `app.llm.ollama` — the revival-only module that
+    instantiates the HTTP client. If this assertion fails, something in
+    the live pipeline is touching the parked revival code.
+    """
+    # Clear any previously-cached import so the assertion is meaningful.
+    sys.modules.pop("app.llm.ollama", None)
+
+    extraction = _make_extraction(
+        "De heer Jan de Vries, BSN 111222333, heeft een klacht ingediend."
+    )
+    # Deliberately omit `use_llm_verification` so the flag default is used.
+    await run_pipeline(extraction)
+
+    assert "app.llm.ollama" not in sys.modules, (
+        "Dormant default pipeline must not import app.llm.ollama"
+    )

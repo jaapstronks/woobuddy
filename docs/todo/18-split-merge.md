@@ -1,4 +1,4 @@
-# 15 — Split and Merge Detections
+# 18 — Split and Merge Detections
 
 - **Priority:** P3
 - **Size:** M (1–3 days)

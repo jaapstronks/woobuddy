@@ -1,9 +1,9 @@
-# 08 — Member Management & Invitations
+# 36 — Member Management & Invitations
 
 - **Priority:** P2
 - **Size:** M (1–3 days)
 - **Source:** Auth & Billing briefing, "Invitation flow" section
-- **Depends on:** #25 (Organizations), #26 (Roles)
+- **Depends on:** #33 (Organizations), #34 (Roles)
 - **Blocks:** Nothing
 
 ## Why
@@ -28,7 +28,7 @@ Real Woo workflows involve multiple people: the reviewer, a jurist who checks de
 ### Email
 
 - [ ] Invitation email template in Dutch: "[Org name] nodigt je uit voor WOO Buddy"
-- [ ] Requires email service to be configured (see #29, but basic SMTP works for dev)
+- [ ] Requires email service to be configured (see #38, but basic SMTP works for dev)
 
 ## Acceptance Criteria
 

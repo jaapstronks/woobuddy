@@ -1,9 +1,9 @@
-# 25 — Mollie Billing Integration
+# 37 — Mollie Billing Integration
 
 - **Priority:** P2
 - **Size:** XL (1–2 weeks)
 - **Source:** Auth & Billing briefing, "Payments: Mollie" section
-- **Depends on:** #24 (Auth), #25 (Organizations)
+- **Depends on:** #32 (Auth), #33 (Organizations)
 - **Blocks:** Nothing (features work without billing, billing adds limits)
 
 ## Why

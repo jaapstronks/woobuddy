@@ -1,14 +1,16 @@
-# 18 — Redaction Log
+# 19 — Redaction Log & Audit Trail
 
-- **Priority:** P2
+- **Priority:** P1 (promoted from P2 in the 2026-04 pivot)
 - **Size:** L (3–7 days)
-- **Source:** Draft Workflow briefing, "The Redaction Log" section
-- **Depends on:** #00 (Client-first architecture — log cannot contain entity text), #24 (Auth), #25 (Organizations)
+- **Source:** Draft Workflow briefing, "The Redaction Log" section + `docs/reference/woo-redactietool-analyse.md` §"Audit trail"
+- **Depends on:** #00 (Client-first architecture — log cannot contain entity text). Auth (#32) and Organizations (#33) are *not* hard prerequisites: for the single-document prototype the log is per-document and reviewer identity is a text field.
 - **Blocks:** Nothing
+
+> **Pivot note (2026-04):** Promoted to P1 and moved from Phase D to Phase C. The analyse.md identifies the audit trail — *"per gelakte passage motiveren welke uitzonderingsgrond, exporteerbaar naar het Woo-besluit"* — as the single feature most likely to decide a sale. Gemeenten already produce this motivation by hand; automating it saves hours per Woo-verzoek. That makes it more important than the other Phase D/E items and should be tackled right after the core rule-based detection (#36–#39) and the Tier 2 card UX (#34).
 
 ## Why
 
-The review sidebar is optimized for making decisions one at a time. The redaction log is a different tool: a table view for oversight, consistency checking, and bulk revision. Think code editor vs pull request review — different activity, different UI. Supervisors and jurists need the log view to efficiently check all decisions across a dossier.
+The review sidebar is optimized for making decisions one at a time. The redaction log is a different tool: a table view for oversight, consistency checking, bulk revision, **and export to the Woo-besluit as a structured motivation**. Think code editor vs pull request review — different activity, different UI. Supervisors and jurists need the log view to efficiently check all decisions across a dossier; the Woo-coordinator needs the export to stop copy-pasting article references into a Word document by hand.
 
 **Client-first impact:** The log cannot show the actual redacted text (entity_text) since the server doesn't store it. Instead, the log shows entity type, tier, article, page, position, reviewer, and status. To see the actual text, the user clicks "Bekijk in document" which opens the PDF (from their browser) at the right page. This is a deliberate tradeoff: less context in the log table, but zero sensitive text on the server.
 
@@ -70,5 +72,5 @@ The review sidebar is optimized for making decisions one at a time. The redactio
 ## Not in Scope
 
 - Storing entity text server-side to populate the Passage column (violates client-first architecture)
-- Export the log itself as a spreadsheet (see #23 for redaction inventory)
+- Export the log itself as a spreadsheet (see #31 for redaction inventory)
 - Real-time updates (log refreshes on navigation, not live)
