@@ -9,14 +9,15 @@ structured logger below only receives metadata (document id, detection
 counts, page counts) — never the extracted text itself.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.documents import get_document_or_404
 from app.api.schemas import AnalyzeRequest, AnalyzeResponse
 from app.db.session import get_db
 from app.logging_config import get_logger
-from app.models.schemas import Detection, Document
+from app.models.schemas import Detection
 from app.security import limiter, verify_proxy_secret
 from app.services.llm_engine import run_pipeline
 from app.services.pdf_engine import extraction_from_client_data
@@ -34,6 +35,7 @@ router = APIRouter(tags=["analyze"])
 @limiter.limit("30/minute")
 async def analyze_document(
     request: Request,
+    response: Response,
     data: AnalyzeRequest,
     db: AsyncSession = Depends(get_db),
 ) -> AnalyzeResponse:
@@ -43,12 +45,21 @@ async def analyze_document(
     or to server logs. Only detection metadata (bbox, type, tier, article)
     is persisted.
     """
-    result = await db.execute(select(Document).where(Document.id == data.document_id))
-    doc = result.scalar_one_or_none()
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document niet gevonden")
+    doc = await get_document_or_404(data.document_id, db)
 
-    if doc.status not in ("uploaded", "review"):
+    # `processing` is intentionally allowed as a re-entry point: an analyzer
+    # run that was killed mid-flight (container restart, SIGKILL, hard timeout)
+    # leaves the document stuck in `processing` forever because the revert-
+    # to-`uploaded` happens in the Python `except` block. Refusing to retry
+    # in that case traps the user with no recovery path short of a DB poke.
+    # We accept the race risk of two concurrent analyzers on the same
+    # document — the second commit overwrites the first's detections, which
+    # is the same outcome as a sequential re-run.
+    #
+    # `approved` and `exported` are still blocked: re-analyzing a document
+    # that has already been finalized would silently discard reviewed
+    # decisions, which is not recoverable without an undo.
+    if doc.status in ("approved", "exported"):
         raise HTTPException(
             status_code=400,
             detail=f"Document heeft status '{doc.status}', analyse niet mogelijk",

@@ -10,7 +10,7 @@
 		currentTier: DetectionTier | null;
 		currentStatus: ReviewStatus | null;
 		currentEntityType: EntityType | null;
-		onFilterChange: (key: 'tier' | 'status' | 'entityType' | 'page', value: unknown) => void;
+		onFilterChange: (key: 'tier' | 'status' | 'entityType', value: unknown) => void;
 		onClear: () => void;
 	}
 

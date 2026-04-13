@@ -6,6 +6,8 @@
 import { getDocument } from '$lib/api/client';
 import type { Document } from '$lib/types';
 
+export type ReviewMode = 'review' | 'edit';
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -15,6 +17,7 @@ let currentPage = $state(0);
 let totalPages = $state(0);
 let pdfScale = $state(1.0);
 let sidebarOpen = $state(true);
+let mode = $state<ReviewMode>('review');
 let loading = $state(false);
 let error = $state<string | null>(null);
 
@@ -42,14 +45,6 @@ function setPage(page: number) {
 	}
 }
 
-function nextPage() {
-	setPage(currentPage + 1);
-}
-
-function prevPage() {
-	if (currentPage > 0) setPage(currentPage - 1);
-}
-
 function setScale(scale: number) {
 	pdfScale = Math.max(0.25, Math.min(4.0, scale));
 }
@@ -64,6 +59,14 @@ function zoomOut() {
 
 function toggleSidebar() {
 	sidebarOpen = !sidebarOpen;
+}
+
+function setMode(next: ReviewMode) {
+	mode = next;
+}
+
+function toggleMode() {
+	mode = mode === 'review' ? 'edit' : 'review';
 }
 
 // ---------------------------------------------------------------------------
@@ -86,6 +89,9 @@ export const reviewStore = {
 	get sidebarOpen() {
 		return sidebarOpen;
 	},
+	get mode() {
+		return mode;
+	},
 	get loading() {
 		return loading;
 	},
@@ -94,10 +100,9 @@ export const reviewStore = {
 	},
 	loadDocument,
 	setPage,
-	nextPage,
-	prevPage,
-	setScale,
 	zoomIn,
 	zoomOut,
-	toggleSidebar
+	toggleSidebar,
+	setMode,
+	toggleMode
 };

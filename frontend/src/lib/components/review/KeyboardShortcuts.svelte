@@ -10,17 +10,61 @@
 		onDefer: () => void;
 		onNext: () => void;
 		onPrev: () => void;
-		onToggleHelp: () => void;
+		onToggleMode?: () => void;
+		onUndo?: () => void;
+		onRedo?: () => void;
 	}
 
-	let { onAccept, onReject, onDefer, onNext, onPrev, onToggleHelp }: Props = $props();
+	let { onAccept, onReject, onDefer, onNext, onPrev, onToggleMode, onUndo, onRedo }: Props = $props();
 
 	let showHelp = $state(false);
 
+	/**
+	 * Returns true if a keydown originates from an element where the user is
+	 * actively typing and shortcuts must be suppressed. The manual redaction
+	 * form uses Shoelace inputs whose shadow roots expose host tag names like
+	 * `SL-INPUT` / `SL-TEXTAREA` / `SL-SELECT`, which `closest()` picks up
+	 * whether the event target is the host or an internal slot.
+	 */
+	function isTypingTarget(e: KeyboardEvent): boolean {
+		const el = e.target as HTMLElement | null;
+		if (!el) return false;
+		const tag = el.tagName;
+		if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+		if (el.isContentEditable) return true;
+		if (typeof el.closest === 'function' && el.closest('sl-input, sl-textarea, sl-select')) {
+			return true;
+		}
+		return false;
+	}
+
 	function handleKeydown(e: KeyboardEvent) {
-		// Skip when typing in an input/textarea/select
-		const tag = (e.target as HTMLElement)?.tagName;
-		if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+		// Undo/redo are allowed to fire even while typing is otherwise
+		// suppressed for letter keys, because they're modifier-driven and
+		// users expect Ctrl+Z to work everywhere. But we still don't want
+		// them to fight the browser's native undo inside a text field —
+		// so bail out of undo/redo too when focus is in an input.
+		const typing = isTypingTarget(e);
+
+		// Ctrl/Cmd + Z / Shift+Z / Y → undo/redo.
+		if ((e.metaKey || e.ctrlKey) && !e.altKey) {
+			const k = e.key.toLowerCase();
+			if (k === 'z') {
+				if (typing) return;
+				e.preventDefault();
+				if (e.shiftKey) onRedo?.();
+				else onUndo?.();
+				return;
+			}
+			if (k === 'y' && !e.shiftKey) {
+				if (typing) return;
+				e.preventDefault();
+				onRedo?.();
+				return;
+			}
+		}
+
+		if (typing) return;
 
 		switch (e.key.toLowerCase()) {
 			case 'a':
@@ -35,6 +79,11 @@
 				e.preventDefault();
 				onDefer();
 				break;
+			case 'm':
+				if (e.metaKey || e.ctrlKey || e.altKey) return;
+				e.preventDefault();
+				onToggleMode?.();
+				break;
 			case 'arrowright':
 				e.preventDefault();
 				onNext();
@@ -46,7 +95,6 @@
 			case '?':
 				e.preventDefault();
 				showHelp = !showHelp;
-				onToggleHelp();
 				break;
 		}
 	}
@@ -82,6 +130,18 @@
 		<div class="flex justify-between">
 			<span>Vorige detectie</span>
 			<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">&larr;</kbd>
+		</div>
+		<div class="flex justify-between">
+			<span>Wissel modus (Beoordelen/Bewerken)</span>
+			<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">M</kbd>
+		</div>
+		<div class="flex justify-between">
+			<span>Ongedaan maken</span>
+			<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">Ctrl/Cmd + Z</kbd>
+		</div>
+		<div class="flex justify-between">
+			<span>Opnieuw</span>
+			<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">Ctrl/Cmd + Shift + Z</kbd>
 		</div>
 		<div class="flex justify-between">
 			<span>Dit venster</span>

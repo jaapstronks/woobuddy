@@ -89,6 +89,15 @@ cd backend && source .venv/bin/activate && uvicorn app.main:app --reload
 docker compose up postgres
 ```
 
+### Backend ports (important)
+
+Two supported workflows, two different host ports:
+
+- **Bare-metal uvicorn** (`uvicorn app.main:app --reload`) → `http://localhost:8000`
+- **Docker Compose** (`docker compose up api`) → `http://localhost:8100` (the compose file names the backend service `api`, not `backend`, and maps host `8100` → container `8000`; see `docker-compose.yml`). To rebuild after editing backend code: `docker compose up -d --build api`.
+
+`frontend/.env` sets `PUBLIC_API_URL` to whichever port matches your workflow. Both ports are allowed in the frontend CSP (`connect-src` in `svelte.config.js`) so either setup works without edits. If you change the mapping, update that list — a CSP-blocked `fetch()` surfaces to the user as a generic offline error and is easy to misdiagnose.
+
 ## Commands
 
 - **Frontend type check**: `cd frontend && npm run check`

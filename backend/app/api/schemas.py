@@ -47,6 +47,25 @@ class BoundingBoxResponse(BaseModel):
     y1: float
 
 
+class ManualDetectionCreate(BaseModel):
+    """Payload to create a reviewer-authored ("manual") detection.
+
+    Client-first: the `entity_text` of the selection stays in the browser —
+    only position metadata, tier, article and entity type are persisted.
+    """
+
+    document_id: uuid.UUID
+    entity_type: str
+    tier: Literal["1", "2", "3"] = "2"
+    woo_article: str | None = None
+    bounding_boxes: list[BoundingBoxResponse]
+    motivation_text: str | None = None
+    # #09 — search-and-redact tags its bulk-created detections with a
+    # distinct source so audit logs can distinguish them from single
+    # text-selection redactions. Everything else still defaults to "manual".
+    source: Literal["manual", "search_redact"] = "manual"
+
+
 class DetectionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -54,7 +54,11 @@ export type EntityType =
 	| 'kenteken'
 	| 'creditcard'
 	| 'paspoort'
-	| 'rijbewijs';
+	| 'rijbewijs'
+	// Reviewer-drawn area redaction (#07). Has no selectable text — the
+	// rectangle comes from a Shift+drag on the PDF stage, used for signatures,
+	// stamps, photos, or scanned fragments inside an otherwise digital PDF.
+	| 'area';
 
 // ---------------------------------------------------------------------------
 // Detection confidence

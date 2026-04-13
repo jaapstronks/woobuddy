@@ -69,11 +69,11 @@ This phase turns the viewer into an actual editing tool. **Everything here must 
 
 | # | Todo | Priority | Size | Source |
 |---|------|----------|------|--------|
-| 5 | [Review/Edit mode toggle](05-mode-toggle.md) | P1 | M | Editing |
-| 6 | [Manual text selection redaction](06-manual-text-redaction.md) | P1 | L | Editing |
-| 7 | [Area selection redaction](07-area-selection.md) | P1 | M | Editing |
-| 8 | [Undo/redo](08-undo-redo.md) | P1 | M | Editing |
-| 9 | [Search-and-redact](09-search-and-redact.md) | P1 | L | Editing |
+| 5 | ~~[Review/Edit mode toggle](done/05-mode-toggle.md)~~ | P1 | M | Editing |
+| 6 | ~~[Manual text selection redaction](done/06-manual-text-redaction.md)~~ | P1 | L | Editing |
+| 7 | ~~[Area selection redaction](done/07-area-selection.md)~~ | P1 | M | Editing |
+| 8 | ~~[Undo/redo](done/08-undo-redo.md)~~ | P1 | M | Editing |
+| 9 | ~~[Search-and-redact](done/09-search-and-redact.md)~~ | P1 | L | Editing |
 | 10 | [Page completeness review](10-page-completeness.md) | P1 | M | Editing |
 | 11 | [Boundary adjustment](11-boundary-adjustment.md) | P2 | L | Editing |
 | 12 | [Split and merge detections](12-split-merge.md) | P3 | M | Editing |

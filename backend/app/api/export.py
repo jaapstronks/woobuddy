@@ -12,9 +12,10 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.documents import get_document_or_404
 from app.db.session import get_db
 from app.logging_config import get_logger
-from app.models.schemas import Detection, Document
+from app.models.schemas import Detection
 from app.security import limiter, verify_proxy_secret
 from app.services.pdf_engine import PdfValidationError, apply_redactions
 
@@ -67,10 +68,7 @@ async def redact_stream(
 
     SECURITY: Request body must NOT be logged.
     """
-    result = await db.execute(select(Document).where(Document.id == document_id))
-    doc = result.scalar_one_or_none()
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document niet gevonden")
+    doc = await get_document_or_404(document_id, db)
 
     pdf_bytes = await request.body()
     if len(pdf_bytes) == 0:

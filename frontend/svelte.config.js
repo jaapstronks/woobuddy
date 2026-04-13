@@ -22,7 +22,42 @@ const config = {
 		}
 	},
 	kit: {
-		adapter: adapter()
+		adapter: adapter(),
+		// Content-Security-Policy for the SvelteKit HTML shell. Configured here
+		// (rather than as a raw response header in hooks.server.ts) so that
+		// SvelteKit can automatically hash/nonce its own inline hydration
+		// scripts — otherwise a strict `script-src 'self'` breaks the app in
+		// production as well as the Vite-injected scripts in dev. Note that
+		// `kit.csp` only applies to production builds; dev relies on Vite's
+		// own unrestricted script injection.
+		csp: {
+			mode: 'auto',
+			directives: {
+				'default-src': ['self'],
+				'script-src': ['self', 'https://cdn.jsdelivr.net'],
+				'style-src': ['self', 'unsafe-inline', 'https://fonts.googleapis.com', 'https://cdn.jsdelivr.net'],
+				'font-src': ['self', 'https://fonts.gstatic.com', 'https://cdn.jsdelivr.net', 'data:'],
+				'img-src': ['self', 'data:', 'blob:'],
+				// Backend runs in Docker with host port 8100 mapped to the
+				// container's 8000 (see docker-compose.yml). Local-only
+				// uvicorn runs default to 8000. Allow both so either workflow
+				// connects without a CSP violation. `data:` is required
+				// because Shoelace's icon loader uses `fetch()` to hydrate
+				// its bundled SVGs, even when they're inlined as data URIs
+				// (e.g. <sl-checkbox> check mark).
+				'connect-src': [
+					'self',
+					'data:',
+					'http://localhost:8000',
+					'http://localhost:8100',
+					'https://cdn.jsdelivr.net'
+				],
+				'worker-src': ['self', 'blob:'],
+				'frame-ancestors': ['none'],
+				'base-uri': ['self'],
+				'form-action': ['self']
+			}
+		}
 	}
 };
 

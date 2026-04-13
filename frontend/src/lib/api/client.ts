@@ -3,7 +3,11 @@ import type {
 	Document,
 	Detection,
 	UpdateDetectionRequest,
-	PageExtraction
+	PageExtraction,
+	BoundingBox,
+	EntityType,
+	DetectionTier,
+	WooArticleCode
 } from '$lib/types';
 
 const BASE = PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -54,6 +58,8 @@ async function requestOnce<T>(path: string, options?: RequestInit): Promise<T> {
 		const kind = res.status >= 500 ? 'server' : 'client';
 		throw new ApiError(body || `API ${res.status}`, kind, res.status);
 	}
+	// 204 No Content: no body to parse. Caller receives `undefined as T`.
+	if (res.status === 204) return undefined as T;
 	return res.json();
 }
 
@@ -130,4 +136,44 @@ export async function updateDetection(id: string, data: UpdateDetectionRequest):
 		method: 'PATCH',
 		body: JSON.stringify(data)
 	});
+}
+
+export interface CreateManualDetectionRequest {
+	document_id: string;
+	entity_type: EntityType;
+	tier: DetectionTier;
+	woo_article?: WooArticleCode;
+	bounding_boxes: BoundingBox[];
+	motivation_text?: string;
+	/**
+	 * "manual" for single text/area selections (#06/#07), "search_redact"
+	 * for bulk-applied search hits (#09). The backend tags the row so audit
+	 * logs can distinguish the two flows. Defaults to "manual" server-side.
+	 */
+	source?: 'manual' | 'search_redact';
+}
+
+/**
+ * Create a reviewer-authored ("manual") detection.
+ *
+ * Client-first: only bounding boxes and metadata are sent. The selected
+ * text itself stays in the browser — the server persists no `entity_text`.
+ */
+export async function createManualDetection(
+	data: CreateManualDetectionRequest
+): Promise<Detection> {
+	return request('/api/detections', {
+		method: 'POST',
+		body: JSON.stringify(data)
+	});
+}
+
+/**
+ * Delete a reviewer-authored detection (used by the undo stack).
+ *
+ * The server rejects this for non-manual detections — undoing an auto
+ * detection flips its `review_status` back via PATCH instead.
+ */
+export async function deleteDetection(id: string): Promise<void> {
+	await request<void>(`/api/detections/${id}`, { method: 'DELETE' });
 }

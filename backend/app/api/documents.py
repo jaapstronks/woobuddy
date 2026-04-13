@@ -27,9 +27,14 @@ def _sanitize_filename(filename: str) -> str:
     return name or "document.pdf"
 
 
-async def _get_document_or_404(
+async def get_document_or_404(
     document_id: uuid.UUID, db: AsyncSession
 ) -> Document:
+    """Fetch a Document by id or raise 404.
+
+    Shared across the api layer — the raw select + HTTPException dance
+    was duplicated in every route module before.
+    """
     result = await db.execute(select(Document).where(Document.id == document_id))
     doc = result.scalar_one_or_none()
     if not doc:
@@ -89,5 +94,5 @@ async def register_document(
 async def get_document(
     document_id: uuid.UUID, db: AsyncSession = Depends(get_db)
 ) -> DocumentResponse:
-    doc = await _get_document_or_404(document_id, db)
+    doc = await get_document_or_404(document_id, db)
     return _doc_to_response(doc)
