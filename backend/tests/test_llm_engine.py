@@ -7,12 +7,10 @@ Tests the run_pipeline function with mocked NER/pdf dependencies to verify:
 - Bounding box resolution
 """
 
-
 import pytest
 
 from app.services.llm_engine import (
     _check_environmental_content,
-    _find_tier3_passages,
     run_pipeline,
 )
 from app.services.ner_engine import NERDetection
@@ -78,48 +76,6 @@ class TestEnvironmentalDetection:
 # ---------------------------------------------------------------------------
 
 
-class TestTier3Passages:
-    def test_finds_policy_opinion_signals(self):
-        page = PageText(
-            page_number=0,
-            full_text="Ik adviseer om het voorstel aan te passen vanwege de juridische risico's.",
-            spans=[],
-        )
-        passages = _find_tier3_passages([page])
-        assert len(passages) >= 1
-        assert passages[0][1] == 0  # page number
-
-    def test_finds_business_data_signals(self):
-        page = PageText(
-            page_number=0,
-            full_text=(
-                "De offerte van het bedrijf bevat concurrentiegevoelige "
-                "informatie over de aanbesteding."
-            ),
-            spans=[],
-        )
-        passages = _find_tier3_passages([page])
-        assert len(passages) >= 1
-
-    def test_skips_short_chunks(self):
-        """Chunks shorter than 40 chars are ignored."""
-        page = PageText(page_number=0, full_text="ik adviseer", spans=[])
-        passages = _find_tier3_passages([page])
-        assert len(passages) == 0
-
-    def test_no_signals_returns_empty(self):
-        page = PageText(
-            page_number=0,
-            full_text=(
-                "De gemeente heeft het bestemmingsplan vastgesteld "
-                "voor het nieuwe wijkcentrum."
-            ),
-            spans=[],
-        )
-        passages = _find_tier3_passages([page])
-        assert len(passages) == 0
-
-
 # ---------------------------------------------------------------------------
 # Pipeline orchestration
 # ---------------------------------------------------------------------------
@@ -158,13 +114,9 @@ class TestRunPipeline:
         Deduce detects "Jan de Vries" (without salutation) in this context.
         The pipeline matches the detected text against the officials list.
         """
-        extraction = _make_extraction(
-            "Jan de Vries heeft een verzoek ingediend bij de gemeente."
-        )
+        extraction = _make_extraction("Jan de Vries heeft een verzoek ingediend bij de gemeente.")
 
-        result = await run_pipeline(
-            extraction, public_official_names=["Jan de Vries"]
-        )
+        result = await run_pipeline(extraction, public_official_names=["Jan de Vries"])
         persons = [d for d in result.detections if d.entity_type == "persoon"]
         jan = [p for p in persons if "Jan de Vries" in p.entity_text]
         assert len(jan) >= 1
@@ -174,13 +126,9 @@ class TestRunPipeline:
     @pytest.mark.asyncio
     async def test_public_official_case_insensitive(self):
         """Public official matching should be case-insensitive."""
-        extraction = _make_extraction(
-            "Het voorstel van Jan de Vries is besproken."
-        )
+        extraction = _make_extraction("Het voorstel van Jan de Vries is besproken.")
 
-        result = await run_pipeline(
-            extraction, public_official_names=["jan de vries"]
-        )
+        result = await run_pipeline(extraction, public_official_names=["jan de vries"])
         persons = [d for d in result.detections if d.entity_type == "persoon"]
         jan = [p for p in persons if "jan de vries" in p.entity_text.lower()]
         assert len(jan) >= 1

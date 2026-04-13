@@ -28,14 +28,20 @@ ROLE_CLASSIFICATION_TOOLS = [
         "type": "function",
         "function": {
             "name": "classify_person_role",
-            "description": "Classify whether a detected person should be redacted under the Dutch Woo",
+            "description": (
+                "Classify whether a detected person should be redacted under the Dutch Woo"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "role": {
                         "type": "string",
                         "enum": ["citizen", "civil_servant", "public_official"],
-                        "description": "The role of the person: citizen (private person), civil_servant (government employee not acting publicly), public_official (acting in official public capacity)",
+                        "description": (
+                            "The role of the person: citizen (private person), "
+                            "civil_servant (government employee not acting publicly), "
+                            "public_official (acting in official public capacity)"
+                        ),
                     },
                     "should_redact": {
                         "type": "boolean",
@@ -114,11 +120,16 @@ CONTENT_ANALYSIS_TOOLS = [
                                 },
                                 "label_nl": {
                                     "type": "string",
-                                    "description": "Qualitative label in Dutch, e.g. 'Mogelijk persoonlijke beleidsopvatting'",
+                                    "description": (
+                                        "Qualitative label in Dutch, e.g. "
+                                        "'Mogelijk persoonlijke beleidsopvatting'"
+                                    ),
                                 },
                                 "analysis_nl": {
                                     "type": "string",
-                                    "description": "Analysis in Dutch explaining why this passage was flagged",
+                                    "description": (
+                                        "Analysis in Dutch explaining why this passage was flagged"
+                                    ),
                                 },
                                 "likelihood": {
                                     "type": "string",
@@ -131,14 +142,22 @@ CONTENT_ANALYSIS_TOOLS = [
                     },
                     "sentence_classifications": {
                         "type": "array",
-                        "description": "Per-sentence fact-vs-opinion for art. 5.2 (only when relevant)",
+                        "description": (
+                            "Per-sentence fact-vs-opinion for art. 5.2 (only when relevant)"
+                        ),
                         "items": {
                             "type": "object",
                             "properties": {
                                 "sentence": {"type": "string"},
                                 "classification": {
                                     "type": "string",
-                                    "enum": ["fact", "opinion", "prognosis", "policy_alternative", "mixed"],
+                                    "enum": [
+                                        "fact",
+                                        "opinion",
+                                        "prognosis",
+                                        "policy_alternative",
+                                        "mixed",
+                                    ],
                                 },
                                 "explanation_nl": {"type": "string"},
                             },

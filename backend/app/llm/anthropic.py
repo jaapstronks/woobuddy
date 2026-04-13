@@ -26,11 +26,13 @@ def _ollama_tools_to_anthropic(tools: list[dict]) -> list[dict]:
     result = []
     for tool in tools:
         fn = tool.get("function", {})
-        result.append({
-            "name": fn["name"],
-            "description": fn.get("description", ""),
-            "input_schema": fn.get("parameters", {}),
-        })
+        result.append(
+            {
+                "name": fn["name"],
+                "description": fn.get("description", ""),
+                "input_schema": fn.get("parameters", {}),
+            }
+        )
     return result
 
 
@@ -103,7 +105,9 @@ class AnthropicProvider(LLMProvider):
                 role="citizen",
                 should_redact=True,
                 confidence=0.5,
-                reason_nl="Automatische classificatie niet mogelijk — standaard als burger behandeld.",
+                reason_nl=(
+                    "Automatische classificatie niet mogelijk — standaard als burger behandeld."
+                ),
             )
 
         return RoleClassification(

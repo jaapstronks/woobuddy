@@ -105,7 +105,9 @@ class OllamaProvider(LLMProvider):
                 role="citizen",
                 should_redact=True,
                 confidence=0.5,
-                reason_nl="Automatische classificatie niet mogelijk — standaard als burger behandeld.",
+                reason_nl=(
+                    "Automatische classificatie niet mogelijk — standaard als burger behandeld."
+                ),
             )
 
         return RoleClassification(

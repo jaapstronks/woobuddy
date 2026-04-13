@@ -17,6 +17,13 @@ jobs:
       run:
         working-directory: frontend
 
+    # PUBLIC_API_URL is imported via `$env/static/public`, which requires
+    # the variable to be present at build/check time. Real values come
+    # from `frontend/.env` locally (git-ignored); in CI we pass a
+    # placeholder so svelte-check can resolve the import.
+    env:
+      PUBLIC_API_URL: http://localhost:8000
+
     steps:
       - uses: actions/checkout@v4
 
