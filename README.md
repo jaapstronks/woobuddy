@@ -2,58 +2,128 @@
 
 **Jouw slimme assistent voor het lakken van Woo-documenten.**
 
-WOO Buddy is an open-source, self-hostable web application that helps Dutch government employees process Woo (Wet open overheid) requests. It detects privacy-sensitive information in PDF documents and guides a human reviewer through the redaction process.
+WOO Buddy is een open-source, self-hostable webapplicatie die Nederlandse overheidsmedewerkers helpt bij het afhandelen van Woo-verzoeken (Wet open overheid). De tool detecteert privacygevoelige informatie in PDF-documenten en begeleidt een menselijke beoordelaar door het lakproces.
 
-## How it works
+## Hoe het werkt
 
-WOO Buddy uses a **three-tier detection model** ("drietrapsraket"):
+WOO Buddy gebruikt een **drietrapsraket** voor detectie:
 
-| Tier | What | Detection | Default state |
-|------|------|-----------|---------------|
-| **1** | Hard identifiers (BSN, IBAN, phone, email) | Regex + validation | Auto-redacted |
-| **2** | Contextual personal data (names, addresses) | NER + role classification | Suggested |
-| **3** | Content-level judgments (policy opinions, business data) | LLM analysis | Annotated |
+| Tier | Wat | Detectie | Standaardgedrag |
+|------|-----|----------|-----------------|
+| **1** | Harde identifiers (BSN, IBAN, telefoon, e-mail) | Regex + validatie | Automatisch gelakt |
+| **2** | Contextuele persoonsgegevens (namen, adressen) | NER + rolclassificatie | Gesuggereerd |
+| **3** | Inhoudelijke oordelen (beleidsopvattingen, bedrijfsgegevens) | LLM-analyse | Geannoteerd |
 
-Each tier gets a different UX pattern — from auto-redaction (Tier 1) to full decision support (Tier 3).
+Elke tier krijgt een eigen UX — van automatische lakking (Tier 1) tot volledige beslissingsondersteuning (Tier 3).
 
-## Tech stack
+### Client-first architectuur
 
-- **Frontend**: SvelteKit (Svelte 5), Tailwind CSS v4, Shoelace, pdf.js
-- **Backend**: FastAPI, PyMuPDF, Deduce (Dutch NER), SQLAlchemy v2
-- **LLM**: Gemma 4 via Ollama (local, no data leaves the machine) — Anthropic API as fallback
-- **Infrastructure**: PostgreSQL 16, MinIO (S3-compatible PDF storage), Docker Compose
+PDF's verlaten nooit de browser van de gebruiker. De server slaat geen documentinhoud op: tekstextractie gebeurt client-side, analyse is vluchtig, en alleen beslissingen (bbox-coördinaten, entiteitstype, tier, artikel) worden in de database bewaard. Zie `docs/todo/00-client-first-architecture.md` voor de volledige specificatie.
 
-## Prerequisites
+## Techstack
 
-- [Docker](https://docs.docker.com/get-docker/) and Docker Compose
-- [Ollama](https://ollama.com/) with `gemma4:26b` pulled (for LLM features)
-- Node.js 22+ (for local frontend development)
-- Python 3.12+ (for local backend development)
+- **Frontend**: SvelteKit (Svelte 5 runes), Tailwind CSS v4, Shoelace, pdf.js
+- **Backend**: FastAPI, PyMuPDF, Deduce (Nederlandse NER), SQLAlchemy v2
+- **LLM**: Gemma 4 via Ollama (lokaal, geen data verlaat de machine) — Anthropic API als alternatief
+- **Infrastructuur**: PostgreSQL 16, Docker Compose
 
-## Quick start
+---
+
+## Aan de slag op een Mac (met VS Code)
+
+Deze handleiding gaat ervan uit dat je op een MacBook werkt, VS Code gebruikt en nog geen Docker hebt geïnstalleerd. Plan een rustig uurtje in — er zitten een paar downloads tussen, maar moeilijk is het niet. Als je ergens vastloopt: screenshot van de terminal + browser console en vraag het team om mee te kijken.
+
+### 1. Installeer de basics
+
+Open Terminal (⌘+spatie → "Terminal"). Installeer eerst [Homebrew](https://brew.sh) als je dat nog niet hebt:
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/jaapstronks/woobuddy.git
-cd woobuddy
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
 
-# 2. Copy environment variables
+Daarna in één keer Docker Desktop, Node en Git:
+
+```bash
+brew install --cask docker
+brew install node git
+```
+
+Start **Docker Desktop** één keer vanuit je Programma's-map zodat het op de achtergrond draait (je ziet een walvis-icoontje in je menubalk). Zonder draaiende Docker werkt de rest niet.
+
+### 2. Accepteer de GitHub-uitnodiging
+
+Check je mail, klik op "View invitation" en accepteer. Daarna heb je toegang tot de repo.
+
+### 3. Kloon het project via VS Code
+
+1. Open VS Code.
+2. ⌘+Shift+P → typ `Git: Clone` → Enter.
+3. Plak: `https://github.com/jaapstronks/woobuddy.git`
+4. Kies een map (bv. `~/Github`) en open het project als VS Code daarom vraagt.
+5. Installeer eventueel de aanbevolen extensies die VS Code suggereert (Svelte, Python, Ruff).
+
+### 4. Maak het `.env`-bestand aan
+
+Open de ingebouwde terminal in VS Code (⌃+`) en draai:
+
+```bash
 cp .env.example .env
+```
 
-# 3. Pull the LLM model (first time only, ~18GB)
+### 5. Kies je LLM-route
+
+Tier 3 (de inhoudelijke content-analyse) heeft een taalmodel nodig. Je hebt twee opties:
+
+**Optie A — Lokaal met Ollama (privacyvriendelijk, maar ±18 GB download):**
+
+```bash
+brew install ollama
+ollama serve &
 ollama pull gemma4:26b
+```
 
-# 4. Start all services
+**Optie B — Cloud via Anthropic (sneller van start, geen grote download):**
+
+Open `.env` in VS Code en pas aan:
+
+```
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Voor een eerste rondrit is **Optie B** het snelst — dan draai je binnen tien minuten. Ollama kun je er later altijd nog bij zetten.
+
+### 6. Start alles op
+
+In de VS Code terminal:
+
+```bash
 docker compose up
 ```
 
-The application will be available at:
-- Frontend: http://localhost:3000
-- API: http://localhost:8000
-- API docs: http://localhost:8000/docs
-- MinIO console: http://localhost:9001
+De eerste keer duurt dit een paar minuten (Docker bouwt de frontend- en backend-images). Als je onderin `frontend-1  | Listening on http://0.0.0.0:3000` ziet, is het klaar.
 
-## Local development
+Open in je browser: **http://localhost:3000**
+
+Upload een PDF op `/try` en je komt vanzelf in het reviewscherm terecht.
+
+### 7. Stoppen en opnieuw starten
+
+- Stoppen: `Ctrl+C` in de terminal waar docker draait, of `docker compose down`
+- Opnieuw starten: `docker compose up`
+- Na code-wijzigingen van een collega: `git pull` en dan `docker compose up --build`
+
+### Handig om te weten
+
+- **Alles draait lokaal.** PDF's worden bewust nooit op de server opgeslagen — dat is een kernprincipe. Sluit je een tab, dan is je document weg.
+- **De UI is in het Nederlands**, code en commits zijn in het Engels.
+- **Frontend draait op** <http://localhost:3000>, **API op** <http://localhost:8100> (API-docs: <http://localhost:8100/docs>).
+
+---
+
+## Lokale development zonder Docker
+
+Voor snellere iteratie kun je frontend en backend ook bare-metal draaien. Let op: je hebt dan nog steeds een draaiende Postgres nodig (`docker compose up postgres` is de makkelijkste manier).
 
 ### Frontend
 
@@ -73,29 +143,39 @@ pip install -e ".[dev]"
 uvicorn app.main:app --reload
 ```
 
-## Project structure
+> **Let op de poorten:** bare-metal uvicorn draait op `http://localhost:8000`, Docker Compose op `http://localhost:8100`. Zorg dat `PUBLIC_API_URL` in `frontend/.env` overeenkomt met je setup. Beide poorten staan toegestaan in de frontend-CSP.
+
+### Commando's
+
+- **Frontend typecheck**: `cd frontend && npm run check`
+- **Backend lint**: `cd backend && source .venv/bin/activate && ruff check app/`
+- **Backend format**: `cd backend && source .venv/bin/activate && ruff format app/`
+- **Backend typecheck**: `cd backend && source .venv/bin/activate && mypy app/`
+- **Backend tests**: `cd backend && source .venv/bin/activate && pytest`
+
+## Projectstructuur
 
 ```
 woobuddy/
-├── docker-compose.yml       # All services: frontend, api, postgres, minio
-├── frontend/                # SvelteKit application
+├── docker-compose.yml       # Services: frontend, api, postgres
+├── frontend/                # SvelteKit applicatie
 │   ├── src/
-│   │   ├── lib/components/  # Svelte components (landing, review, dossier, etc.)
-│   │   ├── lib/stores/      # Svelte 5 runes-based state
-│   │   ├── lib/api/         # Typed API client
-│   │   └── routes/          # SvelteKit pages
+│   │   ├── lib/components/  # Svelte-componenten (landing, review, shared, ui)
+│   │   ├── lib/stores/      # Svelte 5 runes-state
+│   │   ├── lib/api/         # Getypte API-client
+│   │   └── routes/          # SvelteKit-pagina's
 │   └── ...
-├── backend/                 # FastAPI application
+├── backend/                 # FastAPI applicatie
 │   ├── app/
 │   │   ├── api/             # Route handlers
-│   │   ├── services/        # Business logic (PDF, NER, LLM engines)
-│   │   ├── llm/             # LLM provider abstraction
-│   │   ├── models/          # SQLAlchemy models + Pydantic schemas
-│   │   └── db/              # Database session + migrations
+│   │   ├── services/        # PDF-, NER- en LLM-engines
+│   │   ├── llm/             # LLM-provider abstractie
+│   │   ├── models/          # SQLAlchemy-modellen + Pydantic-schemas
+│   │   └── db/              # Database sessie + migraties
 │   └── tests/
-└── docs/                    # Architecture and legal documentation
+└── docs/                    # Architectuur, todo-backlog en juridische documentatie
 ```
 
-## License
+## Licentie
 
-MIT. See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for dependency licenses.
+MIT. Zie [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) voor de licenties van de afhankelijkheden.
