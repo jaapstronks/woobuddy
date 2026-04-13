@@ -6,12 +6,26 @@ Task B — Content analysis (Tier 3)
 
 ROLE_CLASSIFICATION_SYSTEM = """\
 Je bent een juridisch assistent gespecialiseerd in de Wet open overheid (Woo). \
-Je classificeert persoonsnamen die gedetecteerd zijn in overheidsdocumenten.
+Je beoordeelt strings die door een NER-model zijn gemarkeerd als mogelijke \
+persoonsnamen in overheidsdocumenten.
 
-Bepaal of de genoemde persoon:
-1. Een burger is (privépersoon) — bijna altijd lakken
-2. Een ambtenaar is die NIET in publieke hoedanigheid optreedt — lakken
-3. Een publiek functionaris is die in publieke hoedanigheid optreedt — NIET lakken
+Stap 1 — is het wel een persoonsnaam?
+Het NER-model maakt regelmatig fouten en markeert ook organisaties, instellingen, \
+locaties, fragmenten of algemene woorden als 'persoon'. Controleer daarom eerst \
+of de string daadwerkelijk een naam van een individu is. Als dat NIET zo is, \
+gebruik dan de rol "not_a_person" en zet should_redact op false. Voorbeelden van \
+wat geen persoonsnaam is:
+- Organisaties of instellingen ("Amsterdamse Hogeschool voor de Kunsten", \
+"Instituut Beeld en Geluid", "Rijksmuseum", "Kunsthal", "Gemeente Utrecht")
+- Locaties of gebouwen ("Voorlinden", "Naturalis", "Concertgebouw")
+- Fragmenten of tekst die geen volledige naam vormen ("het Rijks m", \
+"partnerschappen met")
+- Functietitels zonder bijbehorende naam ("de directeur", "de minister")
+
+Stap 2 — als het wel een persoonsnaam is, bepaal de rol:
+1. Burger (privépersoon) — bijna altijd lakken
+2. Ambtenaar die NIET in publieke hoedanigheid optreedt — lakken
+3. Publiek functionaris die in publieke hoedanigheid optreedt — NIET lakken
 
 Publieke functionarissen die NIET gelakt worden:
 - Burgemeester, wethouders, gemeentesecretaris
@@ -20,8 +34,9 @@ Publieke functionarissen die NIET gelakt worden:
 - Ondertekenaars van mandaatbesluiten
 - Directeuren en woordvoerders die namens het bestuursorgaan spreken
 
-Gebruik de context rondom de naam om te bepalen in welke hoedanigheid de persoon optreedt. \
-Let op functietitels, aanhef, ondertekening, en de aard van het document."""
+Gebruik de context rondom de naam om te bepalen in welke hoedanigheid de \
+persoon optreedt. Let op functietitels, aanhef, ondertekening, en de aard \
+van het document. Geef je onderbouwing altijd in het Nederlands."""
 
 ROLE_CLASSIFICATION_TOOLS = [
     {
@@ -36,11 +51,19 @@ ROLE_CLASSIFICATION_TOOLS = [
                 "properties": {
                     "role": {
                         "type": "string",
-                        "enum": ["citizen", "civil_servant", "public_official"],
+                        "enum": [
+                            "not_a_person",
+                            "citizen",
+                            "civil_servant",
+                            "public_official",
+                        ],
                         "description": (
-                            "The role of the person: citizen (private person), "
-                            "civil_servant (government employee not acting publicly), "
-                            "public_official (acting in official public capacity)"
+                            "not_a_person (NER match is actually an "
+                            "organisation/location/fragment/generic noun), "
+                            "citizen (private person), civil_servant "
+                            "(government employee not acting publicly), "
+                            "or public_official (acting in official "
+                            "public capacity)"
                         ),
                     },
                     "should_redact": {
