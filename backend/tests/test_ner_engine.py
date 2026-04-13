@@ -8,6 +8,7 @@ import pytest
 
 from app.services.ner_engine import (
     NERDetection,
+    _is_plausible_person_name,
     _validate_bsn,
     _validate_luhn,
     detect_all,
@@ -282,10 +283,7 @@ class TestCreditCard:
 class TestTier1Meta:
     def test_all_tier1_are_auto_accepted(self):
         """Every Tier 1 detection should have review_status implied by tier='1'."""
-        text = (
-            "BSN: 111222333, IBAN: NL91ABNA0417164300, "
-            "Tel: 06-12345678, Email: test@example.com"
-        )
+        text = "BSN: 111222333, IBAN: NL91ABNA0417164300, Tel: 06-12345678, Email: test@example.com"
         results = detect_tier1(text)
         assert len(results) >= 4
         for r in results:
@@ -353,6 +351,24 @@ class TestTier2Deduce:
         address_results = [r for r in results if r.entity_type == "adres"]
         assert len(address_results) >= 1
 
+    def test_amsterdamse_hogeschool_not_flagged_as_person(self):
+        """Real regression: Deduce tags 'Amsterdamse Hogeschool voor de
+        Kunsten' as a person. The organization keyword 'hogeschool'
+        must drop it before it reaches the review list."""
+        text = "We werken samen met de Amsterdamse Hogeschool voor de Kunsten aan dit project."
+        results = detect_tier2(text)
+        person_results = [r for r in results if r.entity_type == "persoon"]
+        assert all("hogeschool" not in r.text.lower() for r in person_results), (
+            "Amsterdamse Hogeschool should be filtered out as a person"
+        )
+
+    def test_gemeente_not_flagged_as_person(self):
+        text = "De gemeente Amsterdam heeft besloten."
+        results = detect_tier2(text)
+        person_results = [r for r in results if r.entity_type == "persoon"]
+        for r in person_results:
+            assert "gemeente" not in r.text.lower()
+
     def test_tier2_skips_bsn_postcode_telefoon(self):
         """Types handled by Tier 1 regex (bsn, telefoon, postcode) are skipped in Tier 2."""
         text = "BSN 111222333, tel 06-12345678, postcode 1234 AB"
@@ -364,6 +380,86 @@ class TestTier2Deduce:
 
 
 # ---------------------------------------------------------------------------
+# Heuristic person filter — _is_plausible_person_name
+#
+# Unit-level tests of the filter predicate itself. These run without
+# Deduce and guarantee the filter stays honest even if Deduce's own
+# output changes.
+# ---------------------------------------------------------------------------
+
+
+class TestIsPlausiblePersonName:
+    def test_real_names_accepted(self):
+        assert _is_plausible_person_name("Jan de Vries") is True
+        assert _is_plausible_person_name("Natasja Paulssen-Hallema") is True
+        assert _is_plausible_person_name("A. Bakker") is True
+        assert _is_plausible_person_name("Van den Berg") is True
+
+    def test_organisation_keywords_rejected(self):
+        cases = [
+            "Amsterdamse Hogeschool voor de Kunsten",
+            "Instituut Beeld en Geluid",
+            "gemeente Amsterdam",
+            "Stichting Woo Buddy",
+            "Universiteit Utrecht",
+            "Ministerie van Binnenlandse Zaken",
+            "Ziekenhuis Erasmus",
+        ]
+        for text in cases:
+            assert _is_plausible_person_name(text) is False, f"should reject: {text}"
+
+    def test_article_plus_lowercase_rejected(self):
+        """Dutch article followed by a lowercase word is a generic
+        phrase, not a name."""
+        assert _is_plausible_person_name("de gemeente") is False
+        assert _is_plausible_person_name("een aanvrager") is False
+        assert _is_plausible_person_name("het college") is False
+
+    def test_article_plus_capitalised_name_accepted(self):
+        """Dutch tussenvoegsel surnames like 'de Vries' must survive
+        the article filter as long as the actual surname is
+        capitalised."""
+        assert _is_plausible_person_name("de Vries") is True
+        # "Het College" gets rejected downstream by the organisation
+        # keyword filter ('college'), not by the article rule — but
+        # it should not be rejected BY the article rule on its own.
+
+    def test_het_college_rejected_by_keyword(self):
+        """Defence in depth: 'Het College' is capitalised but still
+        an organisation, and the keyword filter catches it."""
+        assert _is_plausible_person_name("Het College") is False
+
+    def test_all_lowercase_rejected(self):
+        """Real names always have at least one uppercase letter."""
+        assert _is_plausible_person_name("partnerschappen met") is False
+        assert _is_plausible_person_name("jan") is False
+
+    def test_multi_sentence_fragment_rejected(self):
+        """A period followed by a lowercase word means we captured
+        more than one sentence — not a name."""
+        text = "Amsterdamse Hogeschool voor de Kunsten. technologie in de context"
+        assert _is_plausible_person_name(text) is False
+
+    def test_trailing_single_letter_rejected(self):
+        """'... het Rijks m' — trailing lone letter is a truncation."""
+        assert _is_plausible_person_name("het Rijks m") is False
+        assert _is_plausible_person_name("Jan de V") is False
+
+    def test_very_long_text_rejected(self):
+        assert _is_plausible_person_name("A" * 60) is False
+
+    def test_very_short_text_rejected(self):
+        assert _is_plausible_person_name("J") is False
+        assert _is_plausible_person_name("") is False
+        assert _is_plausible_person_name("   ") is False
+
+    def test_initial_followed_by_surname_accepted(self):
+        """One-letter tokens are fine if followed by more name content."""
+        assert _is_plausible_person_name("J. Bakker") is True
+        assert _is_plausible_person_name("A.M. van der Berg") is True
+
+
+# ---------------------------------------------------------------------------
 # Combined: detect_all — Tier 1 + Tier 2 with confidence boosting
 # ---------------------------------------------------------------------------
 
@@ -371,10 +467,7 @@ class TestTier2Deduce:
 class TestDetectAll:
     def test_combines_tier1_and_tier2(self):
         """detect_all should return results from both tiers."""
-        text = (
-            "De heer Jan de Vries, BSN 111222333, "
-            "e-mail jan@example.com, woont in Amsterdam."
-        )
+        text = "De heer Jan de Vries, BSN 111222333, e-mail jan@example.com, woont in Amsterdam."
         results = detect_all(text)
         tiers = {r.tier for r in results}
         assert "1" in tiers, "Should have Tier 1 detections"
@@ -389,12 +482,24 @@ class TestDetectAll:
         # the mechanism directly.
 
         det1 = NERDetection(
-            text="test", entity_type="a", tier="1", confidence=0.95,
-            woo_article="5.1.1e", source="regex", start_char=0, end_char=4,
+            text="test",
+            entity_type="a",
+            tier="1",
+            confidence=0.95,
+            woo_article="5.1.1e",
+            source="regex",
+            start_char=0,
+            end_char=4,
         )
         det2 = NERDetection(
-            text="test", entity_type="b", tier="2", confidence=0.70,
-            woo_article="5.1.2e", source="deduce", start_char=0, end_char=4,
+            text="test",
+            entity_type="b",
+            tier="2",
+            confidence=0.70,
+            woo_article="5.1.2e",
+            source="deduce",
+            start_char=0,
+            end_char=4,
         )
 
         # Simulate detect_all boosting logic
@@ -407,8 +512,14 @@ class TestDetectAll:
     def test_confidence_boost_capped_at_1(self):
         """Boosted confidence should not exceed 1.0."""
         det = NERDetection(
-            text="x", entity_type="y", tier="2", confidence=0.95,
-            woo_article="5.1.2e", source="deduce", start_char=0, end_char=1,
+            text="x",
+            entity_type="y",
+            tier="2",
+            confidence=0.95,
+            woo_article="5.1.2e",
+            source="deduce",
+            start_char=0,
+            end_char=1,
         )
         det.confidence = min(det.confidence + 0.10, 1.0)
         assert det.confidence == 1.0
