@@ -331,9 +331,9 @@ Either way, the deployment is:
 
 Ollama does NOT run on the hosting platform in production. For the SaaS version, the LLM inference needs a GPU machine. Options:
 - A dedicated GPU VPS (Hetzner GPU servers, ~€150/month for an RTX 3090) running Ollama, accessed by the FastAPI backend over a private network
-- Or use the Anthropic API fallback for production (simpler, but adds per-token cost and sends document text to Anthropic)
+- Self-host on a customer-operated GPU box (on-prem or private cloud) so document text stays within their infrastructure
 
-This is a key decision to make before production launch. For the prototype, running Ollama locally on your MacBook Pro works.
+Third-party hosted LLMs are intentionally out of scope — sending document text to an external API would break the client-first guarantee. For the prototype, running Ollama locally on your MacBook Pro works.
 
 ### Domain and DNS
 

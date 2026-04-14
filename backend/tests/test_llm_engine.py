@@ -122,7 +122,8 @@ class TestRunPipeline:
         jan = [p for p in persons if "Jan de Vries" in p.entity_text]
         assert len(jan) >= 1
         assert jan[0].review_status == "rejected"
-        assert "publieke functionarissen" in jan[0].reasoning
+        assert jan[0].source == "reference_list"
+        assert "publiek-functionarissenlijst" in jan[0].reasoning
 
     @pytest.mark.asyncio
     async def test_public_official_case_insensitive(self):
@@ -192,6 +193,65 @@ class TestRunPipeline:
         tiers = {d.tier for d in result.detections}
         assert "1" in tiers
         assert "2" in tiers
+
+
+# ---------------------------------------------------------------------------
+# Custom wordlist (#21) — pipeline integration
+# ---------------------------------------------------------------------------
+
+
+class _CustomTerm:
+    """Structural stand-in for the matcher's `CustomTermLike` protocol."""
+
+    def __init__(self, term: str, woo_article: str = "5.1.2e", match_mode: str = "exact"):
+        self.term = term
+        self.match_mode = match_mode
+        self.woo_article = woo_article
+
+
+class TestCustomWordlist:
+    @pytest.mark.asyncio
+    async def test_custom_term_produces_detections_per_occurrence(self):
+        """A term that appears twice in the document yields two
+        `custom` detections, both at `review_status="accepted"` and
+        tagged with the custom Woo-artikel."""
+        extraction = _make_extraction(
+            "Project Apollo startte in 1961. "
+            "Het rapport over Project Apollo is vrijgegeven."
+        )
+        result = await run_pipeline(
+            extraction,
+            custom_terms=[_CustomTerm("Project Apollo", woo_article="5.1.2b")],
+            use_llm_verification=False,
+        )
+        customs = [d for d in result.detections if d.entity_type == "custom"]
+        assert len(customs) == 2
+        for d in customs:
+            assert d.review_status == "accepted"
+            assert d.source == "custom_wordlist"
+            assert d.woo_article == "5.1.2b"
+            assert "Project Apollo" in d.reasoning
+
+    @pytest.mark.asyncio
+    async def test_custom_term_is_case_insensitive(self):
+        extraction = _make_extraction("project apollo is een codenaam.")
+        result = await run_pipeline(
+            extraction,
+            custom_terms=[_CustomTerm("Project Apollo")],
+            use_llm_verification=False,
+        )
+        customs = [d for d in result.detections if d.entity_type == "custom"]
+        assert len(customs) == 1
+
+    @pytest.mark.asyncio
+    async def test_empty_custom_terms_produces_no_custom_detections(self):
+        extraction = _make_extraction("Project Apollo is openbaar.")
+        result = await run_pipeline(
+            extraction,
+            custom_terms=[],
+            use_llm_verification=False,
+        )
+        assert not any(d.entity_type == "custom" for d in result.detections)
 
 
 # ---------------------------------------------------------------------------

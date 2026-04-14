@@ -54,3 +54,8 @@ temp/
 
 # Playwright MCP
 .playwright-mcp/
+
+# Loose screenshots at repo root (scratch, not tracked)
+/landing-full.png
+/landing-hero.png
+/privacy-section.png

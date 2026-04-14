@@ -12,7 +12,16 @@
 
 **4. Only then, the SaaS layer.** Authentication, organizations, roles, billing, analytics, deployment hardening — all deferred until the core experience is compelling. Today the app is single-document and runs locally; that's fine for a prototype and for pilot demos.
 
-**5. Privacy-first: client-side wherever possible, ephemeral on the server where unavoidable.** This project is being built for Dutch government users handling privacy-sensitive documents. The trust story is deliberately one sentence: *uw documenten verlaten nooit uw infrastructuur en er komt geen taalmodel aan te pas.*
+**5. Distribution = open core + generous free tier.** Hosting cost is essentially zero (no LLM, no document storage), so we can afford a free tier that is *the marketing engine*, not a teaser. The model:
+
+- **Self-host (free, MIT)** for IT-savvy gemeenten and ministries that want full data sovereignty (#43).
+- **Hosted Gratis tier** for individual reviewers — no signup wall on `/try`, full export, no watermark, no document cap. The trust unlock is "uw PDF verlaat nooit uw browser"; we do not undermine it with friction.
+- **Hosted Team tier (~€79–€99/month per organization)** sells the things self-hosting and the Gratis tier *don't* give you: multi-user, shared custom wordlists (#21), audit log (#19), SSO (#42), priority support, NL-hosted with DPA.
+- **Hosted Enterprise** for provincies and ministries — custom pricing, SLA, ISO27001/NEN7510 paperwork, training.
+
+Pricing principles: don't gate the core review loop, don't anchor low (€99 reads as professional, €19 as hobby), per-org flat not per-document, free tier is the marketing. See #37 for the full ladder and rationale, and #43 for the open-source release prep.
+
+**6. Privacy-first: client-side wherever possible, ephemeral on the server where unavoidable.** This project is being built for Dutch government users handling privacy-sensitive documents. The trust story is deliberately one sentence: *uw documenten verlaten nooit uw infrastructuur en er komt geen taalmodel aan te pas.*
 
 - **PDFs never leave the browser** (except for ephemeral, in-memory redaction during export).
 - **Extracted text** is sent to the server only for detection (Deduce NER + rules). The server processes it in memory and discards it — nothing is logged, nothing is persisted.
@@ -79,13 +88,13 @@ This phase turns the viewer into an actual editing tool and beefs up the rule-ba
 | 9 | ~~[Search-and-redact](done/09-search-and-redact.md)~~ | P1 | L | Editing |
 | 10 | ~~[Page completeness review](done/10-page-completeness.md)~~ | P1 | M | Editing |
 | 11 | ~~[Boundary adjustment](done/11-boundary-adjustment.md)~~ | P2 | L | Editing |
-| 12 | [Name lists: Meertens voornamen + CBS achternamen](12-name-lists-meertens-cbs.md) | P1 | M | Pivot 2026-04 |
-| 13 | [Functietitel + publiek-functionaris rule engine](13-functietitel-publiek-functionaris.md) | P1 | M | Pivot 2026-04 |
-| 14 | [Structuurherkenning (headers, signatures, aanhef)](14-structuurherkenning.md) | P1 | M | Pivot 2026-04 |
-| 15 | [Tier 2 suggestion card UX](15-tier2-suggestion-ux.md) | P1 | M | Reviewer feedback 2026-04 |
-| 16 | [Tier 1 gaps: KvK, BTW, geboortedatum](16-tier1-gaps.md) | P2 | S | Pivot 2026-04 |
-| 17 | [Publieke functionarissen referentielijst (per-document)](17-publieke-functionarissen-referentielijst.md) | P2 | M | Pivot 2026-04 |
-| 18 | [Split and merge detections](18-split-merge.md) | P3 | M | Editing |
+| 12 | ~~[Name lists: Meertens voornamen + CBS achternamen](done/12-name-lists-meertens-cbs.md)~~ | P1 | M | Pivot 2026-04 |
+| 13 | ~~[Functietitel + publiek-functionaris rule engine](done/13-functietitel-publiek-functionaris.md)~~ | P1 | M | Pivot 2026-04 |
+| 14 | ~~[Structuurherkenning (headers, signatures, aanhef)](done/14-structuurherkenning.md)~~ | P1 | M | Pivot 2026-04 |
+| 15 | ~~[Tier 2 suggestion card UX](done/15-tier2-suggestion-ux.md)~~ | P1 | M | Reviewer feedback 2026-04 |
+| 16 | ~~[Tier 1 gaps: KvK, BTW, geboortedatum](done/16-tier1-gaps.md)~~ | P2 | S | Pivot 2026-04 |
+| 17 | ~~[Publieke functionarissen referentielijst (per-document)](done/17-publieke-functionarissen-referentielijst.md)~~ | P2 | M | Pivot 2026-04 |
+| 18 | ~~[Split and merge detections](done/18-split-merge.md)~~ | P3 | M | Editing |
 
 ## Phase C — Polish & UX (make the prototype feel premium)
 
@@ -93,11 +102,11 @@ Once the core loop works, make it feel great. This is the "wow moment" phase —
 
 | # | Todo | Priority | Size | Source |
 |---|------|----------|------|--------|
-| 19 | [Redaction log & audit trail](19-redaction-log.md) | P1 | L | Draft Workflow + Pivot 2026-04 |
-| 20 | [Bulk sweep flows (header block, signature block, same-name)](20-bulk-sweep-flows.md) | P2 | M | Pivot 2026-04 |
-| 21 | [Per-document custom wordlist](21-per-document-custom-wordlist.md) | P2 | S | Pivot 2026-04 |
-| 22 | [Loading states & skeletons](22-loading-states.md) | P2 | M | Testing & Polish |
-| 23 | [Landing page animations](23-animations.md) | P3 | S | Testing & Polish |
+| 19 | ~~[Redaction log & audit trail](done/19-redaction-log.md)~~ | P1 | L | Draft Workflow + Pivot 2026-04 |
+| 20 | ~~[Bulk sweep flows (header block, signature block, same-name)](done/20-bulk-sweep-flows.md)~~ | P2 | M | Pivot 2026-04 |
+| 21 | ~~[Per-document custom wordlist](done/21-per-document-custom-wordlist.md)~~ | P2 | S | Pivot 2026-04 |
+| 22 | ~~[Loading states & skeletons](done/22-loading-states.md)~~ | P2 | M | Testing & Polish |
+| 23 | ~~[Landing page animations](done/23-animations.md)~~ | P3 | S | Testing & Polish |
 | 24 | [Mobile responsive polish](24-mobile-responsive.md) | P3 | S | Testing & Polish |
 
 ## Phase D — Draft Workflow & Oversight
@@ -142,6 +151,8 @@ Everything a SaaS needs but a prototype does not.
 | 40 | [Legal pages & SEO](40-legal-seo.md) | P2 | S | Testing & Polish |
 | 41 | [Analytics (Plausible)](41-analytics.md) | P3 | S | Testing & Polish |
 | 42 | [Microsoft SSO & 2FA](42-sso-2fa.md) | P3 | M | Auth & Billing |
+| 43 | [Open source release & self-host](43-open-source-release.md) | P1 | M | Distribution strategy 2026-04 |
+| 44 | [Sample documents on landing page](44-sample-documents-landing.md) | P1 | S | Distribution strategy 2026-04 |
 
 ---
 
@@ -158,7 +169,9 @@ Some briefing suggestions are **deferred or modified**:
 - **Subscription tier pricing** (Auth & Billing) — The specific price points (49/149/349) are business decisions, not engineering tasks. Captured in the billing todo as configurable, not hardcoded.
 - **Celery job queue** (Draft Workflow) — Overkill for MVP. Background tasks via FastAPI's built-in `BackgroundTasks` suffice until proven otherwise.
 - **Full fuzzy name matching** (Editing) — Simplified to basic normalization for Phase B. Full Dutch name-particle matching is a P3 enhancement.
-- **Self-hosted version** (Auth & Billing) — Briefing correctly says "should not complicate the architecture now." Agreed, not tracked.
+- **Self-hosted version** (Auth & Billing) — ~~Briefing correctly says "should not complicate the architecture now." Agreed, not tracked.~~ **Reversed 2026-04.** Self-hosting is now a strategic pillar: it kills the "we can't put data in the cloud" procurement objection for government IT, makes the privacy-first claim auditable, and is essentially free to support because the architecture is already client-first with no GPU/LLM dependency. Tracked as #43.
+- **Watermarked or preview-only trial** (considered 2026-04) — Rejected. Civil servants need to feel the full review loop on a real document or they bounce, and crippling the trial undermines the "PDF never leaves your browser" trust message that is our strongest asset. The trial is the marketing — see #37 pricing model and #44 sample documents.
+- **Per-document or "3 docs/month" free tier cap** (earlier version of #37) — Rejected. Hosting is essentially free, so rationing the core loop costs more conversions than it saves on infra. Billing gates team features (invites, shared wordlists, audit log, SSO), not the review loop.
 
 ## How to Use This Backlog
 

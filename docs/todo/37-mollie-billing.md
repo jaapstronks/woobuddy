@@ -10,11 +10,25 @@
 
 For WOO Buddy to be a sustainable SaaS product, it needs a revenue model. Mollie is the right payment provider for a Dutch government tool: European, GDPR-native, supports iDEAL (dominant NL payment method), familiar to government organizations.
 
-## Assessment
+## Pricing model (2026-04 strategy)
 
-The briefing's architecture is sound: Mollie integration in FastAPI (best Python SDK), subscription tiers per organization, webhook-based payment tracking. The specific price points (49/149/349) are business decisions — implement the tier system as configurable, not hardcoded.
+Hosting cost is essentially zero (no LLM, no document storage), so the free tier can be *generous* and serve as the marketing engine. Revenue comes from team features and enterprise paperwork — not from rationing the core review loop.
 
-**Adopt the architecture. Make pricing configurable.** Also: the Gratis tier at "3 documents/month" is smart — genuinely useful, not just a teaser.
+**Tier ladder:**
+
+| Tier | Audience | Price | Includes |
+|------|----------|-------|----------|
+| **Self-host** | IT-savvy gemeenten, ministries with strict data sovereignty | Free, MIT-licensed | Everything. Run it on your own infrastructure. See #43. |
+| **Gratis (hosted)** | Individual reviewers trying it out | €0, no signup | Unlimited single-user use, full export, no watermark, no document cap. Rate-limited by IP only if abuse appears. |
+| **Team** | A municipality's Woo team | ~€79–€99/month per organization | Multi-user, shared custom wordlists (#21), audit log (#19), SSO (#42), priority support, NL-hosted with DPA |
+| **Enterprise** | Provincies, ministries, large gemeenten | Custom (~€500–€2000/month) | Dedicated instance, SLA, ISO27001/NEN7510 paperwork, training, on-site onboarding |
+
+**Pricing principles:**
+- **Don't gate the core review loop.** No "3 documents/month" cap, no watermarks, no preview-only mode. The trial must let a reviewer feel the full workflow on a real document, or the bottoms-up motion dies. (Earlier versions of this doc proposed a 3-doc cap — explicitly rejected.)
+- **Don't anchor low.** €19/month reads as hobby project; €99/month reads as professional software a gemeente can expense. Free → €99 is a healthier ladder than free → €19.
+- **Per-org flat, not per-document.** Civil servants can't forecast volume and won't expense usage-based billing.
+- **Free tier is the marketing.** No watermarks, no signup wall on `/try`. The "your PDF never leaves your browser" message is the trust unlock; do not undermine it with friction.
+- Keep prices configurable, not hardcoded.
 
 ## Scope
 
@@ -49,13 +63,13 @@ The briefing's architecture is sound: Mollie integration in FastAPI (best Python
 - [ ] Payment history
 - [ ] Friendly limit-exceeded message with upgrade path
 
-### Plan enforcement (adapted for client-first)
+### Plan enforcement (adapted for client-first + generous-free-tier strategy)
 
-- [ ] On analysis request (`/api/analyze`): check monthly analysis limit (replaces "document upload" limit since PDFs aren't uploaded)
-- [ ] On user invite: check user limit
-- [ ] On Tier 3 request: check if plan includes LLM analysis
-- [ ] Return `402 Payment Required` with clear Dutch message and upgrade link
-- [ ] Usage tracking counts analysis requests, not file uploads (since files stay in the browser)
+- [ ] **Do not gate `/api/analyze` for the Gratis tier.** Anonymous and Gratis users get full analysis. Enforcement is on team features (user invites, shared wordlists, audit log access), not on the review loop.
+- [ ] On user invite: check seat limit per team
+- [ ] On shared-wordlist write / audit-log read / SSO config: gate by Team plan
+- [ ] Return `402 Payment Required` with a clear Dutch message and upgrade link only on team-feature endpoints
+- [ ] Optional: per-IP rate limit on `/api/analyze` (e.g. 60/hour) as abuse protection — not as a paywall
 
 ### API endpoints
 
@@ -69,11 +83,12 @@ The briefing's architecture is sound: Mollie integration in FastAPI (best Python
 
 ## Acceptance Criteria
 
-- Organization can upgrade from Gratis to a paid plan via Mollie checkout
+- Organization can upgrade from Gratis to Team via Mollie checkout
 - Recurring payments work via Mollie subscriptions
-- Plan limits are enforced on document upload and user invites
-- Failed payment triggers grace period and eventual downgrade
-- Billing page shows plan, usage, and payment history
+- **Anonymous and Gratis users can analyze and export documents without limit** — billing only enforces team features
+- Team-feature endpoints (invite, shared wordlists, audit log) return `402` for Gratis orgs with a clear upgrade message
+- Failed payment triggers grace period and eventual downgrade to Gratis (team features lock; review loop keeps working)
+- Billing page shows plan, usage (informational, not a cap), and payment history
 
 ## Not in Scope
 

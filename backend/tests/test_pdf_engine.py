@@ -47,6 +47,31 @@ class TestSingleItemMatch:
         results = find_span_for_text([page], "Jan de Vries")
         assert len(results) == 1
 
+    def test_substring_match_narrows_bbox_proportionally(self):
+        """When the name is embedded in a sentence-length span — which is
+        how PyMuPDF commonly serves paragraph text — the bbox must be
+        narrowed to (approximately) the name itself, not the whole span.
+        Otherwise redacting a single name blacks out the full line."""
+        sentence = "De heer Van der Berg heeft op 20 februari 2024 gesproken."
+        page = _page([TextSpan(text=sentence, page=0, x0=0, y0=10, x1=1000, y1=20)])
+        results = find_span_for_text([page], "Van der Berg")
+        assert len(results) == 1
+        bbox = results[0]
+        # The name starts at character 8 and runs 12 chars. Expect the
+        # bbox to live in roughly that range (0–1000 pixel scale with 57
+        # total chars), which must be far inside the left half of the
+        # sentence and must NOT equal the full-span bbox.
+        total = len(sentence)
+        expected_x0 = 1000 * (8 / total)
+        expected_x1 = 1000 * (20 / total)
+        assert abs(bbox["x0"] - expected_x0) < 0.01
+        assert abs(bbox["x1"] - expected_x1) < 0.01
+        # Sanity: bbox is smaller than the span.
+        assert bbox["x1"] - bbox["x0"] < 1000
+        # Y stays on the line.
+        assert bbox["y0"] == 10
+        assert bbox["y1"] == 20
+
 
 # ---------------------------------------------------------------------------
 # Multi-item merge — same line only, anchored start

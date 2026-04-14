@@ -9,10 +9,10 @@
 </script>
 
 <svelte:head>
-	<title>WOO Buddy — Jouw slimme assistent voor het lakken van Woo-documenten</title>
+	<title>WOO Buddy — Woo-documenten lakken in je browser, zonder upload</title>
 </svelte:head>
 
-<div class="min-h-screen bg-bg" style="font-family: 'Plus Jakarta Sans', system-ui, sans-serif;">
+<div class="min-h-screen bg-bg text-ink">
 	<Header />
 	<main>
 		<Hero />

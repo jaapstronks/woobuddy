@@ -1,56 +1,61 @@
 <script lang="ts">
-	import { ShieldOff, MousePointerClick, Brain } from 'lucide-svelte';
+	import { Zap, Hand, Gavel } from 'lucide-svelte';
+	import { reveal } from '$lib/actions/reveal';
 
 	const tiers = [
 		{
-			icon: ShieldOff,
+			icon: Zap,
 			tier: 'Trap 1',
-			title: 'Automatisch gelakt',
+			title: 'Auto-gelakt',
 			description:
-				'BSN-nummers, IBAN\'s en andere harde identifiers worden direct gelakt. Je kunt ze altijd terugdraaien als dat nodig is.',
-			color: 'bg-gray-100 text-gray-700',
-			accent: 'border-gray-300'
+				'Harde identifiers (BSN, IBAN, telefoon, e-mail) gaan direct dicht. Je ziet ze als zwart blok in de viewer en kunt ze met één klik weer openzetten als dat moet.'
 		},
 		{
-			icon: MousePointerClick,
+			icon: Hand,
 			tier: 'Trap 2',
 			title: 'Voorgesteld — jij bevestigt',
 			description:
-				'Namen en adressen worden gemarkeerd met een voorstel. Eén klik om te bevestigen of af te wijzen. Hetzelfde besluit wordt automatisch toegepast op alle vermeldingen.',
-			color: 'bg-amber-50 text-amber-700',
-			accent: 'border-amber-300'
+				'Namen, adressen en andere contextuele gegevens krijgen een voorstel. Bevestig of wijs af met één toets. Hetzelfde besluit wordt automatisch toegepast op alle voorkomens in het document.'
 		},
 		{
-			icon: Brain,
-			tier: 'Trap 3',
-			title: 'Gesignaleerd — jij beslist',
+			icon: Gavel,
+			tier: 'Jij',
+			title: 'De eindbeslissing',
 			description:
-				'Beleidsopvattingen en gevoelige passages worden geanalyseerd. Je krijgt een analyse, mogelijke gronden en hulp bij de belangenafweging. Het besluit is altijd van jou.',
-			color: 'bg-blue-50 text-primary',
-			accent: 'border-primary/30'
+				'WOO Buddy doet voorstellen, jij neemt de Woo-beslissing. Onderbouwen, motiveren, gronden kiezen — dat blijft mensenwerk. Geen taalmodel dat dat voor je doet.'
 		}
 	];
 </script>
 
-<section class="bg-white px-6 py-24">
+<section class="border-y border-border bg-surface px-6 py-24">
 	<div class="mx-auto max-w-6xl">
-		<h2 class="text-center text-3xl font-bold text-gray-900">Jij blijft in controle</h2>
-		<p class="mx-auto mt-4 max-w-2xl text-center text-neutral">
-			Onze drietrapsraket combineert snelheid met zorgvuldigheid.
-			Niet alles hoeft handmatig — maar het kan wel.
-		</p>
+		<div class="max-w-2xl" use:reveal>
+			<p class="text-sm font-medium tracking-wide text-primary uppercase">Jij blijft in controle</p>
+			<h2 class="mt-3 font-serif text-4xl tracking-tight text-ink sm:text-5xl">
+				Snelheid waar het kan, mensenwerk waar het moet.
+			</h2>
+			<p class="mt-6 text-lg leading-relaxed text-ink-soft">
+				WOO Buddy haalt de mechanische arbeid weg, niet het oordeel. Jij ziet alles, jij
+				bevestigt alles, jij zet je handtekening onder het besluit.
+			</p>
+		</div>
 
-		<div class="mt-16 grid grid-cols-1 gap-8 lg:grid-cols-3">
-			{#each tiers as t}
-				<div class="rounded-xl border-2 {t.accent} p-8">
-					<div class="flex h-12 w-12 items-center justify-center rounded-lg {t.color}">
-						<t.icon size={24} />
+		<div class="mt-16 grid grid-cols-1 gap-6 lg:grid-cols-3">
+			{#each tiers as t, i}
+				<div
+					class="relative flex flex-col rounded-lg border border-border bg-bg p-8 {i === 2
+						? 'border-primary/40 bg-primary-soft/30'
+						: ''}"
+					use:reveal={{ delay: i * 110 }}
+				>
+					<div class="flex items-center justify-between">
+						<span
+							class="font-serif text-2xl text-primary"
+						>{t.tier}</span>
+						<t.icon size={22} class="text-ink-mute" strokeWidth={1.5} />
 					</div>
-					<span class="mt-4 inline-block rounded-full px-3 py-1 text-xs font-semibold {t.color}">
-						{t.tier}
-					</span>
-					<h3 class="mt-2 text-xl font-semibold text-gray-900">{t.title}</h3>
-					<p class="mt-2 text-sm leading-relaxed text-neutral">{t.description}</p>
+					<h3 class="mt-6 text-xl font-semibold text-ink">{t.title}</h3>
+					<p class="mt-3 text-sm leading-relaxed text-ink-soft">{t.description}</p>
 				</div>
 			{/each}
 		</div>

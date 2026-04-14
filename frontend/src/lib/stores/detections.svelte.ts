@@ -11,8 +11,11 @@ import {
 	analyzeDocument,
 	createManualDetection,
 	deleteDetection,
+	splitDetection,
+	mergeDetections,
 	type CreateManualDetectionRequest
 } from '$lib/api/client';
+import { structureSpansStore } from '$lib/stores/structure-spans.svelte';
 import { resolveEntityTexts } from '$lib/services/bbox-text-resolver';
 import type {
 	BoundingBox,
@@ -32,6 +35,15 @@ import { confidenceToLevel } from '$lib/utils/tiers';
 
 let allDetections = $state<Detection[]>([]);
 let selectedId = $state<string | null>(null);
+/**
+ * #18 — merge staging set. Tracks ids the reviewer Ctrl+clicked in the
+ * sidebar to line up for a merge. Deliberately kept separate from
+ * `selectedId` so the single-select navigation (Up/Down, card focus) and
+ * the multi-select merge flow don't fight over the same state. The set is
+ * cleared after a successful merge, on explicit `clearMultiSelect()`, or
+ * when a new document loads.
+ */
+let multiSelectedIds = $state<string[]>([]);
 let loading = $state(false);
 let error = $state<string | null>(null);
 let currentExtraction = $state<ExtractionResult | null>(null);
@@ -92,6 +104,10 @@ const counts = $derived.by(() => {
 async function load(documentId: string) {
 	loading = true;
 	error = null;
+	// A fresh document load invalidates any in-progress merge staging: the
+	// ids were scoped to the previous document and must not silently carry
+	// over to this one.
+	multiSelectedIds = [];
 	try {
 		const raw = await getDetections(documentId);
 		let detections = raw.map((d) => ({
@@ -118,11 +134,31 @@ function setExtraction(extraction: ExtractionResult) {
 	}
 }
 
-async function analyze(documentId: string, pages: ExtractionResult['pages']) {
+async function analyze(
+	documentId: string,
+	pages: ExtractionResult['pages'],
+	referenceNames: string[] = [],
+	customTerms: { term: string; match_mode?: 'exact'; woo_article?: string }[] = []
+) {
 	loading = true;
 	error = null;
 	try {
-		await analyzeDocument(documentId, pages);
+		// #17 — forward the per-document reference list so the server can
+		// flip matching Tier 2 persoon detections to rejected before they
+		// ever reach the review sidebar.
+		// #21 — same for the custom wordlist: the server scans the full
+		// text for every occurrence and emits `custom` detections that
+		// the sidebar renders alongside the regular pipeline output.
+		const analyzeResult = await analyzeDocument(
+			documentId,
+			pages,
+			referenceNames,
+			customTerms
+		);
+		// #20 — cache the structure spans keyed to this document so the
+		// sweep-block affordances can render without re-running analyze
+		// after every reload. Cleared when a different document loads.
+		structureSpansStore.set(documentId, analyzeResult.structure_spans ?? []);
 		await load(documentId);
 	} catch (e) {
 		error = e instanceof Error ? e.message : 'Analyse mislukt';
@@ -152,8 +188,20 @@ function selectPrevious() {
 async function review(id: string, data: UpdateDetectionRequest) {
 	try {
 		const updated = await updateDetection(id, data);
+		// Preserve the client-only `entity_text` across the round-trip — the
+		// server does not store document content, so its response will not
+		// carry the text and the sidebar/card would otherwise blank out on
+		// every status change. The text is derived from the original
+		// extraction and is not affected by review-status updates.
+		const existingText = allDetections.find((d) => d.id === id)?.entity_text;
 		allDetections = allDetections.map((d) =>
-			d.id === id ? { ...updated, confidence_level: confidenceToLevel(updated.confidence) } : d
+			d.id === id
+				? {
+						...updated,
+						entity_text: updated.entity_text ?? existingText ?? d.entity_text,
+						confidence_level: confidenceToLevel(updated.confidence)
+					}
+				: d
 		);
 	} catch (e) {
 		error = e instanceof Error ? e.message : 'Bijwerken mislukt';
@@ -221,6 +269,126 @@ async function remove(id: string) {
 		error = e instanceof Error ? e.message : 'Verwijderen mislukt';
 		throw e;
 	}
+}
+
+/**
+ * Replace the bounding boxes of an existing detection (#11 boundary
+ * adjustment). The server snapshots the analyzer's original boxes into
+ * `original_bounding_boxes` on the very first adjust and flips
+ * `review_status` to `"edited"` unless the caller passes `keepStatus`.
+ * Callers pass a `keepStatus` payload via the undo stack when reverting
+ * (e.g. undo restoring the previous bboxes AND the previous status at the
+ * same time).
+ */
+async function adjustBoundary(
+	id: string,
+	bboxes: BoundingBox[],
+	keepStatus?: { review_status: ReviewStatus }
+): Promise<Detection | null> {
+	try {
+		const payload: UpdateDetectionRequest = { bounding_boxes: bboxes };
+		if (keepStatus) payload.review_status = keepStatus.review_status;
+		const updated = await updateDetection(id, payload);
+		// Preserve the client-only entity_text if the sidebar had already
+		// resolved one — otherwise the sidebar row would suddenly lose its
+		// label on every bbox nudge. The text is derived from the original
+		// text-layer span so it is not affected by the bbox change.
+		const existingText = allDetections.find((d) => d.id === id)?.entity_text;
+		allDetections = allDetections.map((d) =>
+			d.id === id
+				? {
+						...updated,
+						entity_text: existingText ?? d.entity_text,
+						confidence_level: confidenceToLevel(updated.confidence)
+					}
+				: d
+		);
+		return updated;
+	} catch (e) {
+		error = e instanceof Error ? e.message : 'Grenscorrectie mislukt';
+		return null;
+	}
+}
+
+/**
+ * Split a detection into two (#18).
+ *
+ * The caller has already computed the two bbox sets from the click
+ * position in the PDF viewer. The server creates two new manual-source
+ * detections inheriting the original's metadata, deletes the original,
+ * and returns both halves. The local cache is updated accordingly and
+ * the first half becomes the new selection.
+ */
+async function split(
+	id: string,
+	bboxesA: BoundingBox[],
+	bboxesB: BoundingBox[]
+): Promise<Detection[] | null> {
+	try {
+		const halves = await splitDetection(id, bboxesA, bboxesB);
+		const withLevels = halves.map((h) => ({
+			...h,
+			confidence_level: confidenceToLevel(h.confidence)
+		}));
+		allDetections = [
+			...allDetections.filter((d) => d.id !== id),
+			...withLevels
+		];
+		selectedId = withLevels[0]?.id ?? null;
+		// A split consumes the single selection, not the merge-staging set —
+		// leave `multiSelectedIds` alone.
+		return withLevels;
+	} catch (e) {
+		error = e instanceof Error ? e.message : 'Splitsen mislukt';
+		return null;
+	}
+}
+
+/**
+ * Merge the ids currently in `multiSelectedIds` (#18).
+ *
+ * Bboxes are concatenated server-side in the order the ids are passed;
+ * metadata (tier, entity type, woo article, motivation) is inherited from
+ * the *first* id, which matches the reviewer's "click this one first, then
+ * Ctrl+click the others" mental model. The inputs are deleted; the new
+ * merged row replaces them in local state and becomes the selection.
+ */
+async function merge(): Promise<Detection | null> {
+	if (multiSelectedIds.length < 2) {
+		error = 'Selecteer ten minste twee detecties om samen te voegen.';
+		return null;
+	}
+	const ids = [...multiSelectedIds];
+	try {
+		const merged = await mergeDetections(ids);
+		const withLevel: Detection = {
+			...merged,
+			confidence_level: confidenceToLevel(merged.confidence)
+		};
+		const idSet = new Set(ids);
+		allDetections = [
+			...allDetections.filter((d) => !idSet.has(d.id)),
+			withLevel
+		];
+		selectedId = withLevel.id;
+		multiSelectedIds = [];
+		return withLevel;
+	} catch (e) {
+		error = e instanceof Error ? e.message : 'Samenvoegen mislukt';
+		return null;
+	}
+}
+
+function toggleMultiSelect(id: string) {
+	if (multiSelectedIds.includes(id)) {
+		multiSelectedIds = multiSelectedIds.filter((x) => x !== id);
+	} else {
+		multiSelectedIds = [...multiSelectedIds, id];
+	}
+}
+
+function clearMultiSelect() {
+	multiSelectedIds = [];
 }
 
 async function accept(id: string, wooArticle?: WooArticleCode) {
@@ -292,6 +460,9 @@ export const detectionStore = {
 	get selectedId() {
 		return selectedId;
 	},
+	get multiSelectedIds() {
+		return multiSelectedIds;
+	},
 	get loading() {
 		return loading;
 	},
@@ -325,7 +496,12 @@ export const detectionStore = {
 	defer,
 	review,
 	createManual,
+	adjustBoundary,
 	remove,
+	split,
+	merge,
+	toggleMultiSelect,
+	clearMultiSelect,
 	acceptAllPendingTier1,
 	acceptHighConfidenceTier2,
 	setFilter,

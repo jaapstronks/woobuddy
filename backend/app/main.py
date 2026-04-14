@@ -6,10 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 
 from app.api.analyze import router as analyze_router
+from app.api.custom_terms import router as custom_terms_router
 from app.api.detections import router as detections_router
 from app.api.documents import router as documents_router
 from app.api.export import router as export_router
 from app.api.page_reviews import router as page_reviews_router
+from app.api.reference_names import router as reference_names_router
 from app.config import settings
 from app.db.session import engine
 from app.logging_config import configure_logging, get_logger
@@ -63,6 +65,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         await conn.execute(
             text("ALTER TABLE detections ADD COLUMN IF NOT EXISTS original_bounding_boxes JSONB")
         )
+        # #15 — Tier 2 role classification. Nullable, no default: pre-existing
+        # rows stay NULL and the UI shows the three chips until a reviewer
+        # picks one.
+        await conn.execute(
+            text("ALTER TABLE detections ADD COLUMN IF NOT EXISTS subject_role VARCHAR(30)")
+        )
+        # #18 — split and merge audit columns. `split_from` points at the
+        # original row; it uses SET NULL on delete (defined via the
+        # SQLAlchemy FK) so surviving halves outlive the original. The FK
+        # itself is added here for fresh environments; in running dev/pilot
+        # databases the column is added plain and the constraint is
+        # attached separately so the whole block stays idempotent.
+        await conn.execute(
+            text("ALTER TABLE detections ADD COLUMN IF NOT EXISTS split_from UUID")
+        )
+        await conn.execute(
+            text("ALTER TABLE detections ADD COLUMN IF NOT EXISTS merged_from JSONB")
+        )
     logger.info("db.tables_ensured")
 
     # Pre-initialize Deduce NER (~2s load time). Non-fatal — if this fails the
@@ -74,6 +94,41 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         logger.info("ner.deduce_initialized")
     except Exception:
         logger.warning("ner.deduce_init_failed", reason="will_lazy_init")
+
+    # Load the Meertens voornamen + CBS achternamen name lists once and
+    # cache them on app.state so tests / diagnostics can introspect the
+    # loaded set sizes. The name engine ALSO keeps its own module-level
+    # cache so callers don't have to thread `app.state` through every
+    # analyze request. Non-fatal: missing files fall back to empty sets
+    # and the pipeline continues on the heuristic-only verdict.
+    try:
+        from app.services.ner_engine import init_name_lists
+
+        app.state.name_lists = init_name_lists()
+        logger.info(
+            "ner.name_lists_initialized",
+            first_names=len(app.state.name_lists.first_names),
+            last_names=len(app.state.name_lists.last_names),
+        )
+    except Exception:
+        logger.warning("ner.name_lists_init_failed", reason="will_lazy_init")
+
+    # Load the function-title lists for the rule-based role classifier
+    # (#13). Cached on app.state for diagnostics; the role_engine module
+    # ALSO keeps a process-level cache so callers don't have to thread
+    # app.state through every request. Missing files fall back to empty
+    # lists — the pipeline will then behave as if no titles were found.
+    try:
+        from app.services.role_engine import init_function_title_lists
+
+        app.state.function_title_lists = init_function_title_lists()
+        logger.info(
+            "role_engine.lists_initialized",
+            publiek=len(app.state.function_title_lists.publiek),
+            ambtenaar=len(app.state.function_title_lists.ambtenaar),
+        )
+    except Exception:
+        logger.warning("role_engine.lists_init_failed", reason="will_lazy_init")
 
     # Advisory LLM reachability probe. Never fatal; the LLM layer is dormant
     # by default, in which case the probe short-circuits to "disabled" without
@@ -128,6 +183,8 @@ def create_app() -> FastAPI:
     app.include_router(detections_router)
     app.include_router(export_router)
     app.include_router(page_reviews_router)
+    app.include_router(reference_names_router)
+    app.include_router(custom_terms_router)
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:

@@ -76,11 +76,24 @@ There is **no dossier concept, no document list, no cross-document state**. A do
 - **Deduce** (Dutch NER) must be initialized once at startup (in FastAPI lifespan), not per-request (~2s load time).
 - PDF redaction with PyMuPDF is **irreversible** and happens **in-memory only** during ephemeral export. Never write the original PDF to disk.
 
+## Distribution & pricing strategy
+
+WOO Buddy is **open core with a generous free tier**. Hosting cost is essentially zero (no LLM, no document storage), so the free tier is deliberately the marketing engine — not a teaser. When designing features, respect the following:
+
+- **Self-host is a first-class tier**, not an afterthought. The codebase is MIT-licensed and runnable via `docker compose up` against a single Postgres. Government IT departments with strict data-sovereignty requirements can run it themselves without talking to us. See `docs/todo/43-open-source-release.md`.
+- **The hosted Gratis tier has no signup wall on `/try` and no document cap.** Anonymous reviewers can analyze and export full PDFs without an account. The trust unlock is "uw PDF verlaat nooit uw browser" — do not undermine it with watermarks, preview-only modes, document caps, or forced login on the trial flow. (Earlier drafts of `32-authentication.md` and `37-mollie-billing.md` proposed those gates and were explicitly reversed.)
+- **Billing gates team features, not the review loop.** The Team tier (~€79–€99/month per organization) sells multi-user, shared custom wordlists, audit log, SSO, NL-hosted DPA, and priority support. The Enterprise tier sells SLA, ISO27001/NEN7510 paperwork, and dedicated instances. Pricing is per-org flat — never per-document.
+- **Anonymous `/api/analyze` requests must not persist anything to PostgreSQL.** No `Document` row, no `Detection` rows. Detection metadata is computed in memory and returned. Persistence kicks in only when the user logs in and explicitly chooses to save.
+- **Don't introduce LLM/GPU dependencies into the default code path.** They would break the cost model that makes the generous free tier viable. The dormant Ollama layer stays dormant.
+
+When you build a new feature, ask: "Does this gate something on the trial path?" If yes, the design is wrong — gate it on team features instead.
+
 ## Key design rules
 
 - Tier 3 is reserved and has no active caller. Do not wire LLM analysis into it without a product decision.
 - Five-year rule (Art. 5.3): warn when a relative ground is applied to documents older than 5 years.
 - Public officials (college B&W, raadsleden, etc.) should NOT be redacted. Rule-based detection lives in todos #13 (functietitel + publiek-functionaris rule engine) and #17 (per-document reference list UI).
+- Public-official detection is rule-based (#13). Titles are matched against `backend/app/data/functietitels_publiek.txt` — edit the list, not the code, to extend coverage.
 
 ## Running locally
 

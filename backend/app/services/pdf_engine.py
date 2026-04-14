@@ -10,6 +10,7 @@ always work on a copy.
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 import fitz  # PyMuPDF
 
@@ -192,7 +193,7 @@ def _find_date_in_text(text: str) -> datetime | None:
     return None
 
 
-def extraction_from_client_data(pages_data: list[dict]) -> ExtractionResult:
+def extraction_from_client_data(pages_data: list[dict[str, Any]]) -> ExtractionResult:
     """Build an ExtractionResult from client-provided text extraction data.
 
     The client extracts text via pdf.js and sends it as JSON. This function
@@ -236,33 +237,77 @@ def extraction_from_client_data(pages_data: list[dict]) -> ExtractionResult:
 _SAME_LINE_TOL = 3.0
 
 
-def _is_word_boundary_match(haystack: str, needle: str) -> bool:
-    """True if `needle` appears in `haystack` with non-alphanumeric
-    characters (or the string edges) on both sides.
+def _word_boundary_match_index(haystack: str, needle: str) -> int:
+    """Return the first index at which `needle` appears in `haystack` as a
+    whole word (non-alphanumeric chars on both sides), or -1 for no match.
 
     This prevents "Vries" from matching inside "Vriesland" — the kind
     of false positive that causes the bbox of a person detection to
     snap onto an unrelated word.
     """
     if not needle:
-        return False
+        return -1
     n = len(needle)
     idx = 0
     while True:
         idx = haystack.find(needle, idx)
         if idx == -1:
-            return False
+            return -1
         left_ok = idx == 0 or not haystack[idx - 1].isalnum()
         right = idx + n
         right_ok = right == len(haystack) or not haystack[right].isalnum()
         if left_ok and right_ok:
-            return True
+            return idx
         idx += 1
+
+
+def _is_word_boundary_match(haystack: str, needle: str) -> bool:
+    """Back-compat wrapper around `_word_boundary_match_index`."""
+    return _word_boundary_match_index(haystack, needle) != -1
+
+
+def _narrow_bbox_to_substring(span: "TextSpan", match_idx: int, match_len: int) -> dict[str, Any]:
+    """Proportionally narrow a text span's bbox to the substring range
+    `[match_idx, match_idx + match_len)`.
+
+    pdf.js / PyMuPDF give us only the overall bbox of each text item, not
+    per-glyph positions, so we can't get the exact pixel offset of a
+    substring inside a longer item. We approximate by scaling linearly by
+    character count — a variable-width font means this is off by a few
+    pixels in practice, but that's far better than the alternative of
+    snapping the WHOLE text item's bbox (which, for a sentence-length
+    item, paints an entire paragraph line black when only a name should
+    be redacted).
+
+    If the substring covers the entire span we return the span's own
+    bbox verbatim so existing tests stay stable.
+    """
+    total = len(span.text)
+    # Degenerate case — no characters to scale against. Return the span's
+    # own bbox so the caller gets a non-empty (if approximate) box.
+    if total == 0:
+        return {
+            "page": span.page,
+            "x0": span.x0,
+            "y0": span.y0,
+            "x1": span.x1,
+            "y1": span.y1,
+        }
+    width = span.x1 - span.x0
+    x0 = span.x0 + width * (match_idx / total)
+    x1 = span.x0 + width * ((match_idx + match_len) / total)
+    return {
+        "page": span.page,
+        "x0": x0,
+        "y0": span.y0,
+        "x1": x1,
+        "y1": span.y1,
+    }
 
 
 def find_span_for_text(
     pages: list[PageText], search_text: str, page_hint: int | None = None
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Find bounding boxes for a text string in the extracted text items.
 
     Matching rules (deliberately strict to avoid paragraph-sized bboxes
@@ -280,7 +325,7 @@ def find_span_for_text(
       resulting bbox starts where the entity actually begins, rather
       than at some unrelated earlier item.
     """
-    results: list[dict] = []
+    results: list[dict[str, Any]] = []
     search_lower = search_text.lower().strip()
     if not search_lower:
         return results
@@ -292,18 +337,18 @@ def find_span_for_text(
     first_word = search_lower.split(" ", 1)[0] if " " in search_lower else search_lower
 
     for page_text in pages_to_check:
-        # 1) Single-item match — the common case.
+        # 1) Single-item match — the common case. When the match is a
+        #    strict substring of a longer text item (typical for PyMuPDF,
+        #    where an entire sentence often comes back as one span) we
+        #    narrow the bbox proportionally to the matched substring.
+        #    Returning the full item's bbox used to cause the whole
+        #    sentence to get redacted — see the Van der Berg regression
+        #    that prompted this code path.
         for span in page_text.spans:
-            if _is_word_boundary_match(span.text.lower(), search_lower):
-                results.append(
-                    {
-                        "page": span.page,
-                        "x0": span.x0,
-                        "y0": span.y0,
-                        "x1": span.x1,
-                        "y1": span.y1,
-                    }
-                )
+            span_lower = span.text.lower()
+            idx = _word_boundary_match_index(span_lower, search_lower)
+            if idx != -1:
+                results.append(_narrow_bbox_to_substring(span, idx, len(search_lower)))
 
         # 2) Multi-item same-line merge, anchored at an item that
         #    plausibly starts the match.
@@ -367,7 +412,7 @@ def find_span_for_text(
 
 def apply_redactions(
     pdf_bytes: bytes,
-    redactions: list[dict],
+    redactions: list[dict[str, Any]],
     redaction_color: tuple[float, float, float] = (0, 0, 0),
 ) -> bytes:
     """Apply redaction annotations to a PDF and return the modified bytes.
@@ -400,7 +445,7 @@ def apply_redactions(
     for page in doc:
         page.apply_redactions()
 
-    result = doc.tobytes()
+    result: bytes = doc.tobytes()
     doc.close()
     return result
 

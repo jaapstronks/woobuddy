@@ -1,55 +1,93 @@
 <script lang="ts">
-	import { Github, Server, Lock } from 'lucide-svelte';
+	import { Github, ArrowUpRight, Check, X } from 'lucide-svelte';
+	import { reveal } from '$lib/actions/reveal';
 
-	const features = [
-		{
-			icon: Lock,
-			title: 'Data blijft bij jou',
-			description: 'Draai WOO Buddy op je eigen servers. Documenten verlaten nooit je netwerk.'
-		},
-		{
-			icon: Server,
-			title: 'Eén commando',
-			description: 'docker compose up — en je bent klaar. Geen complexe installatie.'
-		},
-		{
-			icon: Github,
-			title: 'Open source',
-			description: 'MIT-licentie. Bekijk de code, pas aan, draag bij. Volledig transparant.'
-		}
+	const yes = [
+		'Tekstextractie gebeurt in jouw browser via pdf.js',
+		'De server ziet alleen losse woorden — nooit hele zinnen, nooit pagina-context',
+		'PDF wordt in het geheugen gelakt en direct teruggestuurd, nooit op disk geschreven',
+		'Database bewaart alleen coördinaten en beslissingen — geen tekstinhoud',
+		'AVG/GDPR-proof by design: je hoeft geen DPIA voor cloudverwerking te schrijven',
+		'Open source onder MIT-licentie — controleer alles zelf'
+	];
+
+	const no = [
+		'Geen AI of taalmodellen in de actieve pijplijn',
+		'Geen Google Analytics, Plausible, Hotjar of andere trackers',
+		'Geen cookies (echt: nul, ook geen "essentiële")',
+		'Geen third-party fonts, scripts of CDN-calls',
+		'Geen account, geen e-mailadres, geen registratie',
+		'Geen telemetrie naar onze servers'
 	];
 </script>
 
-<section class="bg-bg px-6 py-24">
+<section id="privacy" class="px-6 py-24">
 	<div class="mx-auto max-w-6xl">
-		<h2 class="text-center text-3xl font-bold text-gray-900">Open source & zelf hosten</h2>
-		<p class="mx-auto mt-4 max-w-2xl text-center text-neutral">
-			WOO Buddy is ontworpen voor organisaties die controle willen houden over hun data.
-		</p>
-
-		<div class="mt-16 grid grid-cols-1 gap-8 sm:grid-cols-3">
-			{#each features as feature}
-				<div class="flex flex-col items-center text-center">
-					<div
-						class="flex h-14 w-14 items-center justify-center rounded-2xl bg-landing-accent text-primary"
-					>
-						<feature.icon size={28} />
-					</div>
-					<h3 class="mt-4 text-lg font-semibold text-gray-900">{feature.title}</h3>
-					<p class="mt-2 text-sm leading-relaxed text-neutral">{feature.description}</p>
-				</div>
-			{/each}
+		<div class="max-w-2xl" use:reveal>
+			<p class="text-sm font-medium tracking-wide text-primary uppercase">Privacy by design</p>
+			<h2 class="mt-3 font-serif text-4xl tracking-tight text-ink sm:text-5xl">
+				Wat erin gaat, en wat er uitdrukkelijk niet in zit.
+			</h2>
+			<p class="mt-6 text-lg leading-relaxed text-ink-soft">
+				Privacy is geen feature die we hebben aangezet — het is hoe het ding gebouwd is.
+				Architectuur, niet beleid.
+			</p>
 		</div>
 
-		<div class="mt-12 text-center">
+		<div class="mt-16 grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-2">
+			<!-- Yes column -->
+			<div class="bg-surface p-8" use:reveal>
+				<div class="flex items-center gap-2 text-sm font-medium tracking-wide text-success uppercase">
+					<Check size={16} strokeWidth={2.5} />
+					Wel
+				</div>
+				<ul class="mt-6 space-y-4">
+					{#each yes as item}
+						<li class="flex gap-3 text-sm leading-relaxed text-ink">
+							<Check size={16} class="mt-0.5 shrink-0 text-success" strokeWidth={2.5} />
+							<span>{item}</span>
+						</li>
+					{/each}
+				</ul>
+			</div>
+
+			<!-- No column -->
+			<div class="bg-bg p-8" use:reveal={{ delay: 120 }}>
+				<div class="flex items-center gap-2 text-sm font-medium tracking-wide text-ink-soft uppercase">
+					<X size={16} strokeWidth={2.5} />
+					Niet
+				</div>
+				<ul class="mt-6 space-y-4">
+					{#each no as item}
+						<li class="flex gap-3 text-sm leading-relaxed text-ink-soft">
+							<X size={16} class="mt-0.5 shrink-0 text-ink-mute" strokeWidth={2.5} />
+							<span>{item}</span>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		</div>
+
+		<div
+			class="mt-12 flex flex-col items-start justify-between gap-6 rounded-lg border border-border bg-surface p-8 sm:flex-row sm:items-center"
+			use:reveal
+		>
+			<div class="max-w-xl">
+				<h3 class="font-serif text-2xl text-ink">Lees de code, niet onze beloftes.</h3>
+				<p class="mt-2 text-sm leading-relaxed text-ink-soft">
+					WOO Buddy is volledig open source onder MIT-licentie. Je kunt zelf controleren
+					dat we doen wat we zeggen — of de hele zaak op je eigen infrastructuur draaien.
+				</p>
+			</div>
 			<a
 				href="https://github.com/jaapstronks/woobuddy"
 				target="_blank"
 				rel="noopener noreferrer"
-				class="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-6 py-3 text-sm font-medium text-gray-700 transition-colors hover:border-primary hover:text-primary"
+				class="inline-flex shrink-0 items-center gap-2 rounded-md border border-ink bg-ink px-5 py-3 text-sm font-medium text-bg transition-colors hover:bg-primary hover:border-primary"
 			>
-				<Github size={20} />
+				<Github size={16} />
 				Bekijk op GitHub
+				<ArrowUpRight size={14} />
 			</a>
 		</div>
 	</div>

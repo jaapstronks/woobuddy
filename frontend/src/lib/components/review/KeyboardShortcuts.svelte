@@ -13,9 +13,37 @@
 		onToggleMode?: () => void;
 		onUndo?: () => void;
 		onRedo?: () => void;
+		/** Mark current page reviewed (#10). Parent decides edit-mode guard. */
+		onMarkPage?: () => void;
+		/** Flag current page "later terugkomen" (#10). */
+		onFlagPage?: () => void;
+		/**
+		 * #20 — sweep the email-header block that contains the currently
+		 * selected detection. Parent resolves which span to target from
+		 * the selected detection's char offsets.
+		 */
+		onSweepHeader?: () => void;
+		/**
+		 * #20 — sweep the signature block that contains the currently
+		 * selected detection.
+		 */
+		onSweepSignature?: () => void;
 	}
 
-	let { onAccept, onReject, onDefer, onNext, onPrev, onToggleMode, onUndo, onRedo }: Props = $props();
+	let {
+		onAccept,
+		onReject,
+		onDefer,
+		onNext,
+		onPrev,
+		onToggleMode,
+		onUndo,
+		onRedo,
+		onMarkPage,
+		onFlagPage,
+		onSweepHeader,
+		onSweepSignature
+	}: Props = $props();
 
 	let showHelp = $state(false);
 
@@ -66,6 +94,24 @@
 
 		if (typing) return;
 
+		// #20 — Shift+H / Shift+S sweep the block containing the currently
+		// selected detection. These fire before the letter-key branch below
+		// because the lowercased key is still "h"/"s" and would otherwise
+		// fall through as a no-op.
+		if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+			const k = e.key.toLowerCase();
+			if (k === 'h') {
+				e.preventDefault();
+				onSweepHeader?.();
+				return;
+			}
+			if (k === 's') {
+				e.preventDefault();
+				onSweepSignature?.();
+				return;
+			}
+		}
+
 		switch (e.key.toLowerCase()) {
 			case 'a':
 				e.preventDefault();
@@ -83,6 +129,20 @@
 				if (e.metaKey || e.ctrlKey || e.altKey) return;
 				e.preventDefault();
 				onToggleMode?.();
+				break;
+			case 'p':
+				// #10 — mark current page reviewed. Modifier-free so it
+				// doesn't collide with browser Ctrl+P (print); the parent
+				// enforces the edit-mode guard since that state is owned
+				// by the review store.
+				if (e.metaKey || e.ctrlKey || e.altKey) return;
+				e.preventDefault();
+				onMarkPage?.();
+				break;
+			case 'f':
+				if (e.metaKey || e.ctrlKey || e.altKey) return;
+				e.preventDefault();
+				onFlagPage?.();
 				break;
 			case 'arrowright':
 				e.preventDefault();
@@ -134,6 +194,22 @@
 		<div class="flex justify-between">
 			<span>Wissel modus (Beoordelen/Bewerken)</span>
 			<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">M</kbd>
+		</div>
+		<div class="flex justify-between">
+			<span>Pagina beoordeeld (alleen Bewerken)</span>
+			<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">P</kbd>
+		</div>
+		<div class="flex justify-between">
+			<span>Pagina markeren — later terugkomen</span>
+			<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">F</kbd>
+		</div>
+		<div class="flex justify-between">
+			<span>Lak hele e-mailheader van geselecteerde detectie</span>
+			<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">Shift + H</kbd>
+		</div>
+		<div class="flex justify-between">
+			<span>Lak handtekeningblok van geselecteerde detectie</span>
+			<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">Shift + S</kbd>
 		</div>
 		<div class="flex justify-between">
 			<span>Ongedaan maken</span>

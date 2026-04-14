@@ -8,8 +8,11 @@ import pytest
 
 from app.services.ner_engine import (
     NERDetection,
+    _is_plausible_birth_date,
     _is_plausible_person_name,
+    _parse_birth_date,
     _validate_bsn,
+    _validate_btw,
     _validate_luhn,
     detect_all,
     detect_tier1,
@@ -276,6 +279,175 @@ class TestCreditCard:
 
 
 # ---------------------------------------------------------------------------
+# Tier 1: KvK number (8 digits, context-anchored)
+# ---------------------------------------------------------------------------
+
+
+class TestKvK:
+    def test_kvk_with_prefix_anchor_detected(self):
+        text = "Ingeschreven bij de KvK onder nummer 12345678."
+        results = detect_tier1(text)
+        kvk_results = [r for r in results if r.entity_type == "kvk"]
+        assert len(kvk_results) == 1
+        assert kvk_results[0].text == "12345678"
+        assert kvk_results[0].tier == "1"
+        assert kvk_results[0].confidence == 0.90
+        assert kvk_results[0].source == "regex"
+
+    def test_kvk_uppercase_anchor(self):
+        text = "KVK: 87654321"
+        results = detect_tier1(text)
+        kvk_results = [r for r in results if r.entity_type == "kvk"]
+        assert len(kvk_results) == 1
+
+    def test_kamer_van_koophandel_anchor(self):
+        text = "Kamer van Koophandel 11223344"
+        results = detect_tier1(text)
+        kvk_results = [r for r in results if r.entity_type == "kvk"]
+        assert len(kvk_results) == 1
+
+    def test_standalone_8_digits_not_detected_as_kvk(self):
+        """An unanchored 8-digit sequence must not be flagged as KvK —
+        the whole point of the anchor is to avoid those false positives."""
+        text = "Referentienummer 12345678 in ons systeem."
+        results = detect_tier1(text)
+        kvk_results = [r for r in results if r.entity_type == "kvk"]
+        assert len(kvk_results) == 0
+
+    def test_kvk_anchor_beyond_window_not_detected(self):
+        """Anchor more than 20 chars before the number does not count."""
+        # 30 chars of filler between the anchor and the number.
+        text = "KvK" + " " * 30 + "12345678"
+        results = detect_tier1(text)
+        kvk_results = [r for r in results if r.entity_type == "kvk"]
+        assert len(kvk_results) == 0
+
+
+# ---------------------------------------------------------------------------
+# Tier 1: BTW number (NL + 9 digits + B + 2 digits, 11-proef)
+# ---------------------------------------------------------------------------
+
+
+class TestBTW:
+    def test_compact_btw_with_valid_checksum_detected(self):
+        # 111222333 passes 11-proef (see TestBSN)
+        text = "BTW: NL111222333B01"
+        results = detect_tier1(text)
+        btw_results = [r for r in results if r.entity_type == "btw"]
+        assert len(btw_results) == 1
+        assert btw_results[0].text == "NL111222333B01"
+        assert btw_results[0].confidence == 0.95
+        assert btw_results[0].woo_article == "5.1.2e"
+
+    def test_spaced_btw_detected(self):
+        text = "BTW-nummer NL 111222333 B 01"
+        results = detect_tier1(text)
+        btw_results = [r for r in results if r.entity_type == "btw"]
+        assert len(btw_results) == 1
+
+    def test_invalid_checksum_rejected(self):
+        """A BTW number whose 9-digit body fails the 11-proef is dropped."""
+        text = "BTW: NL123456780B01"  # body fails 11-proef
+        results = detect_tier1(text)
+        btw_results = [r for r in results if r.entity_type == "btw"]
+        assert len(btw_results) == 0
+
+    def test_validate_btw_matches_bsn_rule(self):
+        assert _validate_btw("111222333") is True
+        assert _validate_btw("123456789") is False
+
+
+# ---------------------------------------------------------------------------
+# Tier 1: Geboortedatum (context-anchored dates)
+# ---------------------------------------------------------------------------
+
+
+class TestGeboortedatum:
+    def test_geboortedatum_anchor_dash_format(self):
+        text = "Geboortedatum: 15-03-1985"
+        results = detect_tier1(text)
+        geb_results = [r for r in results if r.entity_type == "geboortedatum"]
+        assert len(geb_results) == 1
+        assert geb_results[0].text == "15-03-1985"
+        assert geb_results[0].confidence == 0.95
+        assert geb_results[0].woo_article == "5.1.2e"
+
+    def test_geboortedatum_slash_format(self):
+        text = "geboortedatum 15/03/1985"
+        results = detect_tier1(text)
+        geb_results = [r for r in results if r.entity_type == "geboortedatum"]
+        assert len(geb_results) == 1
+
+    def test_geboortedatum_word_format(self):
+        text = "geboortedatum 15 maart 1985"
+        results = detect_tier1(text)
+        geb_results = [r for r in results if r.entity_type == "geboortedatum"]
+        assert len(geb_results) == 1
+        assert "maart" in geb_results[0].text
+
+    def test_geboren_op_anchor(self):
+        text = "geboren op 01-01-1990"
+        results = detect_tier1(text)
+        assert any(r.entity_type == "geboortedatum" for r in results)
+
+    def test_geb_abbreviated_anchors(self):
+        for anchor in ("geb.", "geb:"):
+            text = f"{anchor} 05-05-1970"
+            results = detect_tier1(text)
+            assert any(r.entity_type == "geboortedatum" for r in results), (
+                f"anchor {anchor!r} should trigger"
+            )
+
+    def test_english_dob_anchor(self):
+        for anchor in ("DOB", "date of birth"):
+            text = f"{anchor}: 10-10-1960"
+            results = detect_tier1(text)
+            assert any(r.entity_type == "geboortedatum" for r in results), (
+                f"anchor {anchor!r} should trigger"
+            )
+
+    def test_plain_date_without_anchor_not_detected(self):
+        """Dates without an anchor stay out of Tier 1 (they remain Tier 2)."""
+        text = "De vergadering vond plaats op 15-03-1985."
+        results = detect_tier1(text)
+        geb_results = [r for r in results if r.entity_type == "geboortedatum"]
+        assert len(geb_results) == 0
+
+    def test_impossible_date_rejected(self):
+        """Day 31 of February cannot exist — drop the match."""
+        text = "geboortedatum: 31-02-1985"
+        results = detect_tier1(text)
+        geb_results = [r for r in results if r.entity_type == "geboortedatum"]
+        assert len(geb_results) == 0
+
+    def test_future_date_rejected(self):
+        text = "geboortedatum: 01-01-2999"
+        results = detect_tier1(text)
+        geb_results = [r for r in results if r.entity_type == "geboortedatum"]
+        assert len(geb_results) == 0
+
+    def test_far_past_date_rejected(self):
+        """More than 120 years ago is not a plausible living birth date."""
+        text = "geboortedatum: 01-01-1800"
+        results = detect_tier1(text)
+        geb_results = [r for r in results if r.entity_type == "geboortedatum"]
+        assert len(geb_results) == 0
+
+    def test_parse_birth_date_word_form(self):
+        assert _parse_birth_date("15 maart 1985") == __import__("datetime").date(1985, 3, 15)
+        assert _parse_birth_date("5 jan 1990") == __import__("datetime").date(1990, 1, 5)
+
+    def test_is_plausible_birth_date(self):
+        import datetime
+
+        today = datetime.date.today()
+        assert _is_plausible_birth_date(datetime.date(1990, 1, 1)) is True
+        assert _is_plausible_birth_date(today) is True
+        assert _is_plausible_birth_date(today + datetime.timedelta(days=1)) is False
+        assert _is_plausible_birth_date(datetime.date(1800, 1, 1)) is False
+
+
+# ---------------------------------------------------------------------------
 # Tier 1: Meta / combined behavior
 # ---------------------------------------------------------------------------
 
@@ -377,6 +549,30 @@ class TestTier2Deduce:
             assert r.entity_type not in ("bsn", "telefoon", "postcode"), (
                 f"Tier 2 should skip {r.entity_type} (handled by Tier 1)"
             )
+
+    def test_name_list_boost_on_known_first_name(self):
+        """A Deduce persoon hit whose first token is on the Meertens
+        list should be boosted above the base 0.80 confidence and
+        carry attribution text pointing back to the Voornamenbank."""
+        text = "De heer Jan Bakker heeft een verzoek ingediend."
+        results = detect_tier2(text)
+        person_results = [r for r in results if r.entity_type == "persoon"]
+        assert any(r.confidence > 0.80 for r in person_results)
+        assert any(
+            "Meertens" in r.reasoning or "Voornamenbank" in r.reasoning for r in person_results
+        )
+
+    def test_name_list_drops_unknown_span(self):
+        """A span that survived the heuristic but matches NO entry in
+        the name lists is dropped by the name engine — regression test
+        for the post-LLM false-positive gap."""
+        from app.services.name_engine import score_person_candidate
+        from app.services.ner_engine import _get_name_lists
+
+        lists = _get_name_lists()
+        # Sanity check: this span has no tokens in either list.
+        score = score_person_candidate("Qwerty Xylofoon", lists)
+        assert score.is_plausible is False
 
 
 # ---------------------------------------------------------------------------

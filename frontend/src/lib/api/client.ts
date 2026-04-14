@@ -5,8 +5,12 @@ import type {
 	UpdateDetectionRequest,
 	PageExtraction,
 	BoundingBox,
+	CustomTerm,
 	EntityType,
 	DetectionTier,
+	ReferenceName,
+	ReferenceRoleHint,
+	StructureSpan,
 	WooArticleCode
 } from '$lib/types';
 
@@ -104,10 +108,31 @@ export async function getDocument(id: string): Promise<Document> {
 // Detections
 // ---------------------------------------------------------------------------
 
+export interface AnalyzeResponse {
+	document_id: string;
+	detection_count: number;
+	page_count: number;
+	status?: string;
+	/**
+	 * Structural regions (email headers, signature blocks, salutations)
+	 * produced by the server-side structure engine (#14). Ephemeral:
+	 * wired for #20 bulk-sweep affordances and #15 Tier 2 card context.
+	 */
+	structure_spans: StructureSpan[];
+}
+
+export interface AnalyzeCustomTermPayload {
+	term: string;
+	match_mode?: 'exact';
+	woo_article?: string;
+}
+
 export async function analyzeDocument(
 	documentId: string,
-	pages: PageExtraction[]
-): Promise<{ document_id: string; detection_count: number; page_count: number }> {
+	pages: PageExtraction[],
+	referenceNames: string[] = [],
+	customTerms: AnalyzeCustomTermPayload[] = []
+): Promise<AnalyzeResponse> {
 	return request('/api/analyze', {
 		method: 'POST',
 		body: JSON.stringify({
@@ -122,7 +147,15 @@ export async function analyzeDocument(
 					x1: ti.x1,
 					y1: ti.y1
 				}))
-			}))
+			})),
+			// #17 — per-document reference list. The server normalizes these
+			// before matching, so the frontend sends the original display
+			// strings; duplicates or case-mismatches are tolerated.
+			reference_names: referenceNames,
+			// #21 — per-document custom wordlist. Opposite direction from the
+			// reference list: these terms MUST be redacted. The server scans
+			// the full text for every occurrence.
+			custom_terms: customTerms
 		})
 	});
 }
@@ -176,4 +209,124 @@ export async function createManualDetection(
  */
 export async function deleteDetection(id: string): Promise<void> {
 	await request<void>(`/api/detections/${id}`, { method: 'DELETE' });
+}
+
+/**
+ * Split a detection into two halves (#18).
+ *
+ * The client has resolved the split point against its local text layer
+ * and sends the two resulting bbox sets. The server creates two new
+ * manual-source detections inheriting the original's metadata and
+ * deletes the original as part of the same operation.
+ */
+export async function splitDetection(
+	id: string,
+	bboxesA: BoundingBox[],
+	bboxesB: BoundingBox[]
+): Promise<Detection[]> {
+	return request(`/api/detections/${id}/split`, {
+		method: 'POST',
+		body: JSON.stringify({ bboxes_a: bboxesA, bboxes_b: bboxesB })
+	});
+}
+
+/**
+ * Merge two or more detections into one (#18).
+ *
+ * The server concatenates the inputs' bboxes in list order, creates a
+ * new manual-source detection inheriting metadata from the *first* id in
+ * the list, and deletes the inputs. All ids must belong to the same
+ * document; the server enforces this.
+ */
+export async function mergeDetections(ids: string[]): Promise<Detection> {
+	return request('/api/detections/merge', {
+		method: 'POST',
+		body: JSON.stringify({ detection_ids: ids })
+	});
+}
+
+// ---------------------------------------------------------------------------
+// Page reviews (#10 — page completeness)
+// ---------------------------------------------------------------------------
+
+export type PageReviewStatus = 'unreviewed' | 'in_progress' | 'complete' | 'flagged';
+
+export interface PageReview {
+	id: string;
+	document_id: string;
+	page_number: number;
+	status: PageReviewStatus;
+	reviewer_id: string | null;
+	updated_at: string;
+}
+
+export async function getPageReviews(documentId: string): Promise<PageReview[]> {
+	return request(`/api/documents/${documentId}/page-reviews`);
+}
+
+export async function upsertPageReview(
+	documentId: string,
+	pageNumber: number,
+	status: PageReviewStatus
+): Promise<PageReview> {
+	return request(`/api/documents/${documentId}/page-reviews/${pageNumber}`, {
+		method: 'PUT',
+		body: JSON.stringify({ status })
+	});
+}
+
+// ---------------------------------------------------------------------------
+// Reference names (#17 — per-document "niet lakken" list)
+// ---------------------------------------------------------------------------
+
+export async function getReferenceNames(documentId: string): Promise<ReferenceName[]> {
+	return request(`/api/documents/${documentId}/reference-names`);
+}
+
+export async function createReferenceName(
+	documentId: string,
+	displayName: string,
+	roleHint: ReferenceRoleHint = 'publiek_functionaris'
+): Promise<ReferenceName> {
+	return request(`/api/documents/${documentId}/reference-names`, {
+		method: 'POST',
+		body: JSON.stringify({ display_name: displayName, role_hint: roleHint })
+	});
+}
+
+export async function deleteReferenceName(
+	documentId: string,
+	nameId: string
+): Promise<void> {
+	await request<void>(`/api/documents/${documentId}/reference-names/${nameId}`, {
+		method: 'DELETE'
+	});
+}
+
+// ---------------------------------------------------------------------------
+// Custom terms (#21 — per-document "eigen zoektermen")
+// ---------------------------------------------------------------------------
+
+export async function getCustomTerms(documentId: string): Promise<CustomTerm[]> {
+	return request(`/api/documents/${documentId}/custom-terms`);
+}
+
+export async function createCustomTerm(
+	documentId: string,
+	term: string,
+	wooArticle: string = '5.1.2e'
+): Promise<CustomTerm> {
+	return request(`/api/documents/${documentId}/custom-terms`, {
+		method: 'POST',
+		body: JSON.stringify({ term, match_mode: 'exact', woo_article: wooArticle })
+	});
+}
+
+export async function deleteCustomTerm(
+	documentId: string,
+	termId: string
+): Promise<void> {
+	await request<void>(`/api/documents/${documentId}/custom-terms/${termId}`, {
+		method: 'DELETE'
+	});
 }

@@ -107,8 +107,13 @@ async def test_llm_drops_non_person_detections():
 @pytest.mark.asyncio
 async def test_llm_public_official_marked_rejected():
     """`public_official` with should_redact=False should surface as
-    `rejected` (the suggestion is rejected — keep the name visible)."""
-    extraction = _make_extraction("Burgemeester Jan de Vries opende de vergadering.")
+    `rejected` (the suggestion is rejected — keep the name visible).
+
+    The input text intentionally does NOT contain a function title so
+    the rule engine (#13) does not preempt the LLM — this test covers
+    the dormant revival path where the LLM is the authority.
+    """
+    extraction = _make_extraction("Jan de Vries sprak de aanwezigen vriendelijk toe.")
     provider = _FakeProvider(
         verdicts={
             "Jan de Vries": RoleClassification(
@@ -211,4 +216,5 @@ async def test_public_officials_list_short_circuits_llm():
     persons = [d for d in result.detections if d.entity_type == "persoon"]
     jan = next(p for p in persons if "Jan de Vries" in p.entity_text)
     assert jan.review_status == "rejected"
-    assert "publieke functionarissen" in jan.reasoning
+    assert jan.source == "reference_list"
+    assert "publiek-functionarissenlijst" in jan.reasoning

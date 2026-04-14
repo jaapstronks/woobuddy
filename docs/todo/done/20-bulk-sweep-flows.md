@@ -77,3 +77,59 @@ All three flows hang off existing data: the structure spans from #14, the normal
 - `frontend/src/lib/stores/detections.svelte.ts` (batch review helper)
 - `frontend/src/routes/review/[docId]/+page.svelte` (handlers)
 - `frontend/src/lib/types/index.ts` (if `StructureSpan` type needs cross-file visibility)
+
+## As built (2026-04-14)
+
+Shipped this shape — note where it diverges from the original spec:
+
+- **Backend change (contrary to "no new backend signals"):** detections need
+  char offsets on the frontend to match them against structure spans, and
+  that information wasn't being persisted. Added nullable `start_char` /
+  `end_char` columns to the `Detection` ORM model and plumbed them through
+  `PipelineDetection` → `analyze.py` row creation → `DetectionResponse`.
+  Without this the sidebar has no way to ask "which detections fall inside
+  this block?" — every containment check was guaranteed false. Existing
+  dev DBs that predate this change need to be recreated (the project uses
+  `Base.metadata.create_all`, no alembic migrations).
+- **Adjacent bug fix:** while wiring the new columns in `analyze.py`,
+  noticed `subject_role` (pre-filled by the #13 role engine on the
+  pipeline detection) was not being forwarded to the stored Detection
+  row. Added alongside the offsets so the rule engine's classification
+  actually reaches the sidebar.
+- **Structure-spans cache in sessionStorage:** `structureSpansStore`
+  caches the analyze response's `structure_spans` keyed by document id.
+  Analyze isn't re-run on soft reload, so without this the sweep chips
+  would vanish after Cmd-R. Cleared on doc switch, survives reload.
+- **Same-name sweep decision is fixed to "accept"** in the current
+  handler. The original spec said "apply the reviewer's decision
+  (accept / reject / publiek functionaris)" — in practice the link is
+  only rendered on pending cards and fires before any chip is clicked,
+  so there's no "reviewer's decision" to forward yet. Wiring this to
+  the role chips or a two-step confirm is a follow-up.
+
+Deferred from this ticket (still valuable, not blocking):
+
+- **PdfViewer overlay chips.** The sidebar chips cover the "I'm scanning
+  the list" workflow. Floating chips anchored over each block in the PDF
+  require char-offset → page/bbox mapping that we don't have on the
+  viewer side yet (the bbox index is page-indexed, not char-indexed).
+  Worth a small follow-up ticket once #14 exposes per-span bboxes.
+- **"Laatste bulkactie: N headerblok items" stats-bar line.** The undo
+  store records the label on every command, but the stats bar doesn't
+  yet surface a callout for the most recent one. Pure UI work, no new
+  data. Follow-up ticket.
+- **Same-name warning toast when the reviewer classifies a match
+  differently later.** Needs an additional state machine on the
+  detection store (remember past sweep targets); deferred until there's
+  evidence reviewers want it.
+- **50+ matches confirmation dialog.** The current same-name link
+  performs the sweep immediately. In practice 50+ matches is rare and
+  Ctrl+Z is the safety net. Add a confirmation step if/when reviewers
+  report accidental bulk accepts.
+
+Tests: `SweepBlockCommand` and `SameNameSweepCommand` covered by
+`frontend/src/lib/stores/undo.svelte.test.ts`. `groupDetectionsBySpan`,
+`detectionInsideSpan`, `normalizeDetectionName`, and
+`findSameNameDetections` covered by
+`frontend/src/lib/utils/structure-matching.test.ts`. All 72 frontend
+tests pass; `npm run check` is clean.

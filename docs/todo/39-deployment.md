@@ -19,11 +19,11 @@ The app needs to be accessible on the internet for real users. Deployment infras
 - [ ] Managed PostgreSQL addon
 - [ ] **No S3/MinIO needed for document storage** — under client-first architecture, PDFs never leave the browser. The only server-side storage is PostgreSQL for metadata. If temporary artifact storage is needed (e.g., dossier ZIP assembly), use ephemeral local storage or a small S3 bucket with auto-expiry.
 
-### LLM inference (key decision)
+### Hosting cost profile
 
-- [ ] Evaluate GPU hosting options for Ollama: dedicated GPU VPS (Hetzner, ~150/month) or customer-operated on-prem/private-cloud GPU box. Hosted third-party LLMs are out of scope — document text must never leave the operator's infrastructure.
-- [ ] Document the decision and cost tradeoffs
-- [ ] Configure the chosen option
+- [ ] **No GPU, no LLM inference, no model hosting.** The pipeline is regex + Deduce NER + wordlists (CPU-bound, light). A small EU VPS (Hetzner CX22 or similar, ~€5–10/month) is sufficient for the hosted free tier; managed Postgres adds another ~€15/month. This is what makes the generous free tier in #37 viable.
+- [ ] EU region only (Hetzner FSN/NBG, Fly.io AMS/FRA, Railway EU). Document hosting region in the privacy policy (#40).
+- [ ] If the dormant LLM layer is ever revived behind its feature flag, GPU hosting becomes a separate cost decision — not part of the default deployment.
 
 ### Domain & DNS
 
@@ -46,4 +46,5 @@ The app needs to be accessible on the internet for real users. Deployment infras
 - App is accessible at `woobuddy.nl` with HTTPS
 - Deployments happen automatically on push to main
 - Database is backed up on a schedule
-- PDF storage works with cloud S3-compatible service
+- Hosting region is EU-only and documented in the privacy policy
+- No PDF storage in cloud object storage (PDFs stay in the browser, per #00)

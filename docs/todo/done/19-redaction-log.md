@@ -1,10 +1,37 @@
 # 19 — Redaction Log & Audit Trail
 
+- **Status:** Done (MVP scoped to single-document; see "Built vs deferred" below)
 - **Priority:** P1 (promoted from P2 in the 2026-04 pivot)
 - **Size:** L (3–7 days)
 - **Source:** Draft Workflow briefing, "The Redaction Log" section + `docs/reference/woo-redactietool-analyse.md` §"Audit trail"
 - **Depends on:** #00 (Client-first architecture — log cannot contain entity text). Auth (#32) and Organizations (#33) are *not* hard prerequisites: for the single-document prototype the log is per-document and reviewer identity is a text field.
 - **Blocks:** Nothing
+
+## Built vs deferred
+
+**What shipped:**
+
+- New route `/review/[docId]/log` with a stats bar, compound filter bar, sortable table, expandable detail rows, and a multi-select batch toolbar.
+- Columns: #, Pagina, Type (entity-type badge), Trap, Grond (with tooltip showing full article label), Status, Bron, Beoordeeld (date), and a row "Bekijk" action.
+- Client-side sort on all major columns; compound client-side filters on tier, status, entity type, Woo-article, source, and page number.
+- Filter-aware stats tiles (total, counts by status, by tier, auto vs handmatig).
+- Expandable row detail: motivation, confidence, bbox count, reviewer, subject_role, plus per-row action buttons (Accepteer / Wijs af / Stel uit / Heropenen / Bekijk in document).
+- Batch operations with a Shoelace confirmation dialog: bulk status change (accept/reject/defer), bulk article change, and bulk delete (manual/search-redact rows only — the backend already rejects deleting automatic rows).
+- "Logboek" button in the review toolbar; "Bekijk" in the log navigates back to `/review/[docId]?detection=<id>`; the review page consumes that query param, selects the row, and jumps the PDF to its page.
+- New label utilities: `$lib/utils/entity-types.ts` (Dutch labels + badge classes for every EntityType) and `$lib/utils/review-status.ts` (status labels + source labels).
+- Backend: `DetectionResponse` now exposes the existing `source` column (`regex`/`deduce`/`llm`/`manual`/`search_redact`) so the log can distinguish auto vs manual rows and filter by source.
+- Frontend `Detection` type now mirrors `source`.
+
+**Deliberately deferred (document when picked up later):**
+
+- **Dossier-level log** (`/app/dossier/[id]/log`) — the app is deliberately single-document (see `CLAUDE.md`). A dossier-scoped log has to wait for the multi-document model to exist.
+- **Server-side filter/sort/pagination** — the spec asked for this but typical single-document detection counts sit in the hundreds, so client-side filtering and sorting are faster and simpler. If a future pilot ships documents with 5 000+ detections, extend `GET /api/documents/{document_id}/detections` with query params and switch the log over.
+- **Virtual scrolling** for huge result sets — ditto, pending a real-world need.
+- **Client-side bbox→text join** to populate a "Passage" column from the locally extracted text — kept as a possible follow-up. For now the log's client-first reminder sends reviewers to "Bekijk" for context.
+- **Grouping** (by article / document / status / reviewer) — filters + sortable headers cover the main use cases; add grouping when a reviewer specifically asks for it.
+- **Slide-in detail panel** — implemented as an expandable row instead, which needs no new layout primitives.
+- **Stats endpoint** (`/api/documents/:id/log/stats`) — stats are derived client-side from the already-loaded detection list, so no new endpoint is needed.
+- **Undo integration** — bulk log actions deliberately do *not* push onto the review-page undo stack. The undo stack is scoped to the review session, and mixing in bulk log ops would make it easy to revert work from two different screens by accident. The confirmation dialog is the safety net.
 
 > **Pivot note (2026-04):** Promoted to P1 and moved from Phase D to Phase C. The analyse.md identifies the audit trail — *"per gelakte passage motiveren welke uitzonderingsgrond, exporteerbaar naar het Woo-besluit"* — as the single feature most likely to decide a sale. Gemeenten already produce this motivation by hand; automating it saves hours per Woo-verzoek. That makes it more important than the other Phase D/E items and should be tackled right after the core rule-based detection (#36–#39) and the Tier 2 card UX (#34).
 

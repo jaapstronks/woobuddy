@@ -51,11 +51,12 @@ Better Auth is a solid choice. The reasoning is sound:
 - [ ] FastAPI middleware to validate and extract `X-User-Id` from trusted headers
 - [ ] The proxy must handle streaming for the ephemeral `/api/export/redact` endpoint (PDF binary up + redacted PDF down)
 
-### Quick Try flow update
+### Quick Try flow — anonymous, no login wall
 
-- [ ] `/try` now requires login — redirect to signup if not authenticated
-- [ ] PDF stays client-side throughout (File API in browser) — no server upload needed
-- [ ] After auth redirect, the PDF is still in the browser's File API reference — resume processing from there
+- [ ] **`/try` and `/review/[docId]` remain accessible without an account.** The free trial is the marketing engine — every signup field halves conversion, and the audience (Dutch civil servants) won't fill in a form before they trust the tool.
+- [ ] Anonymous sessions: PDF lives in IndexedDB, detection metadata is computed in memory by the backend and returned without persisting to PostgreSQL (no `Document` row, no `Detection` rows for anonymous users).
+- [ ] Optional "save your work" CTA in the review screen: signup gate appears only when the user *wants* persistence (resume across devices, audit log, custom wordlists, team features).
+- [ ] `/app/*` (the authenticated workspace with org features) requires login — the gate is on the team/persistent features, not on the core review loop.
 
 ### Environment variables
 
@@ -67,8 +68,9 @@ Better Auth is a solid choice. The reasoning is sound:
 
 - New user can sign up, verify email, and log in
 - Unauthenticated access to `/app/*` redirects to login
+- **`/try` and `/review/[docId]` work fully without an account** — no signup wall, full export, no watermark
 - FastAPI receives authenticated user ID on every proxied request
-- `/try` flow works: open PDF in browser → forced login → resume (PDF stays client-side)
+- Analyze endpoint accepts both authenticated and anonymous requests; anonymous requests do not persist anything to PostgreSQL
 
 ## Not in Scope
 
