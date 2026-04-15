@@ -54,3 +54,7 @@ temp/
 
 # Playwright MCP
 .playwright-mcp/
+
+# Loose screenshots at repo root (scratch from Playwright / CleanShot runs,
+# never tracked). Root-only pattern so frontend/static/*.png is unaffected.
+/*.png

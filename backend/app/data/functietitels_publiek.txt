@@ -1,0 +1,81 @@
+# Functietitels — publiek functionaris (niet lakken)
+#
+# Titles whose bearer is a *publiek functionaris* acting in an official
+# capacity under the Woo. A name preceded (or apposed) by one of these
+# titles is assumed to be that person in that role, and the Tier 2
+# persoon detection is defaulted to review_status="rejected" (don't
+# redact). See docs/todo/done/13-functietitel-publiek-functionaris.md.
+#
+# Curation notes:
+# - Hand-curated from the Woo-analyse (docs/reference/woo-redactietool-analyse.md)
+#   and from real false-positive traffic on Dutch municipal Woo documents.
+# - Dutch only. Lowercase or capitalized doesn't matter — matching is
+#   case-insensitive and whole-word.
+# - One title per line. Blank lines and comment lines (starting with `#`)
+#   are ignored by the loader. Multi-word titles are allowed; whitespace
+#   inside a title is normalized at load time.
+# - Extend this file (not the code) to add new public-official titles.
+
+# Gemeentelijk / provinciaal / waterschap
+burgemeester
+burgemeesters
+loco-burgemeester
+loco-burgemeesters
+wethouder
+wethouders
+locoburgemeester
+locoburgemeesters
+gedeputeerde
+gedeputeerden
+commissaris van de koning
+commissaris van de koningin
+gemeentesecretaris
+gemeentesecretarissen
+griffier
+griffiers
+college van b&w
+college van burgemeester en wethouders
+raadslid
+raadsleden
+gemeenteraadslid
+gemeenteraadsleden
+statenlid
+statenleden
+provinciale statenlid
+provinciale statenleden
+dijkgraaf
+dijkgraven
+heemraad
+heemraden
+waterschapsbestuurder
+waterschapsbestuurders
+
+# Nationaal bestuur
+minister
+ministers
+staatssecretaris
+staatssecretarissen
+premier
+minister-president
+kamervoorzitter
+kamervoorzitters
+fractievoorzitter
+fractievoorzitters
+kamerlid
+kamerleden
+tweede kamerlid
+tweede kamerleden
+eerste kamerlid
+eerste kamerleden
+
+# Rechterlijke macht
+rechter
+rechters
+raadsheer
+raadsheren
+officier van justitie
+officieren van justitie
+advocaat-generaal
+advocaten-generaal
+procureur-generaal
+procureurs-generaal

@@ -1,0 +1,15 @@
+# gitleaks configuration for WOO Buddy
+#
+# Extends the default ruleset with a project-specific allowlist. The
+# global pre-commit hook (`~/.git-hooks/pre-commit`) runs
+# `gitleaks protect --staged`, which picks up this file automatically.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "External reference data from Dutch government registries. These CSVs contain public URLs with high-entropy download tokens (e.g. `?token=<hex>`) that trip the generic-api-key heuristic but are not secrets. The files are sourced data, never application secrets."
+paths = [
+    '''backend/app/data/gemeenten\.csv''',
+    '''backend/app/data/medewerkers_gemeenten\.csv''',
+]

@@ -1,0 +1,522 @@
+{
+  "generated_at": "2026-04-15T11:37:01.021Z",
+  "schema_version": 1,
+  "document": {
+    "id": "640c1fe9-4a51-4477-be64-d73b2dfe282f",
+    "filename": "besluit_brief.pdf",
+    "page_count": 1,
+    "created_at": "2026-04-15T11:36:59.225391Z",
+    "five_year_warning": false
+  },
+  "counts": {
+    "total": 19,
+    "by_tier": {
+      "1": 6,
+      "2": 13
+    },
+    "by_status": {
+      "auto_accepted": 6,
+      "pending": 12,
+      "rejected": 1
+    }
+  },
+  "detections": [
+    {
+      "id": "f2f5dcd7-8552-4d5c-9931-d28834c02c01",
+      "tier": "1",
+      "entity_type": "bsn",
+      "entity_text": "123456782",
+      "woo_article": "5.1.1e",
+      "confidence": 0.98,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "BSN-nummer gedetecteerd (voldoet aan 11-proef).",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 464,
+      "end_char": 473,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 99.00000000000001,
+          "y0": 322.53,
+          "x1": 149.04000000000002,
+          "y1": 332.53
+        }
+      ]
+    },
+    {
+      "id": "5f612651-ab69-4dab-a829-9d508cc40d30",
+      "tier": "1",
+      "entity_type": "email",
+      "entity_text": "j.vanderberg@gmail.com",
+      "woo_article": "5.1.2e",
+      "confidence": 0.97,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "E-mailadres gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 551,
+      "end_char": 573,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 98.43,
+          "y0": 384.89,
+          "x1": 209.72000000000003,
+          "y1": 394.89
+        }
+      ]
+    },
+    {
+      "id": "41ad9739-6589-4c3a-b375-116540a1cee2",
+      "tier": "1",
+      "entity_type": "telefoon",
+      "entity_text": "030-286 00 00",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Telefoonnummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 58,
+      "end_char": 71,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 73.81652173913042,
+          "y0": 71.64999999999998,
+          "x1": 129.244,
+          "y1": 80.64999999999998
+        }
+      ]
+    },
+    {
+      "id": "78c244b7-d154-47c3-a673-349a30c77a59",
+      "tier": "1",
+      "entity_type": "telefoon",
+      "entity_text": "06-12345678",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Telefoonnummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 531,
+      "end_char": 542,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 103.45000000000002,
+          "y0": 369.3,
+          "x1": 162.38000000000002,
+          "y1": 379.3
+        }
+      ]
+    },
+    {
+      "id": "776c3879-36a1-4fb2-80c0-863f080f3e3f",
+      "tier": "1",
+      "entity_type": "postcode",
+      "entity_text": "3511 LX",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Postcode gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 505,
+      "end_char": 512,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 106.23000000000002,
+          "y0": 353.71,
+          "x1": 139.95133333333334,
+          "y1": 363.71
+        }
+      ]
+    },
+    {
+      "id": "99a17fef-ad76-4b06-ab2a-a092161f5bcb",
+      "tier": "1",
+      "entity_type": "postcode",
+      "entity_text": "3500 CE",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Postcode gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 32,
+      "end_char": 39,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 96.96550000000002,
+          "y0": 57.48000000000002,
+          "x1": 127.6654,
+          "y1": 66.48000000000002
+        }
+      ]
+    },
+    {
+      "id": "b11a08c5-83da-4257-b493-414e2d067760",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "dhr. Jan van der Berg",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Persoonsnaam herkend: voornaam op lijst van het Meertens Instituut (Nederlandse Voornamenbank), achternaam op CBS-achternamenlijst.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 437,
+      "end_char": 458,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 102.33000000000003,
+          "y0": 306.93999999999994,
+          "x1": 198.49000000000004,
+          "y1": 316.93999999999994
+        }
+      ]
+    },
+    {
+      "id": "e242deb8-c075-45c6-842e-01c4becef1b5",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "mw. C.J. Vermeer",
+      "woo_article": null,
+      "confidence": 0.9000000000000001,
+      "confidence_level": "high",
+      "review_status": "rejected",
+      "reasoning": "Publiek functionaris: voorafgegaan door 'college van burgemeester en wethouders' in de brontekst.",
+      "source": "rule",
+      "subject_role": "publiek_functionaris",
+      "start_char": 1349,
+      "end_char": 1365,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 31.18,
+          "y0": 696.7,
+          "x1": 111.19,
+          "y1": 706.7
+        }
+      ]
+    },
+    {
+      "id": "5aa578ea-f9ab-4e7d-8fb5-64d68bfb8511",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "Van der Berg",
+      "woo_article": "5.1.2e",
+      "confidence": 0.8500000000000001,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Achternaam herkend op CBS-achternamenlijst.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 187,
+      "end_char": 199,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 93.715,
+          "y0": 182.21000000000004,
+          "x1": 151.43961538461542,
+          "y1": 192.21000000000004
+        },
+        {
+          "page": 0,
+          "x0": 143.5414285714286,
+          "y0": 306.93999999999994,
+          "x1": 198.49000000000004,
+          "y1": 316.93999999999994
+        },
+        {
+          "page": 0,
+          "x0": 68.3357894736842,
+          "y0": 494.02,
+          "x1": 124.06947368421052,
+          "y1": 504.02
+        }
+      ]
+    },
+    {
+      "id": "a820a641-5cc1-494a-849c-1efe6065a145",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "De heer Van der Berg",
+      "woo_article": "5.1.2e",
+      "confidence": 0.8500000000000001,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Achternaam herkend op CBS-achternamenlijst.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 837,
+      "end_char": 857,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 31.18,
+          "y0": 494.02,
+          "x1": 124.06947368421052,
+          "y1": 504.02
+        }
+      ]
+    },
+    {
+      "id": "8cf7cc60-a2ab-4d80-ae61-f313bd581a85",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "Utrecht",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1265,
+      "end_char": 1272,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 108.697,
+          "y0": 31.319999999999936,
+          "x1": 168.988,
+          "y1": 47.319999999999936
+        },
+        {
+          "page": 0,
+          "x0": 132.05110000000002,
+          "y0": 57.48000000000002,
+          "x1": 162.75100000000003,
+          "y1": 66.48000000000002
+        },
+        {
+          "page": 0,
+          "x0": 144.7686666666667,
+          "y0": 353.71,
+          "x1": 178.49,
+          "y1": 363.71
+        },
+        {
+          "page": 0,
+          "x0": 311.15701492537306,
+          "y0": 587.5699999999999,
+          "x1": 344.3746268656716,
+          "y1": 597.5699999999999
+        }
+      ]
+    },
+    {
+      "id": "da1417d9-14c1-473b-adcb-d2601e7ec8a8",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "[onbekend]",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 9,
+      "end_char": 30,
+      "bounding_boxes": []
+    },
+    {
+      "id": "53673083-c6b3-4a5f-b6da-724001bfdfdf",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "Kerkstraat 42",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 481,
+      "end_char": 494,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 99.00000000000003,
+          "y0": 338.12,
+          "x1": 158.47000000000003,
+          "y1": 348.12
+        }
+      ]
+    },
+    {
+      "id": "fe3641b3-4db4-4abf-b69d-40e09f6ad4b7",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "3511 LX Utrecht",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 505,
+      "end_char": 520,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 106.23000000000002,
+          "y0": 353.71,
+          "x1": 178.49,
+          "y1": 363.71
+        }
+      ]
+    },
+    {
+      "id": "5db373cf-519f-4589-ba1c-e1341d7f8aee",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "3500 CE Utrecht",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 32,
+      "end_char": 47,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 96.96550000000002,
+          "y0": 57.48000000000002,
+          "x1": 162.75100000000003,
+          "y1": 66.48000000000002
+        }
+      ]
+    },
+    {
+      "id": "fa9be5ce-f637-4326-830d-58fe7ecf1d9f",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "12 januari 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 158,
+      "end_char": 173,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 287.6552173913043,
+          "y0": 143.24,
+          "x1": 356.88999999999993,
+          "y1": 153.24
+        },
+        {
+          "page": 0,
+          "x0": 45.5436,
+          "y0": 213.39,
+          "x1": 117.36159999999995,
+          "y1": 223.39
+        }
+      ]
+    },
+    {
+      "id": "32ed173e-4f8c-49e4-91d7-c75b3d5302ff",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "20 februari 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 867,
+      "end_char": 883,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 170.5142105263158,
+          "y0": 494.02,
+          "x1": 244.82578947368418,
+          "y1": 504.02
+        }
+      ]
+    },
+    {
+      "id": "c4e475cb-482a-47a5-9052-a7c496bf13c1",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "14 maart 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 102,
+      "end_char": 115,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 144.57,
+          "y0": 126.23000000000002,
+          "x1": 209.05,
+          "y1": 136.23000000000002
+        }
+      ]
+    },
+    {
+      "id": "3a82380c-3667-40b9-a3c6-1a5f2bd3eb74",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "12 januari 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 204,
+      "end_char": 219,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 287.6552173913043,
+          "y0": 143.24,
+          "x1": 356.88999999999993,
+          "y1": 153.24
+        },
+        {
+          "page": 0,
+          "x0": 45.5436,
+          "y0": 213.39,
+          "x1": 117.36159999999995,
+          "y1": 223.39
+        }
+      ]
+    }
+  ]
+}

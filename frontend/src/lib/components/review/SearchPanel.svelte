@@ -60,12 +60,16 @@
 		iban: 'IBAN',
 		gezondheid: 'Gezondheidsgegeven',
 		datum: 'Datum',
+		geboortedatum: 'Geboortedatum',
 		postcode: 'Postcode',
 		kenteken: 'Kenteken',
 		creditcard: 'Creditcard',
 		paspoort: 'Paspoort',
 		rijbewijs: 'Rijbewijs',
-		area: 'Handmatig gebied'
+		kvk: 'KvK-nummer',
+		btw: 'BTW-nummer',
+		area: 'Handmatig gebied',
+		custom: 'Zoekterm (eigen lijst)'
 	};
 	const initialArticle: WooArticleCode = recentCodes[0] ?? '5.1.2e';
 	let article = $state<WooArticleCode>(initialArticle);

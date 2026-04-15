@@ -16,10 +16,11 @@
 		onRedact: (id: string, article: WooArticleCode) => void;
 		onKeep: (id: string) => void;
 		onDefer: (id: string) => void;
+		onReopen: (id: string) => void;
 		onSaveMotivation?: (id: string, text: string) => void;
 	}
 
-	let { detection, motivationText = '', onRedact, onKeep, onDefer, onSaveMotivation }: Props = $props();
+	let { detection, motivationText = '', onRedact, onKeep, onDefer, onReopen, onSaveMotivation }: Props = $props();
 
 	let selectedArticle = $state<WooArticleCode | null>(null);
 	let showLegalText = $state(false);
@@ -197,10 +198,34 @@
 			</div>
 		</div>
 	{:else if isRedacted}
-		<p class="text-center text-sm font-medium text-danger">
-			Gelakt op grond van art. {detection.woo_article}
-		</p>
+		<div class="flex items-center justify-between gap-2">
+			<p class="text-sm font-medium text-danger">
+				Gelakt op grond van art. {detection.woo_article}
+			</p>
+			<sl-button
+				size="small"
+				variant="default"
+				onclick={(e: Event) => {
+					e.stopPropagation();
+					onKeep(detection.id);
+				}}
+			>
+				Ontlakken
+			</sl-button>
+		</div>
 	{:else}
-		<p class="text-center text-sm font-medium text-success">Niet gelakt</p>
+		<div class="flex items-center justify-between gap-2">
+			<p class="text-sm font-medium text-success">Niet gelakt</p>
+			<sl-button
+				size="small"
+				variant="default"
+				onclick={(e: Event) => {
+					e.stopPropagation();
+					onReopen(detection.id);
+				}}
+			>
+				Opnieuw beoordelen
+			</sl-button>
+		</div>
 	{/if}
 </div>

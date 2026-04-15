@@ -5,8 +5,14 @@
 WOO Buddy helps Dutch government employees redact privacy-sensitive information in Woo (Wet open overheid) documents. It uses a three-tier detection model where each tier has different detection methods, confidence levels, and UX patterns.
 
 - **Tier 1** (hard identifiers): Regex + validation. Auto-redacted. Opt-out by reviewer.
-- **Tier 2** (contextual personal data): Deduce NER + role classification. Suggested. One-click confirm/reject.
-- **Tier 3** (content judgments): LLM analysis. Annotated with decision support. Human decides.
+- **Tier 2** (contextual personal data): Deduce NER + wordlists (Meertens voornamen, CBS achternamen) + structure heuristics (e-mailheaders, handtekeningblokken, aanhef) + a rule-based public-official filter. Suggested. One-click confirm/reject.
+- **Tier 3** (content judgments): Reserved. **No LLM anywhere in the codebase.** Kept as a slot for future rule-based content signals (e.g. beleidsopvatting-verdacht zinnen).
+
+### No LLM in the codebase
+
+As of April 2026 (see `docs/reference/woo-redactietool-analyse.md` and `docs/todo/done/35-deactivate-llm.md`), WOO Buddy runs without any LLM. Detection is regex + Deduce + wordlists + structure heuristics. The Ollama provider code and all LLM settings have been removed — there is no dormant revival path in-tree.
+
+Do not reintroduce LLM calls without an explicit product decision to the contrary. If one is ever made, the revival must be **local-only** (Ollama + Google Gemma, or equivalent) and opt-in; read `docs/reference/llm-revival.md` before you start. The trust story ("uw PDF verlaat nooit uw browser") and the cost model of the generous free tier both depend on there being no LLM on the default path.
 
 ## Branding
 
@@ -21,7 +27,7 @@ WOO Buddy helps Dutch government employees redact privacy-sensitive information 
 This is the foundational architectural principle. Every feature must respect it:
 
 - **Text extraction** happens client-side via pdf.js `getTextContent()`.
-- **NER/LLM analysis** is ephemeral: client sends extracted text → server processes → returns detections → discards text.
+- **NER + rule-based analysis** is ephemeral: client sends extracted text → server processes → returns detections → discards text. No LLM is involved.
 - **The database stores decisions, not content.** Detection records contain bbox coordinates, entity type, tier, article, review status. They do NOT contain `entity_text`.
 - **Export is streaming:** PDF sent to server → PyMuPDF redacts in memory → redacted PDF streamed back → original never written to disk.
 - **Server logs must never contain document text.** No logging request bodies on `/api/analyze` or `/api/export/redact`.
@@ -35,7 +41,7 @@ Monorepo with two applications:
 - `frontend/` — SvelteKit (Svelte 5 with runes), TypeScript strict, Tailwind CSS v4, Shoelace web components, pdf.js
 - `backend/` — FastAPI, Python 3.12, async throughout
 
-Infrastructure: PostgreSQL 16 (metadata only — no document content), Ollama + Gemma 4 (local LLM). No MinIO or persistent file storage for documents.
+Infrastructure: PostgreSQL 16 (metadata only — no document content). No LLM anywhere in the codebase. No MinIO or persistent file storage for documents.
 
 ### Single-document flow (current shape)
 
@@ -66,15 +72,28 @@ There is **no dossier concept, no document list, no cross-document state**. A do
 - **Async everywhere**: use `async def` for all route handlers and services.
 - **Pydantic v2** for request/response validation.
 - **SQLAlchemy v2** async with `asyncpg` driver.
-- The LLM layer is abstracted behind an `LLMProvider` interface in `app/llm/provider.py`. Providers (Ollama, Anthropic) are swappable via `LLM_PROVIDER` env var.
+- **No LLM in the codebase.** The detection pipeline is rule-based end to end. There is no `app/llm/` package, no `anthropic`/`openai`/`ollama` dependency, no `llm_*` settings. If you believe you need an LLM for something, read `docs/reference/llm-revival.md` first — the default path must remain LLM-free.
 - **Deduce** (Dutch NER) must be initialized once at startup (in FastAPI lifespan), not per-request (~2s load time).
 - PDF redaction with PyMuPDF is **irreversible** and happens **in-memory only** during ephemeral export. Never write the original PDF to disk.
 
+## Distribution & pricing strategy
+
+WOO Buddy is **open core with a generous free tier**. Hosting cost is essentially zero (no LLM, no document storage), so the free tier is deliberately the marketing engine — not a teaser. When designing features, respect the following:
+
+- **Self-host is a first-class tier**, not an afterthought. The codebase is MIT-licensed and runnable via `docker compose up` against a single Postgres. Government IT departments with strict data-sovereignty requirements can run it themselves without talking to us. See `docs/todo/43-open-source-release.md`.
+- **The hosted Gratis tier has no signup wall on `/try` and no document cap.** Anonymous reviewers can analyze and export full PDFs without an account. The trust unlock is "uw PDF verlaat nooit uw browser" — do not undermine it with watermarks, preview-only modes, document caps, or forced login on the trial flow. (Earlier drafts of `32-authentication.md` and `37-mollie-billing.md` proposed those gates and were explicitly reversed.)
+- **Billing gates team features, not the review loop.** The Team tier (~€79–€99/month per organization) sells multi-user, shared custom wordlists, audit log, SSO, NL-hosted DPA, and priority support. The Enterprise tier sells SLA, ISO27001/NEN7510 paperwork, and dedicated instances. Pricing is per-org flat — never per-document.
+- **Anonymous `/api/analyze` requests must not persist anything to PostgreSQL.** No `Document` row, no `Detection` rows. Detection metadata is computed in memory and returned. Persistence kicks in only when the user logs in and explicitly chooses to save.
+- **Don't introduce LLM/GPU dependencies into the default code path.** They would break the cost model that makes the generous free tier viable. If a future product decision revives a local LLM verification step, it must be opt-in per operator and local-only — see `docs/reference/llm-revival.md`.
+
+When you build a new feature, ask: "Does this gate something on the trial path?" If yes, the design is wrong — gate it on team features instead.
+
 ## Key design rules
 
-- Tier 3 must NOT show confidence percentages — use qualitative labels instead.
+- Tier 3 is reserved and has no active caller. Do not wire LLM analysis into it without a product decision.
 - Five-year rule (Art. 5.3): warn when a relative ground is applied to documents older than 5 years.
-- Public officials (college B&W, raadsleden, etc.) should NOT be redacted. (The per-dossier reference-list UI was stripped during simplification; reintroduce as part of a future todo.)
+- Public officials (college B&W, raadsleden, etc.) should NOT be redacted. Rule-based detection lives in todos #13 (functietitel + publiek-functionaris rule engine) and #17 (per-document reference list UI).
+- Public-official detection is rule-based (#13). Titles are matched against `backend/app/data/functietitels_publiek.txt` — edit the list, not the code, to extend coverage.
 
 ## Running locally
 

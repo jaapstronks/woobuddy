@@ -1,20 +1,25 @@
 <script lang="ts">
-	import { ShieldCheck } from 'lucide-svelte';
-
 	let { size = 'default' }: { size?: 'small' | 'default' | 'large' } = $props();
 
 	const sizes = {
-		small: { icon: 20, text: 'text-lg' },
-		default: { icon: 28, text: 'text-2xl' },
-		large: { icon: 36, text: 'text-3xl' }
+		small: { mark: 28, text: 'text-base' },
+		default: { mark: 38, text: 'text-xl' },
+		large: { mark: 52, text: 'text-3xl' }
 	};
 
 	const s = $derived(sizes[size]);
 </script>
 
-<a href="/" class="flex items-center gap-2 no-underline">
-	<ShieldCheck size={s.icon} class="text-primary" />
-	<span class={`${s.text} tracking-tight`}>
-		<span class="font-bold text-primary">WOO</span><span class="font-normal text-neutral">Buddy</span>
+<a href="/" class="group flex items-center gap-2.5 no-underline">
+	<img
+		src="/woobuddy-logo.png"
+		alt=""
+		width={s.mark}
+		height={s.mark}
+		class="block shrink-0"
+		aria-hidden="true"
+	/>
+	<span class="font-serif {s.text} tracking-tight text-ink">
+		WOO <span class="italic text-ink-soft">Buddy</span>
 	</span>
 </a>

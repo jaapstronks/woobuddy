@@ -83,10 +83,10 @@
 	<!-- Drop zone -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-8 py-12 transition-all
+		class="drop-zone flex cursor-pointer flex-col items-center justify-center rounded-md border border-dashed px-8 py-14 transition-all duration-200 ease-out
 			{dragging
-			? 'border-primary bg-landing-accent'
-			: 'border-gray-300 bg-gray-50 hover:border-primary hover:bg-landing-accent/50'}"
+			? 'border-primary bg-primary-soft scale-[1.015]'
+			: 'border-border-strong bg-surface breathe-pulse hover:border-primary hover:bg-primary-soft/40'}"
 		ondrop={handleDrop}
 		ondragover={handleDragOver}
 		ondragleave={handleDragLeave}
@@ -95,11 +95,11 @@
 		role="button"
 		tabindex="0"
 	>
-		<Upload size={40} class={dragging ? 'text-primary' : 'text-gray-400'} />
-		<span class="mt-3 text-base font-medium {dragging ? 'text-primary' : 'text-gray-700'}">
-			Sleep {multiple ? 'PDF\'s' : 'een PDF'} hierheen
+		<Upload size={32} class={dragging ? 'text-primary' : 'text-ink-mute'} strokeWidth={1.5} />
+		<span class="mt-4 font-serif text-xl {dragging ? 'text-primary' : 'text-ink'}">
+			Sleep {multiple ? "PDF's" : 'een PDF'} hierheen
 		</span>
-		<span class="mt-1 text-sm text-neutral">of klik om te selecteren (max. {maxSizeMb} MB)</span>
+		<span class="mt-1 text-sm text-ink-soft">of klik om te bladeren · max. {maxSizeMb} MB</span>
 	</div>
 
 	<input
@@ -120,17 +120,17 @@
 	{#if selectedFiles.length > 0}
 		<ul class="space-y-2">
 			{#each selectedFiles as file, i}
-				<li class="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3">
+				<li class="flex items-center justify-between rounded-md border border-border bg-surface px-4 py-3">
 					<div class="flex items-center gap-3">
-						<FileText size={18} class="text-primary" />
+						<FileText size={18} class="text-primary" strokeWidth={1.5} />
 						<div>
-							<p class="text-sm font-medium text-gray-900">{file.name}</p>
-							<p class="text-xs text-neutral">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
+							<p class="text-sm font-medium text-ink">{file.name}</p>
+							<p class="text-xs text-ink-mute">{(file.size / 1024 / 1024).toFixed(1)} MB · blijft op deze computer</p>
 						</div>
 					</div>
 					<button
 						onclick={() => removeFile(i)}
-						class="rounded p-1 text-neutral transition-colors hover:bg-gray-100 hover:text-danger"
+						class="rounded p-1 text-ink-mute transition-colors hover:bg-bg hover:text-danger"
 						aria-label="Verwijder {file.name}"
 					>
 						<X size={16} />

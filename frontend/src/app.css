@@ -1,27 +1,180 @@
 @import 'tailwindcss';
 
 /* ---------------------------------------------------------------------------
- * Shoelace theme overrides
+ * WOO Buddy — brand identity
+ *
+ * Adjacent to Dutch civic design (NL Design System / GOV.UK), but visibly
+ * independent. Sober, restrained, accessible. Deep teal primary instead of
+ * Rijksoverheid blue. System fonts only — no third-party font requests, so
+ * the "no trackers, no third parties" claim on the landing page is honest.
  * --------------------------------------------------------------------------- */
+
 :root {
-	--sl-color-primary-600: #1b4f72;
-	--sl-color-success-600: #27ae60;
-	--sl-color-danger-600: #c0392b;
-	--sl-color-warning-600: #f39c12;
-	--sl-font-sans: system-ui, -apple-system, sans-serif;
-	--sl-border-radius-medium: 6px;
+	/* Shoelace primary ramp — remapped to teal */
+	--sl-color-primary-50: #f0f5f6;
+	--sl-color-primary-100: #d9e6e8;
+	--sl-color-primary-200: #b3ccd0;
+	--sl-color-primary-300: #7fa6ad;
+	--sl-color-primary-400: #4a8089;
+	--sl-color-primary-500: #1a6470;
+	--sl-color-primary-600: #0f4c5c;
+	--sl-color-primary-700: #0a3540;
+	--sl-color-primary-800: #07252d;
+	--sl-color-primary-900: #04161b;
+
+	--sl-color-success-600: #2d6a4f;
+	--sl-color-danger-600: #b23a48;
+	--sl-color-warning-600: #b7791f;
+
+	--sl-font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	--sl-font-serif: ui-serif, 'Iowan Old Style', 'Charter', Georgia, Cambria, serif;
+	--sl-border-radius-medium: 4px;
 }
 
 /* ---------------------------------------------------------------------------
- * WOO Buddy design tokens (mapped to Tailwind via @theme)
+ * Tailwind v4 design tokens
  * --------------------------------------------------------------------------- */
 @theme {
-	--color-bg: #fafbfc;
-	--color-primary: #1b4f72;
-	--color-primary-light: #2e86c1;
-	--color-danger: #c0392b;
-	--color-success: #27ae60;
-	--color-warning: #f39c12;
-	--color-neutral: #5d6d7e;
-	--color-landing-accent: #ebf5fb;
+	/* Typography ------------------------------------------------------------ */
+	--font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	--font-serif: ui-serif, 'Iowan Old Style', 'Charter', Georgia, Cambria, 'Times New Roman', serif;
+
+	/* Surfaces & ink -------------------------------------------------------- */
+	--color-bg: #fafaf7;
+	--color-surface: #ffffff;
+	--color-surface-soft: #f4f2ec;
+
+	--color-ink: #1a1f2c;
+	--color-ink-soft: #4a5160;
+	--color-ink-mute: #7a8190;
+
+	/* Brand — deep teal ----------------------------------------------------- */
+	--color-primary: #0f4c5c;
+	--color-primary-hover: #1a6470;
+	--color-primary-soft: #e6eef0;
+
+	/* Warm accent — used sparingly for callouts ----------------------------- */
+	--color-accent: #c97b3f;
+	--color-accent-soft: #f5ebe0;
+
+	/* Functional palette ---------------------------------------------------- */
+	--color-success: #2d6a4f;
+	--color-danger: #b23a48;
+	--color-warning: #b7791f;
+
+	/* Borders --------------------------------------------------------------- */
+	--color-border: #e5e1d8;
+	--color-border-strong: #c9c3b5;
+
+	/* Legacy aliases — keep existing utility classes working ---------------- */
+	--color-primary-light: #1a6470;
+	--color-neutral: #4a5160;
+	--color-landing-accent: #e6eef0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Global base
+ * --------------------------------------------------------------------------- */
+html {
+	font-family: var(--font-sans);
+	color: var(--color-ink);
+	background: var(--color-bg);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	text-rendering: optimizeLegibility;
+}
+
+/* ---------------------------------------------------------------------------
+ * Landing-page motion primitives (#23)
+ *
+ * Two patterns:
+ *  - `.reveal`: scroll-reveal via the IntersectionObserver action in
+ *    `$lib/actions/reveal`. Element starts translated/transparent and
+ *    transitions to its resting state when `.is-visible` is added.
+ *  - `.fade-in-up`: pure CSS entrance animation, used by the hero so it
+ *    fires immediately on hydration without waiting for a scroll event.
+ *
+ * Both patterns honour `prefers-reduced-motion: reduce` further down.
+ * The app interface (review screen, PDF viewer, sidebar) deliberately
+ * does not use these — speed beats prettiness when reviewing 200
+ * detections. Only the landing page and shared upload zone animate.
+ * --------------------------------------------------------------------------- */
+.reveal {
+	opacity: 0;
+	transform: translate3d(0, 16px, 0);
+	transition:
+		opacity 600ms cubic-bezier(0.22, 1, 0.36, 1),
+		transform 600ms cubic-bezier(0.22, 1, 0.36, 1);
+	will-change: opacity, transform;
+}
+.reveal.is-visible {
+	opacity: 1;
+	transform: translate3d(0, 0, 0);
+}
+
+@keyframes fade-in-up {
+	from {
+		opacity: 0;
+		transform: translate3d(0, 18px, 0);
+	}
+	to {
+		opacity: 1;
+		transform: translate3d(0, 0, 0);
+	}
+}
+.fade-in-up {
+	opacity: 0;
+	animation: fade-in-up 700ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Soft "breathing" border halo for the upload drop zone. Subtle on
+   purpose — the goal is "this is where you drop the PDF", not "look at
+   me". The animation pauses while the user is dragging a file over the
+   zone (see `FileUpload.svelte`) so the static drag-state border can
+   take over without a fight. */
+@keyframes breathe-pulse {
+	0%, 100% {
+		box-shadow: 0 0 0 0 rgba(15, 76, 92, 0);
+	}
+	50% {
+		box-shadow: 0 0 0 6px rgba(15, 76, 92, 0.08);
+	}
+}
+.breathe-pulse {
+	animation: breathe-pulse 3.2s ease-in-out infinite;
+}
+
+/* Brief background pulse when a button becomes active — used by the
+   review/edit mode toggle in the PDF viewer toolbar. Runs once per
+   class change. */
+@keyframes mode-toggle-pulse {
+	0% {
+		background-color: var(--color-primary-soft);
+	}
+	100% {
+		background-color: white;
+	}
+}
+
+/* ---------------------------------------------------------------------------
+ * Reduced motion: every animation declared above collapses to "no
+ * motion" so users with `prefers-reduced-motion: reduce` see content
+ * appear instantly. We also kill any inline transition delays the
+ * reveal action may have applied for staggering.
+ * --------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+	.reveal,
+	.reveal.is-visible {
+		opacity: 1;
+		transform: none;
+		transition: none;
+		transition-delay: 0ms !important;
+	}
+	.fade-in-up {
+		opacity: 1;
+		animation: none;
+	}
+	.breathe-pulse {
+		animation: none;
+	}
 }

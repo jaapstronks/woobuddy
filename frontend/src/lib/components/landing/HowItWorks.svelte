@@ -1,55 +1,55 @@
 <script lang="ts">
-	import { Upload, ScanSearch, CheckCircle, Download } from 'lucide-svelte';
+	import { ScanSearch, CheckSquare, Download } from 'lucide-svelte';
+	import { reveal } from '$lib/actions/reveal';
 
 	const steps = [
 		{
-			icon: Upload,
-			title: 'Upload',
-			description: 'Sleep je PDF-documenten in WOO Buddy. Eén document of een heel dossier tegelijk.'
-		},
-		{
 			icon: ScanSearch,
-			title: 'Detectie',
+			title: 'Detectie op je apparaat',
 			description:
-				'WOO Buddy analyseert elk document op persoonsgegevens, identifiers en gevoelige passages.'
+				'Je browser leest de PDF en stuurt alleen losse woorden naar een server zonder opslag. Regels en patronen vinden BSN, IBAN, telefoon, e-mail, namen en adressen. Geen AI, geen black box.'
 		},
 		{
-			icon: CheckCircle,
-			title: 'Review',
+			icon: CheckSquare,
+			title: 'Jij beoordeelt, met snelheidswinst',
 			description:
-				'Controleer de voorstellen, bevestig of wijzig lakbeslissingen, en voeg motivering toe.'
+				'Harde identifiers (Trap 1) staan direct dicht. Namen en adressen (Trap 2) krijgen een voorstel dat je met één toets bevestigt of afwijst. Dezelfde beslissing geldt voor alle voorkomens.'
 		},
 		{
 			icon: Download,
-			title: 'Export',
+			title: 'Download de gelakte PDF',
 			description:
-				'Download gelakte documenten en een motiveringsrapport, klaar voor je Woo-besluit.'
+				'PyMuPDF lakt onomkeerbaar in het geheugen en streamt de PDF terug. Je origineel raakt nooit een schijf.'
 		}
 	];
 </script>
 
-<section class="bg-white px-6 py-24">
+<section class="border-y border-border bg-surface px-6 py-24">
 	<div class="mx-auto max-w-6xl">
-		<h2 class="text-center text-3xl font-bold text-gray-900">Hoe werkt het?</h2>
-		<p class="mx-auto mt-4 max-w-2xl text-center text-neutral">
-			Van upload tot Woo-besluit in vier stappen.
-		</p>
-
-		<div class="mt-16 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
-			{#each steps as step, i}
-				<div class="flex flex-col items-center text-center">
-					<div
-						class="flex h-16 w-16 items-center justify-center rounded-2xl bg-landing-accent text-primary"
-					>
-						<step.icon size={32} />
-					</div>
-					<div class="mt-2 flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-bold text-white">
-						{i + 1}
-					</div>
-					<h3 class="mt-4 text-xl font-semibold text-gray-900">{step.title}</h3>
-					<p class="mt-2 text-sm leading-relaxed text-neutral">{step.description}</p>
-				</div>
-			{/each}
+		<div class="max-w-2xl" use:reveal>
+			<p class="text-sm font-medium tracking-wide text-primary uppercase">Hoe het werkt</p>
+			<h2 class="mt-3 font-serif text-4xl tracking-tight text-ink sm:text-5xl">
+				Drie stappen. Je document blijft van jou.
+			</h2>
+			<p class="mt-6 text-lg leading-relaxed text-ink-soft">
+				WOO Buddy haalt de mechanische arbeid weg, niet het oordeel. Jij ziet alles, jij
+				bevestigt alles, jij zet je handtekening onder het besluit.
+			</p>
 		</div>
+
+		<ol
+			class="mt-16 grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-3"
+		>
+			{#each steps as step, i}
+				<li class="flex flex-col bg-surface p-8" use:reveal={{ delay: i * 90 }}>
+					<div class="flex items-center gap-3">
+						<span class="font-serif text-3xl text-primary">0{i + 1}</span>
+						<step.icon size={20} class="text-ink-mute" />
+					</div>
+					<h3 class="mt-6 text-lg font-semibold text-ink">{step.title}</h3>
+					<p class="mt-2 text-sm leading-relaxed text-ink-soft">{step.description}</p>
+				</li>
+			{/each}
+		</ol>
 	</div>
 </section>

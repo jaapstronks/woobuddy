@@ -1,0 +1,340 @@
+{
+  "generated_at": "2026-04-15T11:36:50.539Z",
+  "schema_version": 1,
+  "document": {
+    "id": "2f289a08-e996-4f02-aa03-f3a3b63a4800",
+    "filename": "besluit_ambtenaar.pdf",
+    "page_count": 1,
+    "created_at": "2026-04-15T11:36:48.047287Z",
+    "five_year_warning": false
+  },
+  "counts": {
+    "total": 12,
+    "by_tier": {
+      "1": 2,
+      "2": 10
+    },
+    "by_status": {
+      "auto_accepted": 2,
+      "rejected": 3,
+      "pending": 7
+    }
+  },
+  "detections": [
+    {
+      "id": "c063620d-4330-4233-b3ea-585c0e4e4fb7",
+      "tier": "1",
+      "entity_type": "telefoon",
+      "entity_text": "030-286 00 00",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Telefoonnummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 62,
+      "end_char": 75,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 73.81652173913042,
+          "y0": 71.64999999999998,
+          "x1": 129.244,
+          "y1": 80.64999999999998
+        }
+      ]
+    },
+    {
+      "id": "38492a66-6ea9-4378-aaaa-fbadaabd7fc0",
+      "tier": "1",
+      "entity_type": "postcode",
+      "entity_text": "3500 CE",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Postcode gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 34,
+      "end_char": 41,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 100.823125,
+          "y0": 57.48000000000002,
+          "x1": 133.32325000000003,
+          "y1": 66.48000000000002
+        }
+      ]
+    },
+    {
+      "id": "4eafb777-871f-4d9b-a2e5-5f35c53de757",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "P.M. de Vries",
+      "woo_article": null,
+      "confidence": 0.9000000000000001,
+      "confidence_level": "high",
+      "review_status": "rejected",
+      "reasoning": "Publiek functionaris: voorafgegaan door 'wethouder' in de brontekst.",
+      "source": "rule",
+      "subject_role": "publiek_functionaris",
+      "start_char": 450,
+      "end_char": 463,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 84.63731343283582,
+          "y0": 275.76,
+          "x1": 142.54940298507464,
+          "y1": 285.76
+        },
+        {
+          "page": 0,
+          "x0": 31.18,
+          "y0": 634.3399999999999,
+          "x1": 91.20000000000002,
+          "y1": 644.3399999999999
+        }
+      ]
+    },
+    {
+      "id": "9d29c6b6-2954-4a5a-9e28-17ab0b9909dc",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "A.B. Bakker",
+      "woo_article": null,
+      "confidence": 0.9000000000000001,
+      "confidence_level": "high",
+      "review_status": "rejected",
+      "reasoning": "Publiek functionaris: voorafgegaan door 'gemeentesecretaris' in de brontekst.",
+      "source": "rule",
+      "subject_role": "publiek_functionaris",
+      "start_char": 1031,
+      "end_char": 1042,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 234.67214285714286,
+          "y0": 494.02,
+          "x1": 285.54517857142855,
+          "y1": 504.02
+        },
+        {
+          "page": 0,
+          "x0": 163.48000000000002,
+          "y0": 634.3399999999999,
+          "x1": 216.28000000000003,
+          "y1": 644.3399999999999
+        }
+      ]
+    },
+    {
+      "id": "56953a33-1ac1-45f2-b5f7-05d1bafb70c8",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "dhr. K.L. Jansen",
+      "woo_article": null,
+      "confidence": 0.9000000000000001,
+      "confidence_level": "high",
+      "review_status": "rejected",
+      "reasoning": "Publiek functionaris: voorafgegaan door 'raadslid' in de brontekst.",
+      "source": "rule",
+      "subject_role": "publiek_functionaris",
+      "start_char": 574,
+      "end_char": 590,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 36.74,
+          "y0": 306.93999999999994,
+          "x1": 109.26500000000001,
+          "y1": 316.93999999999994
+        }
+      ]
+    },
+    {
+      "id": "4c79c1e9-ba1a-4e42-b002-796ce715152f",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "3500 CE Amsterdam",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 34,
+      "end_char": 51,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 100.823125,
+          "y0": 57.48000000000002,
+          "x1": 179.75200000000004,
+          "y1": 66.48000000000002
+        }
+      ]
+    },
+    {
+      "id": "ddf86987-b5b8-4de4-b314-f8b12be8c693",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "[onbekend]",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 9,
+      "end_char": 32,
+      "bounding_boxes": []
+    },
+    {
+      "id": "7af3fcb5-9db5-42f6-805c-06a7ebbf188b",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "Amsterdam",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 248,
+      "end_char": 257,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 116.09200000000001,
+          "y0": 31.319999999999936,
+          "x1": 201.00400000000002,
+          "y1": 47.319999999999936
+        },
+        {
+          "page": 0,
+          "x0": 137.96612500000003,
+          "y0": 57.48000000000002,
+          "x1": 179.75200000000004,
+          "y1": 66.48000000000002
+        },
+        {
+          "page": 0,
+          "x0": 320.61347826086956,
+          "y0": 182.21000000000004,
+          "x1": 364.7643478260869,
+          "y1": 192.21000000000004
+        },
+        {
+          "page": 0,
+          "x0": 296.1428125,
+          "y0": 571.98,
+          "x1": 340.30328125,
+          "y1": 581.98
+        }
+      ]
+    },
+    {
+      "id": "b66cacce-e67a-43e3-a2ba-bec840232c55",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "25 februari 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 906,
+      "end_char": 922,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 49.18000000000001,
+          "y0": 447.25,
+          "x1": 121.18000000000004,
+          "y1": 457.25
+        }
+      ]
+    },
+    {
+      "id": "c7470d40-012d-4f72-ab66-919929722109",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "28 februari 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 106,
+      "end_char": 122,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 144.57,
+          "y0": 126.23000000000002,
+          "x1": 217.39,
+          "y1": 136.23000000000002
+        }
+      ]
+    },
+    {
+      "id": "cf72828c-317d-4c47-840c-ce036421da0a",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "5 januari 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 281,
+      "end_char": 295,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 54.25911392405063,
+          "y0": 244.56999999999994,
+          "x1": 118.88063291139238,
+          "y1": 254.56999999999994
+        }
+      ]
+    },
+    {
+      "id": "341878db-90ad-4aeb-b2f1-50d539f67e1b",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "15 februari 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 527,
+      "end_char": 543,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 127.34746268656721,
+          "y0": 291.35,
+          "x1": 200.61791044776126,
+          "y1": 301.35
+        }
+      ]
+    }
+  ]
+}

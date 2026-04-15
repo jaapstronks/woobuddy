@@ -1,3 +1,4 @@
+import { HIGH_CONFIDENCE_THRESHOLD, LOW_CONFIDENCE_THRESHOLD } from '$lib/config/thresholds';
 import type { DetectionTier, ConfidenceLevel } from '$lib/types';
 
 export interface TierInfo {
@@ -37,7 +38,7 @@ export const TIERS: Record<DetectionTier, TierInfo> = {
 };
 
 export function confidenceToLevel(confidence: number): ConfidenceLevel {
-	if (confidence >= 0.85) return 'high';
-	if (confidence >= 0.6) return 'medium';
+	if (confidence >= HIGH_CONFIDENCE_THRESHOLD) return 'high';
+	if (confidence >= LOW_CONFIDENCE_THRESHOLD) return 'medium';
 	return 'low';
 }

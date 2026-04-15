@@ -1,0 +1,524 @@
+{
+  "generated_at": "2026-04-15T11:35:54.635Z",
+  "schema_version": 1,
+  "document": {
+    "id": "832518c1-79b7-48a5-8de5-39c4574b3f08",
+    "filename": "edge_cases.pdf",
+    "page_count": 2,
+    "created_at": "2026-04-15T11:35:45.852117Z",
+    "five_year_warning": false
+  },
+  "counts": {
+    "total": 20,
+    "by_tier": {
+      "1": 4,
+      "2": 16
+    },
+    "by_status": {
+      "auto_accepted": 4,
+      "pending": 16
+    }
+  },
+  "detections": [
+    {
+      "id": "2ba9e969-e8f5-40fe-b34d-a1e4093a1cf7",
+      "tier": "1",
+      "entity_type": "telefoon",
+      "entity_text": "030-286 00 00",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Telefoonnummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 60,
+      "end_char": 73,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 73.81652173913042,
+          "y0": 71.64999999999998,
+          "x1": 129.244,
+          "y1": 80.64999999999998
+        }
+      ]
+    },
+    {
+      "id": "b929cef2-a428-4e63-87dc-47314268c7bb",
+      "tier": "1",
+      "entity_type": "postcode",
+      "entity_text": "3500 CE",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Postcode gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 33,
+      "end_char": 40,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 100.41322580645163,
+          "y0": 57.48000000000002,
+          "x1": 132.72206451612905,
+          "y1": 66.48000000000002
+        }
+      ]
+    },
+    {
+      "id": "5c600633-d31d-4a72-97d5-27d557575822",
+      "tier": "1",
+      "entity_type": "postcode",
+      "entity_text": "2517 BJ",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Postcode gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 735,
+      "end_char": 742,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 301.48939393939395,
+          "y0": 416.07,
+          "x1": 333.56,
+          "y1": 426.07
+        }
+      ]
+    },
+    {
+      "id": "3cf62261-c240-43ec-a09a-7c3faf09bd01",
+      "tier": "1",
+      "entity_type": "kvk",
+      "entity_text": "12345678",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "KvK-nummer gedetecteerd (contextanker binnen 20 tekens).",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 622,
+      "end_char": 630,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 94.45651515151515,
+          "y0": 400.47999999999996,
+          "x1": 133.3959090909091,
+          "y1": 410.47999999999996
+        }
+      ]
+    },
+    {
+      "id": "1cadd459-89d0-4002-92f8-fb14d7f1c85e",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "Dhr. Kees de Kok",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Persoonsnaam herkend: voornaam op lijst van het Meertens Instituut (Nederlandse Voornamenbank), achternaam op CBS-achternamenlijst.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 241,
+      "end_char": 257,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 40.78888888888889,
+          "y0": 213.39,
+          "x1": 117.66000000000005,
+          "y1": 223.39
+        }
+      ]
+    },
+    {
+      "id": "9b4265d2-77ad-43fd-bbea-8d1eea3a202d",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "dhr. Willem de Groot",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Persoonsnaam herkend: voornaam op lijst van het Meertens Instituut (Nederlandse Voornamenbank), achternaam op CBS-achternamenlijst.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1411,
+      "end_char": 1431,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 244.14590909090902,
+          "y0": 743.47,
+          "x1": 338.79742424242414,
+          "y1": 753.47
+        }
+      ]
+    },
+    {
+      "id": "5af01a52-1532-458b-a42f-14efb247e16e",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "Mw. Anna van den Berg-Mulder,",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Voornaam herkend in Nederlandse Voornamenbank (Meertens Instituut).",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 287,
+      "end_char": 315,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 40.45045454545455,
+          "y0": 228.98000000000002,
+          "x1": 170.23681818181822,
+          "y1": 238.98000000000002
+        }
+      ]
+    },
+    {
+      "id": "75bf3276-c1f3-44bd-8194-8d13e46cd47e",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "de Kok",
+      "woo_article": "5.1.2e",
+      "confidence": 0.8500000000000001,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Achternaam herkend op CBS-achternamenlijst.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 589,
+      "end_char": 595,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 88.83333333333336,
+          "y0": 213.39,
+          "x1": 117.66000000000005,
+          "y1": 223.39
+        },
+        {
+          "page": 0,
+          "x0": 256.55074626865667,
+          "y0": 384.89,
+          "x1": 284.72208955223874,
+          "y1": 394.89
+        },
+        {
+          "page": 0,
+          "x0": 54.635303030303035,
+          "y0": 540.8,
+          "x1": 82.78166666666667,
+          "y1": 550.8
+        }
+      ]
+    },
+    {
+      "id": "a37fbc3f-ea16-4e7b-9adc-ba677fa0cb3f",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "de heer Bakker",
+      "woo_article": "5.1.2e",
+      "confidence": 0.8500000000000001,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Achternaam herkend op CBS-achternamenlijst.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1054,
+      "end_char": 1068,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 214.6715384615384,
+          "y0": 571.98,
+          "x1": 284.1007692307692,
+          "y1": 581.98
+        }
+      ]
+    },
+    {
+      "id": "a6074fe6-aec2-4e86-86a7-d077a5119a4f",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "mevrouw De Bruin",
+      "woo_article": "5.1.2e",
+      "confidence": 0.8500000000000001,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Achternaam herkend op CBS-achternamenlijst.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1017,
+      "end_char": 1033,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 31.18,
+          "y0": 571.98,
+          "x1": 110.52769230769229,
+          "y1": 581.98
+        }
+      ]
+    },
+    {
+      "id": "df341912-f6f9-4e39-915f-e93c2601fbb4",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "Dhr. De Kok",
+      "woo_article": "5.1.2e",
+      "confidence": 0.8500000000000001,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Achternaam herkend op CBS-achternamenlijst.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 886,
+      "end_char": 897,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 31.18,
+          "y0": 540.8,
+          "x1": 82.78166666666667,
+          "y1": 550.8
+        }
+      ]
+    },
+    {
+      "id": "b674dd7c-a0f5-4186-99f3-2db66d27624c",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "Zuid-Holland",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1313,
+      "end_char": 1325,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 201.24294117647062,
+          "y0": 696.7,
+          "x1": 257.9305882352942,
+          "y1": 706.7
+        }
+      ]
+    },
+    {
+      "id": "8cab2548-906e-4a47-bdc3-e0a0485031b0",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "Postbus 16200",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 18,
+      "end_char": 31,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 31.18,
+          "y0": 57.48000000000002,
+          "x1": 91.18212903225808,
+          "y1": 66.48000000000002
+        }
+      ]
+    },
+    {
+      "id": "1ba412a0-0f55-4006-9e11-3fd19f41fe8a",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "Laan van Meerdervoort 200",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 708,
+      "end_char": 733,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 177.78848484848487,
+          "y0": 416.07,
+          "x1": 292.3263636363636,
+          "y1": 426.07
+        }
+      ]
+    },
+    {
+      "id": "af85f450-25b0-418a-961d-0fd7b38ad417",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "3500 CE Den Haag",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 33,
+      "end_char": 49,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 100.41322580645163,
+          "y0": 57.48000000000002,
+          "x1": 174.26200000000003,
+          "y1": 66.48000000000002
+        }
+      ]
+    },
+    {
+      "id": "7b4cb415-3619-4f7e-a1b3-6868549da905",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "[onbekend]",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 735,
+      "end_char": 751,
+      "bounding_boxes": []
+    },
+    {
+      "id": "5a9b595a-6470-4794-b9fd-991f115ab14f",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "17 april 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1883,
+      "end_char": 1896,
+      "bounding_boxes": [
+        {
+          "page": 1,
+          "x0": 206.00923076923075,
+          "y0": 169.46000000000004,
+          "x1": 265.8192307692307,
+          "y1": 179.46000000000004
+        },
+        {
+          "page": 1,
+          "x0": 183.16000000000005,
+          "y0": 247.40999999999997,
+          "x1": 241.27000000000007,
+          "y1": 257.40999999999997
+        }
+      ]
+    },
+    {
+      "id": "f921d5c7-421f-493d-b506-659b97ddfffb",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "20 maart 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 104,
+      "end_char": 117,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 144.57,
+          "y0": 126.23000000000002,
+          "x1": 209.05,
+          "y1": 136.23000000000002
+        }
+      ]
+    },
+    {
+      "id": "69c44aa9-a44d-4f2f-b7c0-bb73faca01d6",
+      "tier": "2",
+      "entity_type": "id",
+      "entity_text": "00456123",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Entiteit gedetecteerd (type: id).",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1355,
+      "end_char": 1363,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 78.30684210526316,
+          "y0": 712.29,
+          "x1": 120.19736842105263,
+          "y1": 722.29
+        }
+      ]
+    },
+    {
+      "id": "a7a04e04-14f6-4589-9fb1-5c7d4741793c",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "17 april 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1773,
+      "end_char": 1786,
+      "bounding_boxes": [
+        {
+          "page": 1,
+          "x0": 206.00923076923075,
+          "y0": 169.46000000000004,
+          "x1": 265.8192307692307,
+          "y1": 179.46000000000004
+        },
+        {
+          "page": 1,
+          "x0": 183.16000000000005,
+          "y0": 247.40999999999997,
+          "x1": 241.27000000000007,
+          "y1": 257.40999999999997
+        }
+      ]
+    }
+  ]
+}

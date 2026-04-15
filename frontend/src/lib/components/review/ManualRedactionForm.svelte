@@ -78,12 +78,16 @@
 		iban: 'IBAN',
 		gezondheid: 'Gezondheidsgegeven',
 		datum: 'Datum',
+		geboortedatum: 'Geboortedatum',
 		postcode: 'Postcode',
 		kenteken: 'Kenteken',
 		creditcard: 'Creditcard',
 		paspoort: 'Paspoort',
 		rijbewijs: 'Rijbewijs',
-		area: 'Handmatig gebied'
+		kvk: 'KvK-nummer',
+		btw: 'BTW-nummer',
+		area: 'Handmatig gebied',
+		custom: 'Zoekterm (eigen lijst)'
 	};
 
 	// Group articles by tier; within a tier, sort by code. Recent articles

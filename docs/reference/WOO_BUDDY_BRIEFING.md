@@ -207,7 +207,6 @@ The decision panel shows:
 | PyMuPDF (fitz) | `pymupdf` | PDF text extraction + redaction |
 | Deduce | `>=3.0` | Dutch de-identification |
 | httpx | latest | Async HTTP for Ollama API |
-| Anthropic SDK | `anthropic` | Optional fallback LLM provider |
 | SQLAlchemy | v2 + async | ORM |
 | Pydantic | v2 | Validation |
 | Tesseract | `pytesseract` | OCR for scanned PDFs (phase 2) |
@@ -251,9 +250,9 @@ A Mixture-of-Experts model that activates only 3.8B of its 26B parameters per to
 | **Total** | **~24GB** |
 | **Headroom** | **~24GB** |
 
-### Fallback: Anthropic API
+### No cloud fallback
 
-Set `LLM_PROVIDER=anthropic` for comparison testing or when Ollama is unavailable. The LLM layer is abstracted behind an `LLMProvider` interface so providers can be swapped via environment variable.
+WOO Buddy intentionally ships with **only** the local Ollama provider. Hosted third-party LLMs are out of scope because sending document text to a third party would break the client-first guarantee. If Ollama is unavailable, Tier 3 analysis is unavailable — by design. The `LLMProvider` abstraction remains in place so alternative *local* backends can be swapped in without touching callers.
 
 ### How the LLM fits in the three tiers
 
@@ -564,8 +563,7 @@ woobuddy/
 │   │   │   └── export_engine.py            ZIP + motivation report generation
 │   │   ├── llm/
 │   │   │   ├── provider.py                 Abstract LLMProvider
-│   │   │   ├── ollama.py                   Ollama + Gemma 4
-│   │   │   ├── anthropic.py                Anthropic fallback
+│   │   │   ├── ollama.py                   Ollama + Gemma 4 (local only)
 │   │   │   └── prompts.py                  System prompts for Tier 2 + Tier 3
 │   │   └── db/
 │   │       ├── session.py
@@ -586,17 +584,13 @@ woobuddy/
 ## Environment Variables
 
 ```env
-# LLM Provider
-LLM_PROVIDER=ollama                    # "ollama" (default) or "anthropic"
+# LLM Provider (local Ollama only)
+LLM_PROVIDER=ollama
 
-# Ollama (primary — local)
+# Ollama (local)
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=gemma4:26b
 OLLAMA_KEEP_ALIVE=-1                   # Prevent model unloading
-
-# Anthropic (fallback)
-# ANTHROPIC_API_KEY=sk-ant-...
-# ANTHROPIC_MODEL=claude-haiku-4-5-20251001
 
 # Database
 DATABASE_URL=postgresql+asyncpg://woobuddy:woobuddy@postgres:5432/woobuddy

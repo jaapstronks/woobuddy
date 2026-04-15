@@ -100,17 +100,25 @@ export async function loadPdfDocument(bytes: ArrayBuffer): Promise<PDFDocumentPr
  * Extract text with bounding boxes from all pages of a PDF document.
  *
  * The returned coordinates use top-left origin to match PyMuPDF conventions,
- * which the backend NER/LLM pipeline expects.
+ * which the backend NER pipeline expects.
  *
  * Throws `PdfError` with kind `"no_text"` when the document yields zero
  * selectable characters (most likely a scanned PDF). Callers should block
  * analysis and suggest manual redaction instead.
  */
-export async function extractText(pdfDoc: PDFDocumentProxy): Promise<ExtractionResult> {
+export async function extractText(
+	pdfDoc: PDFDocumentProxy,
+	onProgress?: (page: number, total: number) => void
+): Promise<ExtractionResult> {
 	const pages: PageExtraction[] = [];
 	const allTextParts: string[] = [];
+	const totalPages = pdfDoc.numPages;
 
-	for (let pageIdx = 0; pageIdx < pdfDoc.numPages; pageIdx++) {
+	// Report an initial 0/total so the UI can render the first page-of-N
+	// message without a flicker.
+	onProgress?.(0, totalPages);
+
+	for (let pageIdx = 0; pageIdx < totalPages; pageIdx++) {
 		const page = await pdfDoc.getPage(pageIdx + 1); // pdf.js pages are 1-indexed
 		const viewport = page.getViewport({ scale: 1.0 });
 		const pageHeight = viewport.height;
@@ -164,6 +172,7 @@ export async function extractText(pdfDoc: PDFDocumentProxy): Promise<ExtractionR
 			textItems
 		});
 		allTextParts.push(fullText);
+		onProgress?.(pageIdx + 1, totalPages);
 	}
 
 	const combined = allTextParts.join('\n\n').trim();

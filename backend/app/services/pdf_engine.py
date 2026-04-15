@@ -10,6 +10,7 @@ always work on a copy.
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 import fitz  # PyMuPDF
 
@@ -192,7 +193,7 @@ def _find_date_in_text(text: str) -> datetime | None:
     return None
 
 
-def extraction_from_client_data(pages_data: list[dict]) -> ExtractionResult:
+def extraction_from_client_data(pages_data: list[dict[str, Any]]) -> ExtractionResult:
     """Build an ExtractionResult from client-provided text extraction data.
 
     The client extracts text via pdf.js and sends it as JSON. This function
@@ -236,33 +237,194 @@ def extraction_from_client_data(pages_data: list[dict]) -> ExtractionResult:
 _SAME_LINE_TOL = 3.0
 
 
-def _is_word_boundary_match(haystack: str, needle: str) -> bool:
-    """True if `needle` appears in `haystack` with non-alphanumeric
-    characters (or the string edges) on both sides.
+def _word_boundary_match_index(haystack: str, needle: str) -> int:
+    """Return the first index at which `needle` appears in `haystack` as a
+    whole word (non-alphanumeric chars on both sides), or -1 for no match.
 
     This prevents "Vries" from matching inside "Vriesland" — the kind
     of false positive that causes the bbox of a person detection to
     snap onto an unrelated word.
     """
     if not needle:
-        return False
+        return -1
     n = len(needle)
     idx = 0
     while True:
         idx = haystack.find(needle, idx)
         if idx == -1:
-            return False
+            return -1
         left_ok = idx == 0 or not haystack[idx - 1].isalnum()
         right = idx + n
         right_ok = right == len(haystack) or not haystack[right].isalnum()
         if left_ok and right_ok:
-            return True
+            return idx
         idx += 1
 
 
+def _is_word_boundary_match(haystack: str, needle: str) -> bool:
+    """Back-compat wrapper around `_word_boundary_match_index`."""
+    return _word_boundary_match_index(haystack, needle) != -1
+
+
+def count_word_boundary_matches(
+    haystack: str, needle: str, *, limit: int | None = None
+) -> int:
+    """Count word-boundary matches of `needle` in `haystack`.
+
+    Case-insensitive. When `limit` is supplied, only matches starting
+    strictly before that character offset are counted — this lets a
+    caller figure out "how many occurrences of this text come before
+    position X in the full document text" so the match at X can be
+    mapped to a specific bbox. See `find_span_for_text` with
+    `occurrence_index` below.
+    """
+    if not needle:
+        return 0
+    haystack_lower = haystack.lower()
+    needle_lower = needle.lower()
+    upper = len(haystack_lower) if limit is None else min(limit, len(haystack_lower))
+    n = len(needle_lower)
+    count = 0
+    idx = 0
+    while idx < upper:
+        pos = haystack_lower.find(needle_lower, idx)
+        if pos == -1 or pos >= upper:
+            break
+        left_ok = pos == 0 or not haystack_lower[pos - 1].isalnum()
+        right = pos + n
+        right_ok = right == len(haystack_lower) or not haystack_lower[right].isalnum()
+        if left_ok and right_ok:
+            count += 1
+        idx = pos + 1
+    return count
+
+
+def _narrow_bbox_to_substring(span: "TextSpan", match_idx: int, match_len: int) -> dict[str, Any]:
+    """Proportionally narrow a text span's bbox to the substring range
+    `[match_idx, match_idx + match_len)`.
+
+    pdf.js / PyMuPDF give us only the overall bbox of each text item, not
+    per-glyph positions, so we can't get the exact pixel offset of a
+    substring inside a longer item. We approximate by scaling linearly by
+    character count — a variable-width font means this is off by a few
+    pixels in practice, but that's far better than the alternative of
+    snapping the WHOLE text item's bbox (which, for a sentence-length
+    item, paints an entire paragraph line black when only a name should
+    be redacted).
+
+    If the substring covers the entire span we return the span's own
+    bbox verbatim so existing tests stay stable.
+    """
+    total = len(span.text)
+    # Degenerate case — no characters to scale against. Return the span's
+    # own bbox so the caller gets a non-empty (if approximate) box.
+    if total == 0:
+        return {
+            "page": span.page,
+            "x0": span.x0,
+            "y0": span.y0,
+            "x1": span.x1,
+            "y1": span.y1,
+        }
+    width = span.x1 - span.x0
+    x0 = span.x0 + width * (match_idx / total)
+    x1 = span.x0 + width * ((match_idx + match_len) / total)
+    return {
+        "page": span.page,
+        "x0": x0,
+        "y0": span.y0,
+        "x1": x1,
+        "y1": span.y1,
+    }
+
+
+def _find_nth_occurrence(
+    pages_to_check: list[PageText],
+    search_lower: str,
+    first_word: str,
+    occurrence_index: int,
+) -> list[dict[str, Any]]:
+    """Return a single-bbox list for the Nth word-boundary match of
+    `search_lower` across `pages_to_check`, in reading order.
+
+    Mirrors the per-page matching logic of `find_span_for_text`
+    (single-item first, multi-item merge fallback only when no
+    single-item matches exist on that page), but iterates every page
+    and keeps a running count so the caller can identify the one hit
+    they care about. Returns `[]` when fewer than N+1 matches exist.
+    """
+    seen = 0
+    for page_text in pages_to_check:
+        # --- single-item matches on this page ---
+        page_single_matches: list[dict[str, Any]] = []
+        for span in page_text.spans:
+            span_lower = span.text.lower()
+            idx = _word_boundary_match_index(span_lower, search_lower)
+            if idx != -1:
+                page_single_matches.append(
+                    _narrow_bbox_to_substring(span, idx, len(search_lower))
+                )
+
+        if page_single_matches:
+            for bbox in page_single_matches:
+                if seen == occurrence_index:
+                    return [bbox]
+                seen += 1
+            continue
+
+        # --- multi-item merge fallback (same rules as find_span_for_text) ---
+        spans = page_text.spans
+        for i, start in enumerate(spans):
+            start_lower = start.text.lower()
+            if not (
+                _is_word_boundary_match(start_lower, first_word)
+                or search_lower.startswith(start_lower)
+            ):
+                continue
+
+            merged_parts: list[str] = [start.text]
+            x0, y0, x1, y1 = start.x0, start.y0, start.x1, start.y1
+            matched_bbox: dict[str, Any] | None = None
+
+            for j in range(i + 1, min(i + 12, len(spans))):
+                nxt = spans[j]
+                if abs(nxt.y0 - start.y0) > _SAME_LINE_TOL:
+                    break
+                merged_parts.append(nxt.text)
+                x0 = min(x0, nxt.x0)
+                x1 = max(x1, nxt.x1)
+                y0 = min(y0, nxt.y0)
+                y1 = max(y1, nxt.y1)
+
+                with_space = " ".join(merged_parts).lower()
+                without_space = "".join(merged_parts).lower()
+                if _is_word_boundary_match(
+                    with_space, search_lower
+                ) or _is_word_boundary_match(without_space, search_lower):
+                    matched_bbox = {
+                        "page": start.page,
+                        "x0": x0,
+                        "y0": y0,
+                        "x1": x1,
+                        "y1": y1,
+                    }
+                    break
+
+            if matched_bbox is None:
+                continue
+            if seen == occurrence_index:
+                return [matched_bbox]
+            seen += 1
+
+    return []
+
+
 def find_span_for_text(
-    pages: list[PageText], search_text: str, page_hint: int | None = None
-) -> list[dict]:
+    pages: list[PageText],
+    search_text: str,
+    page_hint: int | None = None,
+    occurrence_index: int | None = None,
+) -> list[dict[str, Any]]:
     """Find bounding boxes for a text string in the extracted text items.
 
     Matching rules (deliberately strict to avoid paragraph-sized bboxes
@@ -279,11 +441,20 @@ def find_span_for_text(
       item is itself a prefix of the search text). This ensures the
       resulting bbox starts where the entity actually begins, rather
       than at some unrelated earlier item.
+
+    When `occurrence_index` is provided the function iterates all pages
+    in reading order and returns a single-bbox list corresponding to
+    the Nth (0-indexed) match it encounters, or `[]` if there aren't
+    that many matches. This is how a NER detection at a specific
+    character offset gets mapped to exactly one bbox instead of every
+    occurrence of its text — otherwise a name like "A.B. Bakker" that
+    appears twice in the document would attach both bboxes to a single
+    detection, and the frontend's bbox→text resolver would happily
+    render "A.B. Bakker A.B. Bakker" in the sidebar.
     """
-    results: list[dict] = []
     search_lower = search_text.lower().strip()
     if not search_lower:
-        return results
+        return []
 
     pages_to_check = (
         [pages[page_hint]] if page_hint is not None and 0 <= page_hint < len(pages) else pages
@@ -291,19 +462,26 @@ def find_span_for_text(
 
     first_word = search_lower.split(" ", 1)[0] if " " in search_lower else search_lower
 
+    if occurrence_index is not None:
+        return _find_nth_occurrence(
+            pages_to_check, search_lower, first_word, occurrence_index
+        )
+
+    results: list[dict[str, Any]] = []
+
     for page_text in pages_to_check:
-        # 1) Single-item match — the common case.
+        # 1) Single-item match — the common case. When the match is a
+        #    strict substring of a longer text item (typical for PyMuPDF,
+        #    where an entire sentence often comes back as one span) we
+        #    narrow the bbox proportionally to the matched substring.
+        #    Returning the full item's bbox used to cause the whole
+        #    sentence to get redacted — see the Van der Berg regression
+        #    that prompted this code path.
         for span in page_text.spans:
-            if _is_word_boundary_match(span.text.lower(), search_lower):
-                results.append(
-                    {
-                        "page": span.page,
-                        "x0": span.x0,
-                        "y0": span.y0,
-                        "x1": span.x1,
-                        "y1": span.y1,
-                    }
-                )
+            span_lower = span.text.lower()
+            idx = _word_boundary_match_index(span_lower, search_lower)
+            if idx != -1:
+                results.append(_narrow_bbox_to_substring(span, idx, len(search_lower)))
 
         # 2) Multi-item same-line merge, anchored at an item that
         #    plausibly starts the match.
@@ -367,7 +545,7 @@ def find_span_for_text(
 
 def apply_redactions(
     pdf_bytes: bytes,
-    redactions: list[dict],
+    redactions: list[dict[str, Any]],
     redaction_color: tuple[float, float, float] = (0, 0, 0),
 ) -> bytes:
     """Apply redaction annotations to a PDF and return the modified bytes.
@@ -400,7 +578,7 @@ def apply_redactions(
     for page in doc:
         page.apply_redactions()
 
-    result = doc.tobytes()
+    result: bytes = doc.tobytes()
     doc.close()
     return result
 

@@ -6,9 +6,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 
 from app.api.analyze import router as analyze_router
+from app.api.custom_terms import router as custom_terms_router
 from app.api.detections import router as detections_router
 from app.api.documents import router as documents_router
 from app.api.export import router as export_router
+from app.api.leads import router as leads_router
+from app.api.page_reviews import router as page_reviews_router
+from app.api.reference_names import router as reference_names_router
 from app.config import settings
 from app.db.session import engine
 from app.logging_config import configure_logging, get_logger
@@ -23,34 +27,54 @@ from app.security import (
 configure_logging()
 logger = get_logger(__name__)
 
-# Tier 3 LLM content analysis is currently disabled in services/llm_engine.py.
-# When re-enabled, flip this to True so the health endpoint probes the provider.
-LLM_TIER_ENABLED = False
-
-
-async def _probe_llm_status() -> str:
-    """Return one of: "ok", "unreachable", "disabled".
-
-    Probing is best-effort and bounded by the provider's own timeout.
-    """
-    if not LLM_TIER_ENABLED:
-        return "disabled"
-    try:
-        from app.llm import get_llm_provider
-
-        provider = get_llm_provider()
-        reachable = await provider.health_check()
-        return "ok" if reachable else "unreachable"
-    except Exception:
-        logger.exception("llm.health_probe_raised")
-        return "unreachable"
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # Create database tables (dev convenience — use Alembic in production)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Lightweight, idempotent schema patch for columns that post-date the
+        # original create_all. Alembic lives in the tree but isn't wired to a
+        # version chain yet; until it is, new nullable columns get an
+        # `IF NOT EXISTS` ALTER here so a running dev/pilot database picks
+        # them up on the next restart without a manual migration.
+        from sqlalchemy import text
+
+        await conn.execute(
+            text("ALTER TABLE detections ADD COLUMN IF NOT EXISTS original_bounding_boxes JSONB")
+        )
+        # #15 — Tier 2 role classification. Nullable, no default: pre-existing
+        # rows stay NULL and the UI shows the three chips until a reviewer
+        # picks one.
+        await conn.execute(
+            text("ALTER TABLE detections ADD COLUMN IF NOT EXISTS subject_role VARCHAR(30)")
+        )
+        # #18 — split and merge audit columns. `split_from` points at the
+        # original row; it uses SET NULL on delete (defined via the
+        # SQLAlchemy FK) so surviving halves outlive the original. The FK
+        # itself is added here for fresh environments; in running dev/pilot
+        # databases the column is added plain and the constraint is
+        # attached separately so the whole block stays idempotent.
+        await conn.execute(text("ALTER TABLE detections ADD COLUMN IF NOT EXISTS split_from UUID"))
+        await conn.execute(
+            text("ALTER TABLE detections ADD COLUMN IF NOT EXISTS merged_from JSONB")
+        )
+        # #20 — character offsets into the server-joined full text, captured
+        # at analyze time so the frontend can match detections to structure
+        # spans on reload without re-running analyze. Nullable; pre-existing
+        # rows stay NULL.
+        await conn.execute(
+            text("ALTER TABLE detections ADD COLUMN IF NOT EXISTS start_char INTEGER")
+        )
+        await conn.execute(text("ALTER TABLE detections ADD COLUMN IF NOT EXISTS end_char INTEGER"))
+        # Environmental-information flag. NOT NULL with a server default so
+        # pre-existing rows backfill to `false` without a separate UPDATE.
+        await conn.execute(
+            text(
+                "ALTER TABLE detections ADD COLUMN IF NOT EXISTS "
+                "is_environmental BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+        )
     logger.info("db.tables_ensured")
 
     # Pre-initialize Deduce NER (~2s load time). Non-fatal — if this fails the
@@ -63,16 +87,59 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     except Exception:
         logger.warning("ner.deduce_init_failed", reason="will_lazy_init")
 
-    # Advisory LLM reachability probe. Never fatal; Tier 3 is dormant today, but
-    # we log a warning so operators notice when the provider is unreachable.
-    llm_status = await _probe_llm_status()
-    if llm_status == "unreachable":
-        logger.warning(
-            "llm.unreachable_at_startup",
-            provider=settings.llm_provider,
+    # Load the Meertens voornamen + CBS achternamen name lists once and
+    # cache them on app.state so tests / diagnostics can introspect the
+    # loaded set sizes. The name engine ALSO keeps its own module-level
+    # cache so callers don't have to thread `app.state` through every
+    # analyze request. Non-fatal: missing files fall back to empty sets
+    # and the pipeline continues on the heuristic-only verdict.
+    try:
+        from app.services.ner_engine import init_name_lists
+
+        app.state.name_lists = init_name_lists()
+        logger.info(
+            "ner.name_lists_initialized",
+            first_names=len(app.state.name_lists.first_names),
+            last_names=len(app.state.name_lists.last_names),
         )
-    else:
-        logger.info("llm.status", status=llm_status)
+    except Exception:
+        logger.warning("ner.name_lists_init_failed", reason="will_lazy_init")
+
+    # Load the function-title lists for the rule-based role classifier
+    # (#13). Cached on app.state for diagnostics; the role_engine module
+    # ALSO keeps a process-level cache so callers don't have to thread
+    # app.state through every request. Missing files fall back to empty
+    # lists — the pipeline will then behave as if no titles were found.
+    try:
+        from app.services.role_engine import init_function_title_lists
+
+        app.state.function_title_lists = init_function_title_lists()
+        logger.info(
+            "role_engine.lists_initialized",
+            publiek=len(app.state.function_title_lists.publiek),
+            ambtenaar=len(app.state.function_title_lists.ambtenaar),
+        )
+    except Exception:
+        logger.warning("role_engine.lists_init_failed", reason="will_lazy_init")
+
+    # Load the gemeente-whitelist index (#49) — 342 municipalities + their
+    # public addresses/contact data + ~14k named public officials
+    # (raadsleden, burgemeesters, wethouders, Woo-contactpersonen). Used
+    # by the pipeline to suppress false positives on public municipal
+    # data. Cached on app.state for diagnostics; the whitelist_engine
+    # module also keeps its own process-level cache. Missing CSV files
+    # degrade to an empty index — the pipeline keeps working.
+    try:
+        from app.services.whitelist_engine import init_whitelist_index
+
+        app.state.whitelist_index = init_whitelist_index()
+        logger.info(
+            "whitelist_engine.initialized",
+            municipalities=len(app.state.whitelist_index.municipalities),
+            officials=sum(len(v) for v in app.state.whitelist_index.officials_by_gm.values()),
+        )
+    except Exception:
+        logger.warning("whitelist_engine.init_failed", reason="will_lazy_init")
 
     yield
 
@@ -113,17 +180,15 @@ def create_app() -> FastAPI:
     app.include_router(documents_router)
     app.include_router(detections_router)
     app.include_router(export_router)
+    app.include_router(page_reviews_router)
+    app.include_router(reference_names_router)
+    app.include_router(custom_terms_router)
+    app.include_router(leads_router)
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:
-        """Advisory health endpoint.
-
-        Always returns 200 so load balancers don't flap when the LLM provider
-        is down (the app keeps working on Tier 1/2 without it). The `ollama`
-        field surfaces LLM reachability for the frontend banner.
-        """
-        llm_status = await _probe_llm_status()
-        return {"status": "ok", "ollama": llm_status}
+        """Advisory health endpoint. Always returns 200."""
+        return {"status": "ok"}
 
     return app
 

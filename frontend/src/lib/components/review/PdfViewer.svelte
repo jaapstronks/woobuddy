@@ -1,3 +1,10 @@
+<script lang="ts" module>
+	// Re-exported so existing call sites that import these from PdfViewer
+	// keep working after the Phase 1/2 refactor.
+	export type { SearchHighlight } from '$lib/services/pdf-overlay-draw';
+	export type { PageReviewStatusValue } from './page-review-status';
+</script>
+
 <script lang="ts">
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import type { Detection, BoundingBox } from '$lib/types';
@@ -10,19 +17,27 @@
 		snapRangeToWordBoundaries,
 		type ManualSelection
 	} from '$lib/services/selection-bbox';
-
-	/**
-	 * Lightweight shape for search-and-redact overlays (#09). The PdfViewer
-	 * doesn't need the full `SearchOccurrence` — only the id, page, bboxes
-	 * and whether it's already-redacted (for the muted style). Declaring a
-	 * local interface keeps the viewer's import surface narrow.
-	 */
-	export interface SearchHighlight {
-		id: string;
-		page: number;
-		bboxes: BoundingBox[];
-		alreadyRedacted: boolean;
-	}
+	import {
+		drawDetectionOverlays,
+		drawSearchHighlights,
+		type SearchHighlight
+	} from '$lib/services/pdf-overlay-draw';
+	import { loadPdfDocument, renderPdfPage } from '$lib/services/pdf-page-render';
+	import PdfViewerToolbar from './PdfViewerToolbar.svelte';
+	import PageStrip from './PageStrip.svelte';
+	import PageReviewActions from './PageReviewActions.svelte';
+	import BoundaryEditOverlay from './BoundaryEditOverlay.svelte';
+	import {
+		applyHandleDelta,
+		arrowKeyToNudge,
+		bboxesEqual,
+		cloneBboxes,
+		extendBboxToWord,
+		nudgeBbox,
+		shrinkBboxByWord,
+		type HandleDir
+	} from '$lib/services/boundary-edit-geometry';
+	import type { PageReviewStatusValue } from './page-review-status';
 
 	interface Props {
 		pdfData: ArrayBuffer | null;
@@ -37,11 +52,54 @@
 		onModeChange: (mode: ReviewMode) => void;
 		onManualSelection?: (selection: ManualSelection) => void;
 		onManualSelectionCleared?: () => void;
+		/**
+		 * Boundary adjustment (#11). Fired when the reviewer commits an edit
+		 * (Enter / Opslaan button). The parent wraps this in a
+		 * `BoundaryAdjustCommand` so Ctrl+Z rolls it back. PdfViewer owns
+		 * the editing state internally — this callback is the only hand-off.
+		 */
+		onBoundaryAdjust?: (detectionId: string, nextBboxes: BoundingBox[]) => void;
+		/**
+		 * Split mode (#18). When set, the detection with this id enters
+		 * "awaiting split point" mode: the next click on one of its bboxes
+		 * is intercepted (instead of the usual boundary-edit entry) and
+		 * reported via `onSplitPointClick` as a PDF-space coordinate. The
+		 * parent derives the two bbox sets and calls the server.
+		 */
+		splitPendingId?: string | null;
+		/**
+		 * Fired when the reviewer clicks inside `splitPendingId`'s overlay.
+		 * `bboxIndex` is the index of the clicked bbox in the detection's
+		 * `bounding_boxes`; `pdfX` / `pdfY` are the PDF-point coordinates of
+		 * the click.
+		 */
+		onSplitPointClick?: (args: {
+			detectionId: string;
+			bboxIndex: number;
+			pdfX: number;
+			pdfY: number;
+		}) => void;
+		/**
+		 * #18 — sidebar multi-select staging for merge. Bboxes whose detection
+		 * id appears here get a secondary highlight so the reviewer can see
+		 * which rows are queued for merging.
+		 */
+		mergeStagingIds?: string[];
 		stageEl?: HTMLDivElement | null;
 		/** Search-and-redact highlights for the current document (#09). */
 		searchHighlights?: SearchHighlight[];
 		/** Id of the highlight the reviewer just clicked — gets the focused style. */
 		focusedSearchId?: string | null;
+		/** Sparse map of page-number → status (#10). Missing ⇒ unreviewed. */
+		pageStatuses?: Record<number, PageReviewStatusValue>;
+		onMarkPageReviewed?: (page: number) => void;
+		onFlagPage?: (page: number) => void;
+		/**
+		 * Reports the unscaled (PDF-point) dimensions of the current page after
+		 * each render. The review page uses this to compute fit-to-width /
+		 * fit-to-page scales without having to peek inside pdf.js itself.
+		 */
+		onPageNaturalSize?: (size: { width: number; height: number }) => void;
 	}
 
 	let {
@@ -57,9 +115,17 @@
 		onModeChange,
 		onManualSelection,
 		onManualSelectionCleared,
+		onBoundaryAdjust,
+		splitPendingId = null,
+		onSplitPointClick,
+		mergeStagingIds = [],
 		stageEl = $bindable(null),
 		searchHighlights = [],
-		focusedSearchId = null
+		focusedSearchId = null,
+		pageStatuses = {},
+		onMarkPageReviewed,
+		onFlagPage,
+		onPageNaturalSize
 	}: Props = $props();
 
 	let canvasEl = $state<HTMLCanvasElement | null>(null);
@@ -67,8 +133,23 @@
 	let searchLayerEl = $state<HTMLDivElement | null>(null);
 	let textLayerEl = $state<HTMLDivElement | null>(null);
 	let pdfDoc = $state<any>(null);
+
+	const currentPageStatus = $derived<PageReviewStatusValue>(
+		pageStatuses[currentPage] ?? 'unreviewed'
+	);
+	const totalPages = $derived(pdfDoc?.numPages ?? 0);
 	let rendering = false; // not reactive — just a guard flag
-	let viewportSize = { width: 0, height: 0 };
+	// Reactive so the overlay/search-highlight effects re-run once renderPdf
+	// finishes and updates the current viewport dimensions. Without this the
+	// overlays would read stale container sizes after a zoom or resize.
+	let viewportSize = $state({ width: 0, height: 0 });
+	// Scale actually painted onto the canvas. Distinct from the `scale` prop,
+	// which can be a frame ahead of the canvas when fit-to-width recomputes
+	// mid-render. Overlays must read THIS value — not the live prop — or they
+	// get drawn at coordinates that don't yet match the canvas paint, which
+	// manifests as rectangles landing a few pixels off on initial load and
+	// only "snapping" when a later resize forces another full render cycle.
+	let renderedScale = $state(0);
 	let currentTextLayer: { cancel: () => void } | null = null;
 
 	// Area-selection draw state (#07). The live rectangle is reactive so it
@@ -92,28 +173,147 @@
 	// nature; a <6px "draw" is overwhelmingly a misclick).
 	const AREA_MIN_SIZE_PX = 6;
 
-	// Tier-based overlay styles
-	function getOverlayStyle(det: Detection): string {
-		const isSelected = det.id === selectedDetectionId;
-		const border = isSelected ? 'border: 2px solid var(--color-primary);' : '';
+	// ---------------------------------------------------------------------
+	// Boundary adjustment state (#11)
+	//
+	// When the reviewer clicks an existing detection in Edit mode, the
+	// component enters a "boundary edit" state for that detection. Draft
+	// bboxes are cloned into `editingBboxes` and rendered via the
+	// BoundaryEditOverlay child with 8 resize handles per box;
+	// drawDetectionOverlays hides the original overlay for the editing
+	// detection so the two don't double up.
+	//
+	// Committing the edit (Enter or the floating Opslaan button) emits
+	// `onBoundaryAdjust` to the parent, which wraps it in a
+	// `BoundaryAdjustCommand` for undo/redo. Escape reverts the draft to
+	// the snapshot taken when editing started.
+	//
+	// `BBOX_MIN_PT`, `ARROW_NUDGE_PT`, `ARROW_NUDGE_FINE_PT`, and the
+	// bbox-math helpers below live in `$lib/services/boundary-edit-geometry`.
+	// ---------------------------------------------------------------------
 
-		// Area redactions (#07) are always fully opaque black on creation —
-		// they are accepted the moment the form is confirmed and have no
-		// "review pending" state. Keep the same look as a Tier 1 auto-redact
-		// so the reviewer sees exactly what the exported PDF will cover.
-		if (det.entity_type === 'area') {
-			return `background: rgba(0,0,0,0.85); color: white; ${border}`;
-		}
-		if (det.tier === '1' || det.review_status === 'accepted' || det.review_status === 'auto_accepted') {
-			return `background: rgba(0,0,0,0.7); color: white; ${border}`;
-		}
-		if (det.review_status === 'rejected') {
-			return `background: rgba(39,174,96,0.08); border: 1px dashed rgba(39,174,96,0.4); ${border}`;
-		}
-		if (det.tier === '2') {
-			return `background: rgba(243,156,18,0.1); border: 2px solid rgba(243,156,18,0.6); ${border}`;
-		}
-		return `background: rgba(27,79,114,0.05); border-left: 3px solid var(--color-primary); ${border}`;
+	let editingDetectionId = $state<string | null>(null);
+	let editingBboxes = $state<BoundingBox[] | null>(null);
+	// Snapshot captured when edit starts — `Escape` rolls back to this.
+	// Not reactive because it only drives imperative reverts.
+	let editingOriginalBboxes: BoundingBox[] | null = null;
+
+	// Handle drag state — plain vars because they mutate on every mousemove.
+	let dragHandle: {
+		boxIndex: number;
+		dir: HandleDir;
+		startClientX: number;
+		startClientY: number;
+		initialBbox: BoundingBox;
+	} | null = null;
+
+	function enterBoundaryEdit(detectionId: string) {
+		const det = detections.find((d) => d.id === detectionId);
+		if (!det || !det.bounding_boxes || det.bounding_boxes.length === 0) return;
+		editingDetectionId = detectionId;
+		editingBboxes = cloneBboxes(det.bounding_boxes);
+		editingOriginalBboxes = cloneBboxes(det.bounding_boxes);
+		// Also mark the detection as selected so the sidebar row highlights.
+		onSelectDetection(detectionId);
+	}
+
+	function cancelBoundaryEdit() {
+		editingDetectionId = null;
+		editingBboxes = null;
+		editingOriginalBboxes = null;
+		dragHandle = null;
+	}
+
+	function commitBoundaryEdit() {
+		if (!editingDetectionId || !editingBboxes) return;
+		const id = editingDetectionId;
+		const next = cloneBboxes(editingBboxes);
+		cancelBoundaryEdit();
+		onBoundaryAdjust?.(id, next);
+	}
+
+	function resetBoundaryEditDraft() {
+		if (!editingOriginalBboxes) return;
+		editingBboxes = cloneBboxes(editingOriginalBboxes);
+	}
+
+	function handleResizeMouseDown(e: MouseEvent, boxIndex: number, dir: HandleDir) {
+		if (!editingBboxes) return;
+		e.preventDefault();
+		e.stopPropagation();
+		dragHandle = {
+			boxIndex,
+			dir,
+			startClientX: e.clientX,
+			startClientY: e.clientY,
+			initialBbox: { ...editingBboxes[boxIndex] }
+		};
+	}
+
+	function handleBoundaryDragMove(e: MouseEvent) {
+		if (!dragHandle || !editingBboxes) return;
+		const dxPt = (e.clientX - dragHandle.startClientX) / scale;
+		const dyPt = (e.clientY - dragHandle.startClientY) / scale;
+		const updated = applyHandleDelta(dragHandle.initialBbox, dragHandle.dir, dxPt, dyPt);
+		editingBboxes = editingBboxes.map((b, i) => (i === dragHandle!.boxIndex ? updated : b));
+	}
+
+	function handleBoundaryDragEnd() {
+		dragHandle = null;
+	}
+
+	/**
+	 * Nudge the currently-editing bbox(es) with an arrow key. Operates on
+	 * all bboxes of the editing detection that sit on the current page —
+	 * which for nearly all single-line detections is exactly one box.
+	 * Geometry lives in `boundary-edit-geometry.ts`.
+	 */
+	function nudgeEditingBbox(
+		side: 'left' | 'right' | 'top' | 'bottom',
+		stepPt: number,
+		shrink: boolean
+	) {
+		if (!editingBboxes) return;
+		editingBboxes = editingBboxes.map((b) =>
+			b.page === currentPage ? nudgeBbox(b, side, stepPt, shrink) : b
+		);
+	}
+
+	/**
+	 * Shift+click on a word in the text layer while a detection is being
+	 * edited: extend (or shrink) the editing bbox on the current page to
+	 * include the clicked word's rectangle. Alt+click on a word at the
+	 * current bbox edge shrinks it to exclude that word. The word rect is
+	 * derived from the clicked text-layer span's bounding client rect,
+	 * converted to PDF points using the same helpers as manual selection.
+	 */
+	function handleTextLayerClick(e: MouseEvent) {
+		if (mode !== 'edit' || !editingBboxes || !stageEl) return;
+		if (!e.shiftKey && !e.altKey) return;
+		const target = e.target as HTMLElement | null;
+		// Text-layer glyphs are span elements; anything else (the container,
+		// the endOfContent probe, whitespace) has nothing meaningful to grab.
+		if (!target || target.tagName !== 'SPAN') return;
+		const spanRect = target.getBoundingClientRect();
+		const stageRect = stageEl.getBoundingClientRect();
+		const wordBbox = rectToBoundingBox(
+			{
+				left: spanRect.left,
+				top: spanRect.top,
+				right: spanRect.right,
+				bottom: spanRect.bottom
+			},
+			stageRect,
+			scale,
+			currentPage
+		);
+		e.preventDefault();
+		e.stopPropagation();
+
+		editingBboxes = editingBboxes.map((b) => {
+			if (b.page !== currentPage) return b;
+			return e.shiftKey ? extendBboxToWord(b, wordBbox) : shrinkBboxByWord(b, wordBbox);
+		});
 	}
 
 	onMount(async () => {
@@ -123,17 +323,9 @@
 		window.addEventListener('mouseup', handleWindowMouseUp);
 		window.addEventListener('keydown', handleWindowKeyDown);
 
-		const pdfjsLib = await import('pdfjs-dist');
-		pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-			'pdfjs-dist/build/pdf.worker.mjs',
-			import.meta.url
-		).toString();
-
 		// Client-first: PDF comes from the in-memory ArrayBuffer only.
-		// .slice(0) copies the buffer so pdf.js Worker transfer doesn't detach the original.
 		if (!pdfData) return;
-		const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfData.slice(0)) });
-		pdfDoc = await loadingTask.promise;
+		pdfDoc = await loadPdfDocument(pdfData);
 	});
 
 	onDestroy(() => {
@@ -145,121 +337,55 @@
 	async function renderPdf(pageNum: number) {
 		if (!pdfDoc || !canvasEl || rendering) return;
 		rendering = true;
-
+		// Snapshot the scale we're about to paint so later `renderedScale`
+		// update matches what actually landed on the canvas — reading `scale`
+		// again after the await could return a newer value if the reviewer
+		// zoomed mid-render.
+		const activeScale = scale;
 		try {
-			const page = await pdfDoc.getPage(pageNum + 1);
-			const viewport = page.getViewport({ scale });
-			viewportSize = { width: viewport.width, height: viewport.height };
-
-			canvasEl.width = viewport.width;
-			canvasEl.height = viewport.height;
-
-			const ctx = canvasEl.getContext('2d')!;
-			await page.render({ canvasContext: ctx, viewport }).promise;
-
-			await renderTextLayer(page, viewport);
+			const result = await renderPdfPage({
+				pdfDoc,
+				pageNum,
+				scale: activeScale,
+				canvas: canvasEl,
+				textLayerEl,
+				previousTextLayer: currentTextLayer
+			});
+			viewportSize = { width: result.width, height: result.height };
+			renderedScale = activeScale;
+			currentTextLayer = result.textLayer;
+			// Report the unscaled page size so the parent can compute
+			// fit-to-width / fit-to-page scales without peeking into pdf.js.
+			onPageNaturalSize?.({ width: result.naturalWidth, height: result.naturalHeight });
 		} finally {
 			rendering = false;
 		}
 	}
 
-	async function renderTextLayer(page: any, viewport: any) {
-		if (!textLayerEl) return;
-		// Cancel any previous render — switching pages quickly can leave a
-		// stale TextLayer half-painted if we don't explicitly abort.
-		currentTextLayer?.cancel();
-		textLayerEl.innerHTML = '';
-		textLayerEl.style.width = `${viewport.width}px`;
-		textLayerEl.style.height = `${viewport.height}px`;
-		// pdf.js expects this CSS var to equal 1x scale so it can size glyphs.
-		textLayerEl.style.setProperty('--scale-factor', String(scale));
-
-		const pdfjsLib = await import('pdfjs-dist');
-		const textContent = await page.getTextContent();
-		const textLayer = new pdfjsLib.TextLayer({
-			textContentSource: textContent,
-			container: textLayerEl,
-			viewport
-		});
-		currentTextLayer = textLayer;
-		try {
-			await textLayer.render();
-		} catch {
-			// pdf.js throws on cancel — nothing to do.
-		}
-	}
-
 	/**
-	 * Draw search-and-redact highlights (#09) on their own layer, above the
-	 * canvas but below the detection overlay and the text layer. A distinct
-	 * yellow color separates them from detection rectangles so the reviewer
-	 * immediately sees the difference between "detected" and "search hit".
-	 * Already-redacted hits render with a muted style so they don't compete
-	 * visually with the still-actionable matches.
+	 * Click handler passed into drawDetectionOverlays. Routes the click to
+	 * split-point reporting, boundary-edit entry, or plain selection
+	 * depending on the current mode and split-pending state.
 	 */
-	function drawSearchHighlights(pageNum: number) {
-		if (!searchLayerEl) return;
-		searchLayerEl.innerHTML = '';
-		searchLayerEl.style.width = `${viewportSize.width}px`;
-		searchLayerEl.style.height = `${viewportSize.height}px`;
-
-		for (const hit of searchHighlights) {
-			for (const bbox of hit.bboxes) {
-				if (bbox.page !== pageNum) continue;
-				const el = document.createElement('div');
-				const x = bbox.x0 * scale;
-				const y = bbox.y0 * scale;
-				const w = (bbox.x1 - bbox.x0) * scale;
-				const h = (bbox.y1 - bbox.y0) * scale;
-				el.className = 'search-hit';
-				if (hit.alreadyRedacted) el.classList.add('search-hit-muted');
-				if (hit.id === focusedSearchId) el.classList.add('search-hit-focused');
-				el.style.cssText += `left:${x}px;top:${y}px;width:${w}px;height:${h}px;`;
-				el.dataset.searchHitId = hit.id;
-				searchLayerEl.appendChild(el);
-			}
+	function handleOverlayClick(e: MouseEvent, det: Detection, bboxIdx: number) {
+		// #18 — split pending: clicking the target detection's bbox reports a
+		// PDF-space click position instead of the usual boundary-edit entry.
+		// Fires only for the pending detection; clicks on other detections
+		// fall through to their normal behavior.
+		if (splitPendingId === det.id && onSplitPointClick && stageEl) {
+			const stageRect = stageEl.getBoundingClientRect();
+			const pdfX = (e.clientX - stageRect.left) / scale;
+			const pdfY = (e.clientY - stageRect.top) / scale;
+			onSplitPointClick({ detectionId: det.id, bboxIndex: bboxIdx, pdfX, pdfY });
+			return;
 		}
-	}
-
-	function drawOverlays(pageNum: number) {
-		if (!overlayEl) return;
-
-		overlayEl.innerHTML = '';
-		overlayEl.style.width = `${viewportSize.width}px`;
-		overlayEl.style.height = `${viewportSize.height}px`;
-
-		for (const det of detections) {
-			if (!det.bounding_boxes) continue;
-			for (const bbox of det.bounding_boxes) {
-				if (bbox.page !== pageNum) continue;
-
-				const el = document.createElement('div');
-				const x = bbox.x0 * scale;
-				const y = bbox.y0 * scale;
-				const w = (bbox.x1 - bbox.x0) * scale;
-				const h = (bbox.y1 - bbox.y0) * scale;
-
-				el.style.cssText = `
-					position: absolute;
-					left: ${x}px; top: ${y}px;
-					width: ${w}px; height: ${h}px;
-					cursor: pointer; pointer-events: auto;
-					border-radius: 2px;
-					${getOverlayStyle(det)}
-				`;
-				el.dataset.overlay = 'detection';
-				el.dataset.detectionId = det.id;
-
-				if ((det.tier === '1' || det.entity_type === 'area') && det.woo_article) {
-					el.innerHTML = `<span style="font-size:8px;padding:1px 3px;">${det.woo_article}</span>`;
-				}
-
-				el.addEventListener('click', (e) => {
-					e.stopPropagation();
-					onSelectDetection(det.id);
-				});
-				overlayEl.appendChild(el);
-			}
+		// Edit mode: clicking an existing detection enters the
+		// boundary-edit flow instead of just highlighting it. Review mode
+		// keeps the classic select-for-sidebar behavior.
+		if (mode === 'edit') {
+			enterBoundaryEdit(det.id);
+		} else {
+			onSelectDetection(det.id);
 		}
 	}
 
@@ -273,21 +399,26 @@
 			suppressNextTextLayerMouseUp = false;
 			return;
 		}
-		if (mode !== 'edit' || !textLayerEl) return;
+		if (!textLayerEl) return;
 		// Defer: the browser finalizes the selection after the mouseup handler
 		// has already run synchronously on a fresh click-to-clear.
+		// Hybrid interaction: text-drag produces a manual redaction in both
+		// Beoordelen and Bewerken. The only thing the mode gates is what a
+		// click on an existing detection does (select-for-sidebar vs.
+		// enter-boundary-edit) — see handleOverlayClick.
 		setTimeout(() => emitSelection(e.altKey), 0);
 	}
 
 	// ---------------------------------------------------------------------
 	// Area selection (#07)
 	//
-	// In edit mode, Shift + mousedown on the PDF stage starts drawing a
-	// rectangle. We use window-level mousemove/mouseup so drags that leave
-	// the stage mid-gesture still finish cleanly. Text-layer selection is
-	// suppressed by preventing the default on mousedown; a dedicated
-	// `drawing-area` class also disables user-select on the text layer so
-	// the two interactions never interleave visually.
+	// Shift + mousedown on the PDF stage starts drawing a rectangle — works
+	// in both Beoordelen and Bewerken under the hybrid model, since Shift is
+	// the unambiguous signal. We use window-level mousemove/mouseup so
+	// drags that leave the stage mid-gesture still finish cleanly.
+	// Text-layer selection is suppressed by preventing the default on
+	// mousedown; a dedicated `drawing-area` class also disables user-select
+	// on the text layer so the two interactions never interleave visually.
 	// ---------------------------------------------------------------------
 
 	function cancelAreaDraw() {
@@ -297,7 +428,9 @@
 	}
 
 	function handleStageMouseDown(e: MouseEvent) {
-		if (mode !== 'edit' || !e.shiftKey || !stageEl) return;
+		// Area draw works in both modes — the Shift modifier is the explicit
+		// signal, so there's no ambiguity with review-mode clicks.
+		if (!e.shiftKey || !stageEl) return;
 		// Ignore mousedowns that land on existing detection overlays.
 		const target = e.target as HTMLElement | null;
 		if (target?.dataset?.overlay === 'detection') return;
@@ -318,6 +451,13 @@
 	}
 
 	function handleWindowMouseMove(e: MouseEvent) {
+		// Boundary-edit resize drag takes precedence over any area draw,
+		// because the two gestures are mutually exclusive (you can't be
+		// mid-handle-drag while also dragging out a new rectangle).
+		if (dragHandle) {
+			handleBoundaryDragMove(e);
+			return;
+		}
 		if (!isDrawingArea || !stageEl) return;
 		const stageRect = stageEl.getBoundingClientRect();
 		drawCurrentX = e.clientX - stageRect.left;
@@ -331,6 +471,10 @@
 	}
 
 	function handleWindowMouseUp() {
+		if (dragHandle) {
+			handleBoundaryDragEnd();
+			return;
+		}
 		if (!isDrawingArea || !stageEl) return;
 		isDrawingArea = false;
 		stageEl.classList.remove('drawing-area');
@@ -374,6 +518,44 @@
 	function handleWindowKeyDown(e: KeyboardEvent) {
 		if (e.key === 'Escape' && isDrawingArea) {
 			cancelAreaDraw();
+			return;
+		}
+		if (editingDetectionId) {
+			// Don't interfere with typing in a form field (unlikely while
+			// boundary-editing, but the review page has textareas for
+			// motivations).
+			const t = e.target as HTMLElement | null;
+			if (t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA' || t?.isContentEditable) {
+				return;
+			}
+			if (e.key === 'Escape') {
+				e.preventDefault();
+				// First Escape: revert draft to the snapshot. If the draft
+				// already matches the snapshot (reviewer just wants to bail
+				// out), exit boundary edit entirely.
+				if (bboxesEqual(editingBboxes, editingOriginalBboxes)) {
+					cancelBoundaryEdit();
+				} else {
+					resetBoundaryEditDraft();
+				}
+				return;
+			}
+			if (e.key === 'Enter') {
+				e.preventDefault();
+				commitBoundaryEdit();
+				return;
+			}
+			// Both PdfViewer and KeyboardShortcuts register window keydown
+			// listeners. While a boundary edit is active the arrow keys
+			// belong to us — stopImmediatePropagation prevents the
+			// KeyboardShortcuts listener from also treating them as
+			// next/prev detection navigation.
+			const nudge = arrowKeyToNudge(e.key, e.shiftKey, e.altKey);
+			if (nudge) {
+				e.preventDefault();
+				e.stopImmediatePropagation();
+				nudgeEditingBbox(nudge.side, nudge.stepPt, nudge.shrink);
+			}
 		}
 	}
 
@@ -435,48 +617,142 @@
 		}
 	});
 
-	// Draw overlays when detections, selection, or page changes
+	// Draw overlays when detections, selection, or page changes. Also
+	// re-runs when `editingDetectionId` toggles so the editing detection's
+	// DOM-built overlay disappears (and the Svelte-driven draft overlay
+	// takes its place).
 	$effect(() => {
 		void detections;
 		void selectedDetectionId;
 		void currentPage;
-		if (pdfDoc) {
-			untrack(() => drawOverlays(currentPage));
+		void editingDetectionId;
+		// #18 — re-draw so split/merge visual cues appear the moment the
+		// parent flips these props.
+		void splitPendingId;
+		void mergeStagingIds;
+		// Zoom/resize: `renderedScale` + `viewportSize` are written together
+		// at the end of `renderPdf`, so reading them here guarantees the
+		// overlays always use the same scale that was actually painted onto
+		// the canvas. Reading the live `scale` prop used to be the bug — it
+		// could be one render ahead, leaving rectangles at the new scale on
+		// top of the old canvas paint until a later resize forced another
+		// full render cycle.
+		void renderedScale;
+		void viewportSize;
+		if (pdfDoc && overlayEl && renderedScale > 0) {
+			untrack(() => {
+				drawDetectionOverlays({
+					overlayEl: overlayEl!,
+					detections,
+					pageNum: currentPage,
+					scale: renderedScale,
+					viewportSize,
+					selectedDetectionId,
+					editingDetectionId,
+					splitPendingId,
+					mergeStagingIds,
+					onOverlayClick: handleOverlayClick
+				});
+			});
 		}
 	});
 
+	// Scroll the selected detection's overlay into view and pulse it briefly
+	// so the reviewer can spot the matching rectangle in the PDF the moment
+	// they click a sidebar row. Only re-runs when the selection or current
+	// page changes — accepting/rejecting detections also re-draws the
+	// overlay layer, but we don't want to keep re-scrolling on every status
+	// change while the user is reviewing the same selection.
+	let lastScrolledKey: string | null = null;
+	$effect(() => {
+		const id = selectedDetectionId;
+		void currentPage;
+		void renderedScale;
+		if (!overlayEl || !id) {
+			lastScrolledKey = null;
+			return;
+		}
+		const key = `${id}::${currentPage}`;
+		if (lastScrolledKey === key) return;
+		lastScrolledKey = key;
+		// Defer so the overlay DOM is in place after drawOverlays runs.
+		// requestAnimationFrame, not queueMicrotask: drawOverlays runs in
+		// its own effect and we need the appendChild calls to have flushed.
+		requestAnimationFrame(() => {
+			if (!overlayEl) return;
+			const el = overlayEl.querySelector<HTMLElement>(
+				`[data-detection-id="${CSS.escape(id)}"]`
+			);
+			if (!el) return;
+			el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+			el.classList.remove('overlay-selected-pulse');
+			void el.offsetWidth;
+			el.classList.add('overlay-selected-pulse');
+			el.addEventListener(
+				'animationend',
+				() => el.classList.remove('overlay-selected-pulse'),
+				{ once: true }
+			);
+		});
+	});
+
 	// Draw search highlights whenever the result set, focus, page, or scale
-	// changes. Kept separate from `drawOverlays` so typing in the search box
-	// doesn't force a detection re-render.
+	// changes. Kept separate from the detection overlay redraw so typing in
+	// the search box doesn't force a detection re-render.
 	$effect(() => {
 		void searchHighlights;
 		void focusedSearchId;
 		void currentPage;
-		void scale;
-		if (pdfDoc) {
-			untrack(() => drawSearchHighlights(currentPage));
+		void renderedScale;
+		void viewportSize;
+		if (pdfDoc && searchLayerEl && renderedScale > 0) {
+			untrack(() => {
+				drawSearchHighlights({
+					searchLayerEl: searchLayerEl!,
+					searchHighlights,
+					pageNum: currentPage,
+					scale: renderedScale,
+					viewportSize,
+					focusedSearchId
+				});
+			});
 		}
 	});
 
-	// Leaving edit mode clears any in-progress native selection so the
-	// browser's blue highlight doesn't linger into Review mode. Also aborts
-	// any area draw that was mid-gesture.
+	// Leaving Bewerken cancels any in-progress boundary edit — that flow
+	// is the one interaction that's mode-specific (entered by click-on-
+	// detection in Bewerken) and has no representation in Beoordelen. Text
+	// selections and in-progress area draws are left alone: under the
+	// hybrid model they're valid in both modes.
 	$effect(() => {
 		if (mode === 'review') {
 			untrack(() => {
-				window.getSelection()?.removeAllRanges();
-				cancelAreaDraw();
-				onManualSelectionCleared?.();
+				cancelBoundaryEdit();
 			});
 		}
 	});
 
 	// Changing pages mid-draw would strand the rectangle on a page it wasn't
-	// drawn on — cancel cleanly instead.
+	// drawn on — cancel cleanly instead. A page change mid-boundary-edit
+	// also drops the draft (the editing detection is probably on a
+	// different page anyway).
 	$effect(() => {
 		void currentPage;
 		untrack(() => {
 			if (isDrawingArea) cancelAreaDraw();
+			if (editingDetectionId) cancelBoundaryEdit();
+		});
+	});
+
+	// If the detection being edited disappears from the store (e.g. undo
+	// removed it) or no longer exists, drop the edit state so we don't
+	// render handles over nothing.
+	$effect(() => {
+		void detections;
+		untrack(() => {
+			if (editingDetectionId && !detections.some((d) => d.id === editingDetectionId)) {
+				cancelBoundaryEdit();
+			}
 		});
 	});
 
@@ -502,11 +778,9 @@
 				el.classList.remove('overlay-flash');
 				void el.offsetWidth;
 				el.classList.add('overlay-flash');
-				el.addEventListener(
-					'animationend',
-					() => el.classList.remove('overlay-flash'),
-					{ once: true }
-				);
+				el.addEventListener('animationend', () => el.classList.remove('overlay-flash'), {
+					once: true
+				});
 			}
 		}
 	}
@@ -514,69 +788,31 @@
 
 <div
 	class="relative overflow-auto rounded-lg border border-gray-200 bg-white"
-	class:edit-mode={mode === 'edit'}
 >
-	<!-- Toolbar: mode toggle + page navigation -->
-	<div
-		class="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-white/95 px-4 py-2 backdrop-blur-sm"
-		class:toolbar-edit={mode === 'edit'}
-	>
-		<div class="inline-flex rounded-md border border-gray-200 bg-gray-50 p-0.5" role="group" aria-label="Modus">
-			<button
-				type="button"
-				class="mode-btn"
-				class:mode-btn-active={mode === 'review'}
-				aria-pressed={mode === 'review'}
-				title="Beoordelen (M)"
-				onclick={() => onModeChange('review')}
-			>
-				Beoordelen
-			</button>
-			<button
-				type="button"
-				class="mode-btn"
-				class:mode-btn-active={mode === 'edit'}
-				aria-pressed={mode === 'edit'}
-				title="Bewerken (M)"
-				onclick={() => onModeChange('edit')}
-			>
-				Bewerken
-			</button>
-		</div>
+	<PdfViewerToolbar
+		{mode}
+		{currentPage}
+		{totalPages}
+		{currentPageStatus}
+		{onModeChange}
+		{onPageChange}
+	/>
 
-		<div class="flex items-center gap-3">
-			<button
-				class="rounded px-2 py-1 text-sm hover:bg-gray-100 disabled:opacity-40"
-				disabled={currentPage <= 0}
-				onclick={() => onPageChange(currentPage - 1)}
-			>
-				&larr; Vorige
-			</button>
-			<span class="text-sm text-neutral">{currentPage + 1} / {pdfDoc?.numPages ?? '...'}</span>
-			<button
-				class="rounded px-2 py-1 text-sm hover:bg-gray-100 disabled:opacity-40"
-				disabled={!pdfDoc || currentPage >= pdfDoc.numPages - 1}
-				onclick={() => onPageChange(currentPage + 1)}
-			>
-				Volgende &rarr;
-			</button>
-		</div>
-	</div>
+	<!-- Page strip (#10): horizontally-scrolling row of numbered chips -->
+	{#if pdfDoc && totalPages > 1}
+		<PageStrip {totalPages} {currentPage} {pageStatuses} {onPageChange} />
+	{/if}
 
 	<!-- PDF canvas + overlay + text layer -->
 	<div class="relative flex justify-center p-4">
 		{#if !pdfDoc}
-			<div class="flex h-96 items-center justify-center text-neutral">
-				PDF laden...
-			</div>
+			<div class="flex h-96 items-center justify-center text-neutral">PDF laden...</div>
 		{:else}
 			<!-- svelte-ignore a11y_click_events_have_key_events -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				bind:this={stageEl}
 				class="pdf-stage relative"
-				class:cursor-pointer={mode === 'review'}
-				class:edit-active={mode === 'edit'}
 				class:drawing-area={drawingAreaClass}
 				onmousedown={handleStageMouseDown}
 				onclick={(e) => {
@@ -593,7 +829,23 @@
 					bind:this={textLayerEl}
 					class="textLayer absolute top-0 left-0"
 					onmouseup={handleTextLayerMouseUp}
+					onclick={handleTextLayerClick}
 				></div>
+				<!-- Boundary adjustment draft overlay (#11). Rendered above
+				     the text layer so its handles are clickable; the box
+				     itself is inert to pointer events, so mousedowns inside
+				     the box (but outside a handle) still reach the text
+				     layer for Shift/Alt+click word extension. -->
+				{#if editingBboxes}
+					<BoundaryEditOverlay
+						{editingBboxes}
+						{currentPage}
+						{scale}
+						onHandleMouseDown={handleResizeMouseDown}
+						onCommit={commitBoundaryEdit}
+						onCancel={cancelBoundaryEdit}
+					/>
+				{/if}
 				{#if drawRect}
 					<!-- Live area-draw rectangle (#07). Inert to pointer events so
 					     mousemove continues to reach the window listener. -->
@@ -602,35 +854,20 @@
 						style="left: {drawRect.x}px; top: {drawRect.y}px; width: {drawRect.w}px; height: {drawRect.h}px;"
 					></div>
 				{/if}
+				{#if onMarkPageReviewed || onFlagPage}
+					<PageReviewActions
+						{currentPage}
+						{currentPageStatus}
+						{onMarkPageReviewed}
+						{onFlagPage}
+					/>
+				{/if}
 			</div>
 		{/if}
 	</div>
 </div>
 
 <style>
-	.edit-mode {
-		border-top: 2px solid var(--color-primary, #1b4f72);
-	}
-	.toolbar-edit {
-		box-shadow: inset 0 2px 0 0 var(--color-primary, #1b4f72);
-	}
-	.mode-btn {
-		padding: 0.25rem 0.75rem;
-		font-size: 0.75rem;
-		font-weight: 500;
-		color: #4b5563;
-		border-radius: 0.25rem;
-		transition: background-color 120ms, color 120ms;
-	}
-	.mode-btn:hover {
-		background-color: rgba(0, 0, 0, 0.04);
-	}
-	.mode-btn-active {
-		background-color: white;
-		color: var(--color-primary, #1b4f72);
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-	}
-
 	/* Live area-draw rectangle (#07). Sits on top of the text layer so the
 	   reviewer can see what they're about to redact; inert to pointer
 	   events so the window-level mousemove/mouseup still fire. */
@@ -678,16 +915,16 @@
 		border: 1px dashed rgba(107, 114, 128, 0.6);
 	}
 
-	/* Detection overlays: interactive in review mode, inert in edit mode so
-	   they don't eat mousedown events from text selection. */
+	/* Detection overlays: clickable in both modes so reviewers can enter
+	   boundary edit by clicking an existing detection in Edit mode (#11).
+	   The container itself is pass-through so mousedowns on the gaps
+	   between detection rectangles still reach the text layer. */
 	.overlay {
 		pointer-events: none;
+		z-index: 2;
 	}
-	.pdf-stage:not(.edit-active) .overlay :global(> *) {
+	.overlay :global(> *) {
 		pointer-events: auto;
-	}
-	.pdf-stage.edit-active .overlay :global(> *) {
-		pointer-events: none;
 	}
 
 	/* Minimal subset of pdfjs-dist/web/pdf_viewer.css for the text layer.
@@ -701,8 +938,13 @@
 		transform-origin: 0 0;
 		user-select: none;
 		pointer-events: none;
+		z-index: 1;
 	}
-	.pdf-stage.edit-active .textLayer {
+	/* Text layer is interactive in both modes — a drag produces a manual
+	   redaction whether the reviewer is in Beoordelen or Bewerken. The mode
+	   only affects what clicking an existing detection does (see
+	   handleOverlayClick). */
+	.pdf-stage .textLayer {
 		user-select: text;
 		pointer-events: auto;
 		cursor: text;
@@ -746,6 +988,30 @@
 		100% {
 			box-shadow: 0 0 0 0 rgba(250, 204, 21, 0);
 			background-color: transparent;
+		}
+	}
+
+	/* Sidebar-click pulse. Triggered when the reviewer selects a detection
+	   from the sidebar — pairs with `scrollIntoView` to draw the eye to the
+	   matching rectangle. Distinct from `.overlay-flash` (which marks
+	   undo/redo): this uses the primary brand color so it reads as "this is
+	   the one you just clicked", not "something just changed". */
+	.overlay :global(.overlay-selected-pulse) {
+		animation: overlay-selected-pulse 700ms ease-out;
+	}
+	@keyframes overlay-selected-pulse {
+		0% {
+			box-shadow:
+				0 0 0 0 rgba(27, 79, 114, 0.7),
+				0 0 0 0 rgba(27, 79, 114, 0.45);
+		}
+		60% {
+			box-shadow:
+				0 0 0 6px rgba(27, 79, 114, 0),
+				0 0 0 14px rgba(27, 79, 114, 0.18);
+		}
+		100% {
+			box-shadow: 0 0 0 6px rgba(27, 79, 114, 0.18);
 		}
 	}
 </style>

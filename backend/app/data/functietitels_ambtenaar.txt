@@ -1,0 +1,40 @@
+# Functietitels — ambtenaar (suggestie: pending, rol voorgesteld)
+#
+# Titles that indicate civil-servant status but do NOT qualify as
+# "publiek functionaris acting in official capacity". A Tier 2 persoon
+# detection preceded by one of these titles stays `pending` for reviewer
+# confirmation, but the reasoning surfaces that the name is almost
+# certainly an ambtenaar so the reviewer's click is a confirmation, not
+# a classification. See docs/todo/done/13-functietitel-publiek-functionaris.md.
+#
+# Curation notes:
+# - `directeur`, `secretaris`, and similar are context-dependent — a
+#   `directeur` in a gemeentelijk dienst is an ambtenaar, a `directeur`
+#   in a private company is not. We include the bare term anyway; the
+#   reviewer still has the final say, and the Tier 2 card keeps the
+#   decision explicit.
+# - One title per line, comments with `#`, lowercase preferred but the
+#   matcher is case-insensitive.
+# - Extend this file (not the code) to add new civil-servant titles.
+
+beleidsmedewerker
+beleidsadviseur
+senior beleidsadviseur
+juridisch adviseur
+juridisch medewerker
+teamleider
+teamleider handhaving
+handhaver
+toezichthouder
+inspecteur
+projectleider
+programmamanager
+directeur
+afdelingshoofd
+strateeg
+communicatieadviseur
+woordvoerder
+secretaresse
+managementassistent
+bestuursadviseur
+kabinetsmedewerker

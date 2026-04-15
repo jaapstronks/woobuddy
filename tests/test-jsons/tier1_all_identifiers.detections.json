@@ -1,0 +1,885 @@
+{
+  "generated_at": "2026-04-15T11:36:05.540Z",
+  "schema_version": 1,
+  "document": {
+    "id": "a01a0e2e-dfcc-41d7-8cde-04266ee02f5b",
+    "filename": "tier1_all_identifiers.pdf",
+    "page_count": 2,
+    "created_at": "2026-04-15T11:36:03.543039Z",
+    "five_year_warning": false
+  },
+  "counts": {
+    "total": 36,
+    "by_tier": {
+      "1": 26,
+      "2": 10
+    },
+    "by_status": {
+      "auto_accepted": 26,
+      "pending": 10
+    }
+  },
+  "detections": [
+    {
+      "id": "b392cc63-84fa-4e27-ac11-fb12473f01d5",
+      "tier": "1",
+      "entity_type": "bsn",
+      "entity_text": "111222333",
+      "woo_article": "5.1.1e",
+      "confidence": 0.98,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "BSN-nummer gedetecteerd (voldoet aan 11-proef).",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 442,
+      "end_char": 451,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 139.6327213636364,
+          "y0": 206.15001000000007,
+          "x1": 187.83999000000003,
+          "y1": 216.15001000000007
+        }
+      ]
+    },
+    {
+      "id": "c6989ae4-fcec-4573-be20-d2a46cab0e09",
+      "tier": "1",
+      "entity_type": "bsn",
+      "entity_text": "123456782",
+      "woo_article": "5.1.1e",
+      "confidence": 0.98,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "BSN-nummer gedetecteerd (voldoet aan 11-proef).",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 470,
+      "end_char": 479,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 162.27999333333332,
+          "y0": 222.65001000000007,
+          "x1": 208.41999,
+          "y1": 232.65001000000007
+        }
+      ]
+    },
+    {
+      "id": "af2015bd-9766-4481-ad81-149f50452516",
+      "tier": "1",
+      "entity_type": "iban",
+      "entity_text": "NL68 RABO 0338 1615 89",
+      "woo_article": "5.1.2e",
+      "confidence": 0.97,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "IBAN-nummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 767,
+      "end_char": 789,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 145.2266666666667,
+          "y0": 349.40003,
+          "x1": 263.44000000000005,
+          "y1": 359.40003
+        }
+      ]
+    },
+    {
+      "id": "ba6d206c-bb00-4c07-aeed-e12a6d59ce94",
+      "tier": "1",
+      "entity_type": "iban",
+      "entity_text": "NL91ABNA0417164300",
+      "woo_article": "5.1.2e",
+      "confidence": 0.97,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "IBAN-nummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 698,
+      "end_char": 716,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 127.96428571428572,
+          "y0": 316.40003,
+          "x1": 232.30000000000004,
+          "y1": 326.40003
+        }
+      ]
+    },
+    {
+      "id": "df4c4fc6-23ee-4122-9148-16b16626d625",
+      "tier": "1",
+      "entity_type": "iban",
+      "entity_text": "nl02rabo0123456789",
+      "woo_article": "5.1.2e",
+      "confidence": 0.97,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "IBAN-nummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 734,
+      "end_char": 752,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 151.53685714285717,
+          "y0": 332.90003,
+          "x1": 237.87000000000003,
+          "y1": 342.90003
+        }
+      ]
+    },
+    {
+      "id": "7d1ecb20-0455-44ca-8ec0-2f8ca5dd702f",
+      "tier": "1",
+      "entity_type": "email",
+      "entity_text": "jan.jansen@voorbeeld.nl",
+      "woo_article": "5.1.2e",
+      "confidence": 0.97,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "E-mailadres gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1350,
+      "end_char": 1373,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 128.93714285714287,
+          "y0": 617.4,
+          "x1": 241.90000000000003,
+          "y1": 627.4
+        }
+      ]
+    },
+    {
+      "id": "fee70b5f-438b-4b16-84f6-dd0554c30793",
+      "tier": "1",
+      "entity_type": "email",
+      "entity_text": "info+woo@overheid.nl",
+      "woo_article": "5.1.2e",
+      "confidence": 0.97,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "E-mailadres gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1392,
+      "end_char": 1412,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 158.3942105263158,
+          "y0": 633.9,
+          "x1": 256.61,
+          "y1": 643.9
+        }
+      ]
+    },
+    {
+      "id": "744dc408-2bc6-486a-9dad-14619891f1b7",
+      "tier": "1",
+      "entity_type": "email",
+      "entity_text": "h.van-der-berg@gemeente-utrecht.nl",
+      "woo_article": "5.1.2e",
+      "confidence": 0.97,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "E-mailadres gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1437,
+      "end_char": 1471,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 186.66482758620694,
+          "y0": 650.4,
+          "x1": 351.9400000000001,
+          "y1": 660.4
+        }
+      ]
+    },
+    {
+      "id": "ae663139-2499-4d1b-b857-cab542094407",
+      "tier": "1",
+      "entity_type": "telefoon",
+      "entity_text": "06-12345678",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Telefoonnummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1020,
+      "end_char": 1031,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 177.23781250000002,
+          "y0": 456.2,
+          "x1": 233.41000000000003,
+          "y1": 466.2
+        }
+      ]
+    },
+    {
+      "id": "6b2de6f3-46e5-4563-b51b-2f3a60500fe6",
+      "tier": "1",
+      "entity_type": "telefoon",
+      "entity_text": "+31 6 12345678",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Telefoonnummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1162,
+      "end_char": 1176,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 184.27789473684214,
+          "y0": 522.2,
+          "x1": 250.94000000000005,
+          "y1": 532.2
+        }
+      ]
+    },
+    {
+      "id": "e6510ec5-29f6-4bb2-ba01-743929523bdd",
+      "tier": "1",
+      "entity_type": "telefoon",
+      "entity_text": "+31612345678",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Telefoonnummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1199,
+      "end_char": 1211,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 181.68235294117648,
+          "y0": 538.7,
+          "x1": 242.60000000000002,
+          "y1": 548.7
+        }
+      ]
+    },
+    {
+      "id": "6d82f792-74d0-4e43-b755-236e8dab0753",
+      "tier": "1",
+      "entity_type": "telefoon",
+      "entity_text": "+31 40 792 00 35",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Telefoonnummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1257,
+      "end_char": 1273,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 270.31639344262294,
+          "y0": 555.2,
+          "x1": 341.53999999999996,
+          "y1": 565.2
+        }
+      ]
+    },
+    {
+      "id": "1cf63800-2dd0-45b6-b2e6-d26dd8902bfe",
+      "tier": "1",
+      "entity_type": "url",
+      "entity_text": "https://intranet.example.nl/woo?ref=x",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "URL gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1719,
+      "end_char": 1756,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 290.72801980198005,
+          "y0": 725.10006,
+          "x1": 457.4001980198018,
+          "y1": 735.10006
+        }
+      ]
+    },
+    {
+      "id": "c7aee9ab-b838-4906-9d00-1c0d0934d5c4",
+      "tier": "1",
+      "entity_type": "url",
+      "entity_text": "https://www.linkedin.com/in/natasja-paulssen-hallema-20880353/",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "URL gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1598,
+      "end_char": 1660,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 181.62778947368423,
+          "y0": 710.60006,
+          "x1": 469.9995789473685,
+          "y1": 720.60006
+        }
+      ]
+    },
+    {
+      "id": "88068452-5149-4c43-a14f-abb55d436295",
+      "tier": "1",
+      "entity_type": "url",
+      "entity_text": "https://www.rijksoverheid.nl.",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "URL gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1516,
+      "end_char": 1544,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 218.00054347826088,
+          "y0": 696.10006,
+          "x1": 336.4009782608696,
+          "y1": 706.10006
+        }
+      ]
+    },
+    {
+      "id": "23365947-a75f-4ff9-b529-b5806c24bb12",
+      "tier": "1",
+      "entity_type": "creditcard",
+      "entity_text": "4532 0151 1283 0366",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Creditcardnummer gedetecteerd (voldoet aan Luhn-check).",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 2173,
+      "end_char": 2192,
+      "bounding_boxes": [
+        {
+          "page": 1,
+          "x0": 163.39000000000001,
+          "y0": 265.70000000000005,
+          "x1": 256.78000000000003,
+          "y1": 275.70000000000005
+        }
+      ]
+    },
+    {
+      "id": "2e55da42-0944-43dd-b17e-e3a91151e28b",
+      "tier": "1",
+      "entity_type": "telefoon",
+      "entity_text": "0612345678",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Telefoonnummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1057,
+      "end_char": 1067,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 193.07857142857145,
+          "y0": 472.7,
+          "x1": 242.31000000000003,
+          "y1": 482.7
+        }
+      ]
+    },
+    {
+      "id": "b9000aa6-cf13-4fa5-a971-a863df37e70f",
+      "tier": "1",
+      "entity_type": "telefoon",
+      "entity_text": "020-1234567",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Telefoonnummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1091,
+      "end_char": 1102,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 184.2964705882353,
+          "y0": 489.2,
+          "x1": 238.96000000000004,
+          "y1": 499.2
+        }
+      ]
+    },
+    {
+      "id": "7d2c76b0-da54-4042-8a5c-d54ee77800e3",
+      "tier": "1",
+      "entity_type": "telefoon",
+      "entity_text": "040 2345678",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Telefoonnummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1126,
+      "end_char": 1137,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 181.3064705882353,
+          "y0": 505.70000000000005,
+          "x1": 234.54000000000002,
+          "y1": 515.7
+        }
+      ]
+    },
+    {
+      "id": "ba61e620-4322-4ad2-b35f-46eb7a85441b",
+      "tier": "1",
+      "entity_type": "kenteken",
+      "entity_text": "1-ABC-23",
+      "woo_article": "5.1.2e",
+      "confidence": 0.93,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Kenteken gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 2057,
+      "end_char": 2065,
+      "bounding_boxes": [
+        {
+          "page": 1,
+          "x0": 137.77952380952382,
+          "y0": 170.5,
+          "x1": 179.49,
+          "y1": 180.5
+        }
+      ]
+    },
+    {
+      "id": "aea280c0-2758-4613-80d6-81876ebfc168",
+      "tier": "1",
+      "entity_type": "kenteken",
+      "entity_text": "AB-123-C",
+      "woo_article": "5.1.2e",
+      "confidence": 0.93,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Kenteken gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 2035,
+      "end_char": 2043,
+      "bounding_boxes": [
+        {
+          "page": 1,
+          "x0": 137.77952380952382,
+          "y0": 154,
+          "x1": 179.49,
+          "y1": 164
+        }
+      ]
+    },
+    {
+      "id": "64784eff-f85a-4cc9-9e51-8b1d125be9ce",
+      "tier": "1",
+      "entity_type": "kenteken",
+      "entity_text": "AB-12-CD",
+      "woo_article": "5.1.2e",
+      "confidence": 0.93,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Kenteken gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 2079,
+      "end_char": 2087,
+      "bounding_boxes": [
+        {
+          "page": 1,
+          "x0": 138.80714285714288,
+          "y0": 187,
+          "x1": 181.15,
+          "y1": 197
+        }
+      ]
+    },
+    {
+      "id": "2885005a-f67d-494b-a2c3-eb4b2a469355",
+      "tier": "1",
+      "entity_type": "kenteken",
+      "entity_text": "12-AB-34",
+      "woo_article": "5.1.2e",
+      "confidence": 0.93,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Kenteken gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 2101,
+      "end_char": 2109,
+      "bounding_boxes": [
+        {
+          "page": 1,
+          "x0": 136.75190476190477,
+          "y0": 203.5,
+          "x1": 177.83,
+          "y1": 213.5
+        }
+      ]
+    },
+    {
+      "id": "b6610fac-9a73-401e-ad6a-82f4eba623b9",
+      "tier": "1",
+      "entity_type": "kenteken",
+      "entity_text": "12-ABC-3",
+      "woo_article": "5.1.2e",
+      "confidence": 0.93,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Kenteken gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 2124,
+      "end_char": 2132,
+      "bounding_boxes": [
+        {
+          "page": 1,
+          "x0": 143.21363636363637,
+          "y0": 220,
+          "x1": 185.05,
+          "y1": 230
+        }
+      ]
+    },
+    {
+      "id": "2ecb6a90-7417-47ea-ba27-e8cc9c2e390a",
+      "tier": "1",
+      "entity_type": "postcode",
+      "entity_text": "1234 AB",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Postcode gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1859,
+      "end_char": 1866,
+      "bounding_boxes": [
+        {
+          "page": 1,
+          "x0": 135.03250000000003,
+          "y0": 60.25,
+          "x1": 170.05,
+          "y1": 70.25
+        }
+      ]
+    },
+    {
+      "id": "411da168-f2b2-48c6-aa54-0b48ba114fdd",
+      "tier": "1",
+      "entity_type": "postcode",
+      "entity_text": "1234AB",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Postcode gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1883,
+      "end_char": 1889,
+      "bounding_boxes": [
+        {
+          "page": 1,
+          "x0": 151.65818181818184,
+          "y0": 76.75,
+          "x1": 182.28000000000003,
+          "y1": 86.75
+        },
+        {
+          "page": 1,
+          "x0": 184.61137931034483,
+          "y0": 93.25,
+          "x1": 214.51000000000002,
+          "y1": 103.25
+        }
+      ]
+    },
+    {
+      "id": "38a48e6d-a624-4d63-bebf-90da96b19ec2",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "1234AB",
+      "woo_article": "5.1.2e",
+      "confidence": 0.85,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1913,
+      "end_char": 1919,
+      "bounding_boxes": [
+        {
+          "page": 1,
+          "x0": 151.65818181818184,
+          "y0": 76.75,
+          "x1": 182.28000000000003,
+          "y1": 86.75
+        },
+        {
+          "page": 1,
+          "x0": 184.61137931034483,
+          "y0": 93.25,
+          "x1": 214.51000000000002,
+          "y1": 103.25
+        }
+      ]
+    },
+    {
+      "id": "b04b584d-f0e1-44d2-98cf-248944952aa6",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "Eindhoven",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1114,
+      "end_char": 1123,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 123.23352941176472,
+          "y0": 505.70000000000005,
+          "x1": 166.78823529411767,
+          "y1": 515.7
+        }
+      ]
+    },
+    {
+      "id": "c74db152-9115-4417-94dd-3f874f72bf30",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "Amsterdam",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1079,
+      "end_char": 1088,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 124.66352941176473,
+          "y0": 489.2,
+          "x1": 169.3882352941177,
+          "y1": 499.2
+        }
+      ]
+    },
+    {
+      "id": "532d0c69-fafd-4622-a8a7-446d6fd7d76c",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "9 maart 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 55,
+      "end_char": 67,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 212.69121052631579,
+          "y0": 94.70000000000005,
+          "x1": 266.083,
+          "y1": 103.70000000000005
+        }
+      ]
+    },
+    {
+      "id": "da28ea02-708a-41a8-80ba-1b82f861326f",
+      "tier": "2",
+      "entity_type": "id",
+      "entity_text": "987654321",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Entiteit gedetecteerd (type: id).",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 510,
+      "end_char": 519,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 226.47691538461538,
+          "y0": 239.15001000000007,
+          "x1": 273.41999,
+          "y1": 249.15001000000007
+        }
+      ]
+    },
+    {
+      "id": "d65a0939-de79-401a-af8d-734d8ddfc71a",
+      "tier": "2",
+      "entity_type": "id",
+      "entity_text": "[onbekend]",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Entiteit gedetecteerd (type: id).",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 742,
+      "end_char": 752,
+      "bounding_boxes": []
+    },
+    {
+      "id": "7367033b-3914-4023-9e86-7c0cd974f9c7",
+      "tier": "2",
+      "entity_type": "id",
+      "entity_text": "999999999",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Entiteit gedetecteerd (type: id).",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 548,
+      "end_char": 557,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 194.50918162162162,
+          "y0": 255.65003000000002,
+          "x1": 234.52999,
+          "y1": 265.65003
+        }
+      ]
+    },
+    {
+      "id": "10f315d1-cd0b-45b7-95fd-1a07c23260e1",
+      "tier": "2",
+      "entity_type": "id",
+      "entity_text": "-12345678 12345678",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Entiteit gedetecteerd (type: id).",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1168,
+      "end_char": 1176,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 192.5575,
+          "y0": 456.2,
+          "x1": 233.41000000000003,
+          "y1": 466.2
+        },
+        {
+          "page": 0,
+          "x0": 212.84736842105266,
+          "y0": 522.2,
+          "x1": 250.94000000000005,
+          "y1": 532.2
+        }
+      ]
+    },
+    {
+      "id": "330b349a-ba32-46fe-bbc9-c5ea972b888b",
+      "tier": "2",
+      "entity_type": "id",
+      "entity_text": "[onbekend]",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Entiteit gedetecteerd (type: id).",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 706,
+      "end_char": 716,
+      "bounding_boxes": []
+    },
+    {
+      "id": "4b540215-0b32-46ac-af1d-15c28098f037",
+      "tier": "2",
+      "entity_type": "id",
+      "entity_text": "[onbekend]",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Entiteit gedetecteerd (type: id).",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 806,
+      "end_char": 826,
+      "bounding_boxes": []
+    }
+  ]
+}

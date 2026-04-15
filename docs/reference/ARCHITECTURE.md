@@ -1,8 +1,27 @@
 # WOO Buddy — Architecture
 
+> **Partially stale (2026-04-15).** This document still describes an
+> LLM-based Tier 2/Tier 3 pipeline with Ollama + Gemma, and it still
+> references a client-first MinIO setup. Neither is accurate anymore:
+> - **There is no LLM in the codebase.** The Ollama layer was removed
+>   entirely. All the "LLM Engine", "Ollama", "Gemma 4", and "Tier 3
+>   content analysis" sections below describe the historical design,
+>   not the live system. The current pipeline is regex + Deduce NER +
+>   wordlists + structure heuristics + rule-based public-official
+>   filter. See `backend/app/services/pipeline_engine.py` for the actual
+>   `run_pipeline` implementation and
+>   `docs/reference/llm-revival.md` for the constraints a future
+>   contributor would need to satisfy to reintroduce a local LLM.
+> - **No MinIO for documents.** Client-first architecture: PDFs live
+>   in the browser's IndexedDB and stream ephemerally to the server
+>   only for redaction. See `docs/todo/done/00-client-first-architecture.md`.
+>
+> The rest of this doc is useful for context on the original design
+> decisions; trust the code, not this file, for current behavior.
+
 ## Overview
 
-WOO Buddy is a monorepo with two applications — a SvelteKit frontend and a FastAPI backend — backed by PostgreSQL for metadata and MinIO for PDF storage. Local LLM inference runs via Ollama with Gemma 4 26B.
+WOO Buddy is a monorepo with two applications — a SvelteKit frontend and a FastAPI backend — backed by PostgreSQL for metadata. Detection is rule-based end to end (regex + Deduce + wordlists + structure heuristics).
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -82,7 +101,6 @@ src/lib/components/
 | PyMuPDF (fitz) | `pymupdf` | PDF text extraction + redaction |
 | Deduce | `>=3.0` | Dutch de-identification NER |
 | httpx | latest | Async HTTP for Ollama API |
-| Anthropic SDK | `anthropic` | Optional fallback LLM provider |
 | SQLAlchemy | v2 + async | ORM with `asyncpg` driver |
 | Pydantic | v2 | Request/response validation |
 
@@ -90,7 +108,7 @@ src/lib/components/
 
 - **Async everywhere**: all route handlers and services use `async def`.
 - **Deduce** is initialized once at startup (in FastAPI lifespan), not per-request (~2s load time).
-- The LLM layer is abstracted behind an `LLMProvider` interface in `app/llm/provider.py`. Providers (Ollama, Anthropic) are swappable via `LLM_PROVIDER` env var.
+- The LLM layer is abstracted behind an `LLMProvider` interface in `app/llm/provider.py`. Only a local Ollama implementation is shipped — hosted third-party providers are deliberately excluded so document text never leaves the operator's infrastructure.
 - PDF redaction with PyMuPDF is **irreversible** — always work on a copy. Originals stay in MinIO permanently.
 
 ### Service layer
@@ -99,7 +117,7 @@ src/lib/components/
 app/services/
 ├── pdf_engine.py         Text extraction with bounding boxes + redaction application
 ├── ner_engine.py         Deduce NER + regex patterns (Tier 1 + Tier 2 detection)
-├── llm_engine.py         LLM analysis (Tier 2 role classification + Tier 3 content + environmental flagging)
+├── pipeline_engine.py    Rule-based pipeline orchestration (Tier 1 regex + Tier 2 Deduce + whitelists + structure + custom terms)
 ├── propagation.py        Name propagation logic across dossier
 ├── motivation.py         Motivation text generation per detection
 ├── export_engine.py      ZIP packaging + motivation report generation
@@ -112,8 +130,7 @@ app/services/
 ```
 app/llm/
 ├── provider.py           Abstract LLMProvider interface
-├── ollama.py             Ollama + Gemma 4 implementation
-├── anthropic.py          Anthropic fallback implementation
+├── ollama.py             Ollama + Gemma 4 implementation (local only)
 └── prompts.py            System prompts for Tier 2 + Tier 3 tasks
 ```
 
@@ -229,9 +246,9 @@ A Mixture-of-Experts model that activates only 3.8B of its 26B parameters per to
 - 256K context window
 - ~18GB RAM at Q4 quantization (fits on 48GB MacBook Pro with ~24GB headroom)
 
-### Fallback: Anthropic API
+### No cloud fallback
 
-Set `LLM_PROVIDER=anthropic` for comparison testing or when Ollama is unavailable.
+WOO Buddy intentionally ships with **only** the local Ollama provider. Hosted third-party LLMs (Anthropic, OpenAI, etc.) are out of scope because sending document text to a third party would break the client-first guarantee. If Ollama is unavailable, Tier 3 analysis is unavailable — by design.
 
 ### LLM usage per tier
 
@@ -302,17 +319,13 @@ GET    /api/dossiers/:id/motivation-report   Download motivation report separate
 ## Environment Variables
 
 ```env
-# LLM Provider
-LLM_PROVIDER=ollama                    # "ollama" or "anthropic"
+# LLM Provider (local Ollama only)
+LLM_PROVIDER=ollama
 
-# Ollama (primary — local)
+# Ollama (local)
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=gemma4:26b
 OLLAMA_KEEP_ALIVE=-1
-
-# Anthropic (fallback)
-# ANTHROPIC_API_KEY=sk-ant-...
-# ANTHROPIC_MODEL=claude-haiku-4-5-20251001
 
 # Database
 DATABASE_URL=postgresql+asyncpg://woobuddy:woobuddy@postgres:5432/woobuddy

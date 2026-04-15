@@ -1,0 +1,493 @@
+{
+  "generated_at": "2026-04-15T11:36:27.378Z",
+  "schema_version": 1,
+  "document": {
+    "id": "c69e41ec-2968-42a3-8c03-a673ba316352",
+    "filename": "nota_gezondheid.pdf",
+    "page_count": 2,
+    "created_at": "2026-04-15T11:36:26.215393Z",
+    "five_year_warning": false
+  },
+  "counts": {
+    "total": 20,
+    "by_tier": {
+      "1": 5,
+      "2": 15
+    },
+    "by_status": {
+      "auto_accepted": 5,
+      "pending": 15
+    }
+  },
+  "detections": [
+    {
+      "id": "d13ac7f5-148f-4050-9a6a-e710b1c4a112",
+      "tier": "1",
+      "entity_type": "bsn",
+      "entity_text": "123456782",
+      "woo_article": "5.1.1e",
+      "confidence": 0.98,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "BSN-nummer gedetecteerd (voldoet aan 11-proef).",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 354,
+      "end_char": 363,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 219.92916666666667,
+          "y0": 270.09000000000003,
+          "x1": 264.6329166666667,
+          "y1": 280.09000000000003
+        }
+      ]
+    },
+    {
+      "id": "db611acb-95e4-4cdd-9762-e5c82312ed3b",
+      "tier": "1",
+      "entity_type": "iban",
+      "entity_text": "NL02RABO0123456789",
+      "woo_article": "5.1.2e",
+      "confidence": 0.97,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "IBAN-nummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1305,
+      "end_char": 1323,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 118.46000000000004,
+          "y0": 691.03,
+          "x1": 226.30000000000007,
+          "y1": 701.03
+        }
+      ]
+    },
+    {
+      "id": "9ec9ba38-5008-42a1-9511-93260f71f971",
+      "tier": "1",
+      "entity_type": "telefoon",
+      "entity_text": "030-286 00 00",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Telefoonnummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 62,
+      "end_char": 75,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 73.81652173913042,
+          "y0": 71.64999999999998,
+          "x1": 129.244,
+          "y1": 80.64999999999998
+        }
+      ]
+    },
+    {
+      "id": "a4eea4a4-8e7b-446b-ac58-15d4b7626a49",
+      "tier": "1",
+      "entity_type": "postcode",
+      "entity_text": "3500 CE",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Postcode gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 34,
+      "end_char": 41,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 98.95000000000002,
+          "y0": 57.48000000000002,
+          "x1": 130.57600000000002,
+          "y1": 66.48000000000002
+        }
+      ]
+    },
+    {
+      "id": "e299f444-fea5-4da4-97e7-9da50a0ec530",
+      "tier": "1",
+      "entity_type": "postcode",
+      "entity_text": "3027 RJ",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Postcode gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 453,
+      "end_char": 460,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 31.18,
+          "y0": 348.03999999999996,
+          "x1": 62.629444444444445,
+          "y1": 358.03999999999996
+        }
+      ]
+    },
+    {
+      "id": "8a18f159-eebd-4fb2-8f5f-d64851d8f770",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "Hassan",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Voornaam herkend in Nederlandse Voornamenbank (Meertens Instituut).",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 341,
+      "end_char": 347,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 155.35708333333335,
+          "y0": 270.09000000000003,
+          "x1": 185.15958333333336,
+          "y1": 280.09000000000003
+        }
+      ]
+    },
+    {
+      "id": "5ef85d65-e784-4b64-929d-2d17757415c3",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "dhr. Mohammed",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Voornaam herkend in Nederlandse Voornamenbank (Meertens Instituut).",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 324,
+      "end_char": 337,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 70.91666666666666,
+          "y0": 270.09000000000003,
+          "x1": 135.48875,
+          "y1": 280.09000000000003
+        }
+      ]
+    },
+    {
+      "id": "7893e363-0f56-44c3-a730-886af681ce97",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "dr. E.M. Groen",
+      "woo_article": "5.1.2e",
+      "confidence": 0.8500000000000001,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Achternaam herkend op CBS-achternamenlijst.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 858,
+      "end_char": 872,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 90.73378787878788,
+          "y0": 503.94000000000005,
+          "x1": 154.86863636363637,
+          "y1": 513.94
+        }
+      ]
+    },
+    {
+      "id": "5f86e3d1-e8de-4da5-b36e-e7a990035c6f",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "[onbekend]",
+      "woo_article": "5.1.2e",
+      "confidence": 0.8500000000000001,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Achternaam herkend op CBS-achternamenlijst.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 245,
+      "end_char": 264,
+      "bounding_boxes": []
+    },
+    {
+      "id": "9ce32587-0afd-44e3-82e2-d5fc43daec43",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "[onbekend]",
+      "woo_article": "5.1.2e",
+      "confidence": 0.8500000000000001,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Achternaam herkend op CBS-achternamenlijst.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1472,
+      "end_char": 1495,
+      "bounding_boxes": []
+    },
+    {
+      "id": "5abdc2ea-2942-4c14-8974-5b9a097597e4",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "Rotterdam",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 678,
+      "end_char": 687,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 112.084,
+          "y0": 31.319999999999936,
+          "x1": 192.988,
+          "y1": 47.319999999999936
+        },
+        {
+          "page": 0,
+          "x0": 135.09400000000002,
+          "y0": 57.48000000000002,
+          "x1": 175.75600000000003,
+          "y1": 66.48000000000002
+        },
+        {
+          "page": 0,
+          "x0": 67.1222222222222,
+          "y0": 348.03999999999996,
+          "x1": 107.55722222222221,
+          "y1": 358.03999999999996
+        },
+        {
+          "page": 0,
+          "x0": 191.82359375000007,
+          "y0": 410.4,
+          "x1": 230.8990625000001,
+          "y1": 420.4
+        }
+      ]
+    },
+    {
+      "id": "1a0a5747-0196-48d1-8aa3-2de54bce723b",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "3500 CE Rotterdam",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 34,
+      "end_char": 51,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 98.95000000000002,
+          "y0": 57.48000000000002,
+          "x1": 175.75600000000003,
+          "y1": 66.48000000000002
+        }
+      ]
+    },
+    {
+      "id": "5af45f52-a4ca-4f68-8814-edbd575502a0",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "3027 RJ Rotterdam",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 453,
+      "end_char": 470,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 31.18,
+          "y0": 348.03999999999996,
+          "x1": 107.55722222222221,
+          "y1": 358.03999999999996
+        }
+      ]
+    },
+    {
+      "id": "84280967-1743-4817-a9da-720e9a5aa380",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "[onbekend]",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 9,
+      "end_char": 32,
+      "bounding_boxes": []
+    },
+    {
+      "id": "08ba4925-cbef-4b99-b531-a413b6ff6e91",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "Mathenesserweg 88",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 434,
+      "end_char": 451,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 274.3908695652174,
+          "y0": 332.45,
+          "x1": 355.4611594202899,
+          "y1": 342.45
+        }
+      ]
+    },
+    {
+      "id": "f47257a8-e25b-4def-b777-e6da70d7fddf",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "5 maart 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 105,
+      "end_char": 117,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 144.57,
+          "y0": 126.23000000000002,
+          "x1": 203.49,
+          "y1": 136.23000000000002
+        }
+      ]
+    },
+    {
+      "id": "749d8311-2040-43f5-a9de-2557a8df22d3",
+      "tier": "2",
+      "entity_type": "id",
+      "entity_text": "[onbekend]",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Entiteit gedetecteerd (type: id).",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1313,
+      "end_char": 1323,
+      "bounding_boxes": []
+    },
+    {
+      "id": "caadbfcb-2766-48ac-ac28-f0f4383ce1ce",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "1 februari 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 598,
+      "end_char": 613,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 143.18,
+          "y0": 394.81,
+          "x1": 210.37999999999997,
+          "y1": 404.81
+        }
+      ]
+    },
+    {
+      "id": "13e820d0-338b-4591-9b99-1bf59af68424",
+      "tier": "2",
+      "entity_type": "leeftijd",
+      "entity_text": "52",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Entiteit gedetecteerd (type: leeftijd).",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 401,
+      "end_char": 403,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 117.0191304347826,
+          "y0": 332.45,
+          "x1": 126.55681159420291,
+          "y1": 342.45
+        }
+      ]
+    },
+    {
+      "id": "64e9468d-4a81-4a3e-82f9-74f419ce26d3",
+      "tier": "2",
+      "entity_type": "organisatie",
+      "entity_text": "Erasmus MC",
+      "woo_article": "5.1.2e",
+      "confidence": 0.5,
+      "confidence_level": "low",
+      "review_status": "pending",
+      "reasoning": "Organisatienaam gedetecteerd — beoordeel of herleidbaar tot persoon.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 561,
+      "end_char": 571,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 193.99847826086963,
+          "y0": 363.63,
+          "x1": 240.51804347826095,
+          "y1": 373.63
+        }
+      ]
+    }
+  ]
+}
