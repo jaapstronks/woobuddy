@@ -35,6 +35,17 @@ vi.mock('$lib/stores/reference-names.svelte', () => ({
 	}
 }));
 
+// list-commands.ts also imports customTermsStore (for AddCustomTermCommand /
+// RemoveCustomTermCommand). Same story as reference-names: the real module
+// pulls in `$lib/api/client.ts` → `$env/static/public`, which vitest can't
+// resolve. Short-circuit with the two methods the commands actually call.
+vi.mock('$lib/stores/custom-terms.svelte', () => ({
+	customTermsStore: {
+		add: vi.fn(async () => null),
+		remove: vi.fn(async () => false)
+	}
+}));
+
 import {
 	ChangeArticleCommand,
 	SetSubjectRoleCommand,
