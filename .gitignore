@@ -58,3 +58,9 @@ temp/
 # Loose screenshots at repo root (scratch from Playwright / CleanShot runs,
 # never tracked). Root-only pattern so frontend/static/*.png is unaffected.
 /*.png
+
+# deploy keypair (generated locally, never committed)
+deploy/.deploy_key
+deploy/.deploy_key.pub
+deploy/.vps-ip
+deploy/.known_hosts

@@ -1,0 +1,54 @@
+# WOO Buddy — Caddy config for production
+#
+# Layout:
+#   woobuddy.nl          → SvelteKit node server (frontend:3000)
+#     /api/*             → FastAPI (api:8000)
+#   www.woobuddy.nl      → 301 to https://woobuddy.nl{uri}
+#
+# TLS certificates are obtained automatically from Let's Encrypt on first
+# start; Caddy persists them in the `caddy_data` named volume. The ACME
+# email is set so LE can reach us about expirations if auto-renewal ever
+# breaks.
+
+{
+	email jaap@ciiic.nl
+}
+
+# ---------------------------------------------------------------------------
+# Apex — the app itself
+# ---------------------------------------------------------------------------
+woobuddy.nl {
+	encode zstd gzip
+
+	# API goes to FastAPI. Larger body limit so PDF uploads on /api/analyze
+	# and /api/export/redact don't get clipped. Client-first means documents
+	# travel from the browser to the backend as part of the analyze/export
+	# request bodies.
+	handle_path /api/* {
+		request_body {
+			max_size 50MB
+		}
+		reverse_proxy api:8000 {
+			# `handle_path` strips the matched prefix — put it back so FastAPI
+			# sees the original /api/... path that its routers expect.
+			rewrite /api{uri}
+		}
+	}
+
+	# Everything else → SvelteKit
+	handle {
+		reverse_proxy frontend:3000
+	}
+
+	# Strict transport security — one year, include subdomains, preload-safe.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+	}
+}
+
+# ---------------------------------------------------------------------------
+# www → apex redirect (301)
+# ---------------------------------------------------------------------------
+www.woobuddy.nl {
+	redir https://woobuddy.nl{uri} permanent
+}

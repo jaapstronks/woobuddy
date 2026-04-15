@@ -1,0 +1,104 @@
+services:
+  # ---------------------------------------------------------------------------
+  # Caddy — reverse proxy + automatic Let's Encrypt
+  # ---------------------------------------------------------------------------
+  # Caddy is the only service bound to host ports. It terminates TLS, serves
+  # woobuddy.nl from the `frontend` container for everything that isn't /api,
+  # and proxies /api/* to the `api` container. www.woobuddy.nl redirects to
+  # the apex.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      frontend:
+        condition: service_started
+      api:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Frontend — SvelteKit (adapter-node) on port 3000
+  # ---------------------------------------------------------------------------
+  # Rebuilt on prod with PUBLIC_API_URL pointed at the public hostname so the
+  # browser bundle calls https://woobuddy.nl/api/* directly (same-origin,
+  # Caddy routes those to the api service).
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        PUBLIC_API_URL: https://woobuddy.nl
+    restart: unless-stopped
+    expose:
+      - "3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # API — FastAPI on port 8000 (internal only)
+  # ---------------------------------------------------------------------------
+  # Never bound to the host. Caddy proxies /api/* into this service over the
+  # internal docker network.
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://woobuddy:${DBASE_PASSWORD}@postgres:5432/woobuddy
+      # proxy_shared_secret left empty — matches dev; turned on later in the
+      # auth rollout when API calls move through the SvelteKit server.
+      # cors_origins left at default: production is same-origin, so CORS
+      # never fires in the browser path anyway.
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/api/health').raise_for_status()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # Deduce rebuilds its lookup structures on first boot (~25s) before
+      # the FastAPI lifespan completes and /api/health starts responding.
+      # Give it room so compose doesn't mark the service unhealthy and
+      # block caddy/frontend, which depend on `service_healthy`.
+      start_period: 90s
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16 — internal only, real password from env
+  # ---------------------------------------------------------------------------
+  # Never bound to the host. Only the `api` service can reach it, over the
+  # internal docker network. Password is read from DBASE_PASSWORD, which the
+  # deploy script writes into /opt/woobuddy/.env from the op:// reference in
+  # the developer's local .env.
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: woobuddy
+      POSTGRES_PASSWORD: ${DBASE_PASSWORD}
+      POSTGRES_DB: woobuddy
+    expose:
+      - "5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U woobuddy"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
