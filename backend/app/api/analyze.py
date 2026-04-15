@@ -22,8 +22,8 @@ from app.logging_config import get_logger
 from app.models.schemas import Detection
 from app.security import limiter, verify_proxy_secret
 from app.services.custom_term_matcher import CustomTermLike
-from app.services.pipeline_engine import run_pipeline
 from app.services.pdf_engine import extraction_from_client_data
+from app.services.pipeline_engine import run_pipeline
 
 logger = get_logger(__name__)
 

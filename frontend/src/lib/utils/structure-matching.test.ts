@@ -152,7 +152,7 @@ describe('findSameNameDetections', () => {
 		const target = det({ id: 'a', entity_type: 'persoon', entity_text: 'Jan' });
 		const wrongType = det({
 			id: 'b',
-			entity_type: 'organisatie',
+			entity_type: 'email',
 			entity_text: 'Jan'
 		});
 		const matches = findSameNameDetections(target, [target, wrongType]);
