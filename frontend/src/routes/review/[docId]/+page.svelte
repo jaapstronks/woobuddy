@@ -54,6 +54,8 @@
 	import { extractText, loadPdfDocument } from '$lib/services/pdf-text-extractor';
 	import { exportRedactedPdf, downloadBlob } from '$lib/services/export-service';
 	import { buildDebugExport, downloadDebugExport } from '$lib/services/debug-export';
+	import { computeSplitBboxes } from '$lib/services/boundary-edit-geometry';
+	import { HIGH_CONFIDENCE_THRESHOLD } from '$lib/config/thresholds';
 	import type { WooArticleCode, EntityType, DetectionTier, SubjectRole } from '$lib/types';
 	import {
 		ArrowLeft,
@@ -172,7 +174,7 @@
 		// Wait for the detections store to actually contain this id —
 		// navigating in from the log means detections are already hydrated,
 		// but on a full reload we could land here before `load()` resolves.
-		const det = detectionStore.all.find((d) => d.id === target);
+		const det = detectionStore.byId[target];
 		if (!det) return;
 		handleSelectDetection(target);
 		consumedDetectionQuery = target;
@@ -278,7 +280,7 @@
 		}
 		splitPendingId = null;
 		detectionStore.select(id);
-		const det = detectionStore.all.find((d) => d.id === id);
+		const det = detectionStore.byId[id];
 		if (det?.bounding_boxes?.length) {
 			const targetPage = det.bounding_boxes[0].page;
 			if (targetPage !== reviewStore.currentPage) {
@@ -306,13 +308,8 @@
 
 	/**
 	 * The reviewer clicked inside the split-target detection's overlay.
-	 * Derive the two new bbox sets:
-	 *   set A  = bboxes before the clicked one + the clicked bbox clipped
-	 *            to [x0, pdfX]
-	 *   set B  = the clicked bbox clipped to [pdfX, x1] + bboxes after
-	 * The reader-order heuristic (earlier-indexed bboxes come first) holds
-	 * for single-line detections and for most multi-line NER spans, which
-	 * are the only cases split/merge currently targets.
+	 * `computeSplitBboxes` derives the two new bbox sets from the target
+	 * bbox and the clicked x-coordinate; we forward them to the store.
 	 */
 	async function handleSplitPointClick(args: {
 		detectionId: string;
@@ -320,38 +317,22 @@
 		pdfX: number;
 		pdfY: number;
 	}) {
-		const det = detectionStore.all.find((d) => d.id === args.detectionId);
+		const det = detectionStore.byId[args.detectionId];
 		if (!det || !det.bounding_boxes?.length) {
 			splitPendingId = null;
 			return;
 		}
-		const bboxes = det.bounding_boxes;
-		const target = bboxes[args.bboxIndex];
-		if (!target) {
+		const split = computeSplitBboxes(det.bounding_boxes, args.bboxIndex, args.pdfX);
+		if (!split) {
 			splitPendingId = null;
 			return;
 		}
-
-		const MIN_HALF = 2; // PDF points — matches BBOX_MIN_PT in PdfViewer.
-		const clampedX = Math.min(
-			Math.max(args.pdfX, target.x0 + MIN_HALF),
-			target.x1 - MIN_HALF
-		);
-
-		const bboxesA = [
-			...bboxes.slice(0, args.bboxIndex).map((b) => ({ ...b })),
-			{ ...target, x1: clampedX }
-		];
-		const bboxesB = [
-			{ ...target, x0: clampedX },
-			...bboxes.slice(args.bboxIndex + 1).map((b) => ({ ...b }))
-		];
 
 		// Clear pending state before the async call — if the request fails
 		// the reviewer should be able to re-trigger split without being stuck
 		// in a stale pending mode.
 		splitPendingId = null;
-		await detectionStore.split(args.detectionId, bboxesA, bboxesB);
+		await detectionStore.split(args.detectionId, split.bboxesA, split.bboxesB);
 	}
 
 	async function handleMergeConfirm() {
@@ -368,7 +349,7 @@
 		nextStatus: 'accepted' | 'rejected' | 'deferred' | 'pending',
 		nextArticle?: WooArticleCode
 	): ReviewStatusCommand | null {
-		const det = detectionStore.all.find((d) => d.id === id);
+		const det = detectionStore.byId[id];
 		if (!det) return null;
 		return new ReviewStatusCommand(
 			id,
@@ -391,7 +372,7 @@
 	 * calls are safe to duplicate.
 	 */
 	function touchDetectionPages(id: string) {
-		const det = detectionStore.all.find((d) => d.id === id);
+		const det = detectionStore.byId[id];
 		if (!det?.bounding_boxes) return;
 		const pages = new Set(det.bounding_boxes.map((b) => b.page));
 		for (const p of pages) void pageReviewStore.markInProgressIfUnreviewed(p);
@@ -498,7 +479,7 @@
 	// #15 — Tier 2 card in-place article change. Pushes a dedicated command
 	// onto the undo stack so Ctrl+Z restores the previous Woo-grond exactly.
 	async function handleChangeArticle(id: string, nextArticle: WooArticleCode) {
-		const det = detectionStore.all.find((d) => d.id === id);
+		const det = detectionStore.byId[id];
 		if (!det) return;
 		if (det.woo_article === nextArticle) return;
 		const cmd = new ChangeArticleCommand(id, det.woo_article, nextArticle);
@@ -513,7 +494,7 @@
 	// captures the previous role AND status (because the publiek_functionaris
 	// path also flips the status to rejected). Undo restores both.
 	async function handleSetSubjectRole(id: string, role: SubjectRole) {
-		const det = detectionStore.all.find((d) => d.id === id);
+		const det = detectionStore.byId[id];
 		if (!det) return;
 		if (det.subject_role === role) return;
 		const cmd = new SetSubjectRoleCommand(
@@ -579,7 +560,7 @@
 	 * overwrite a reviewer's prior choice.
 	 */
 	async function handleSameNameSweep(detectionId: string) {
-		const target = detectionStore.all.find((d) => d.id === detectionId);
+		const target = detectionStore.byId[detectionId];
 		if (!target || !target.entity_text) return;
 
 		const matches = findSameNameDetections(target, detectionStore.all);
@@ -614,7 +595,7 @@
 		detectionId: string,
 		kind: 'email_header' | 'signature_block'
 	): StructureSpan | null {
-		const det = detectionStore.all.find((d) => d.id === detectionId);
+		const det = detectionStore.byId[detectionId];
 		if (!det) return null;
 		const candidates = structureSpansStore.spans.filter(
 			(s) => s.kind === kind && detectionInsideSpan(det, s)
@@ -660,7 +641,7 @@
 		detectionId: string,
 		nextBboxes: import('$lib/types').BoundingBox[]
 	) {
-		const current = detectionStore.all.find((d) => d.id === detectionId);
+		const current = detectionStore.byId[detectionId];
 		if (!current) return;
 		const cmd = new BoundaryAdjustCommand(
 			detectionId,
@@ -710,10 +691,12 @@
 	}
 
 	async function handleAcceptHighConfidenceTier2() {
-		const HIGH = 0.85;
 		const children = buildAcceptBatch(
 			detectionStore.all.filter(
-				(d) => d.tier === '2' && d.review_status === 'pending' && d.confidence >= HIGH
+				(d) =>
+					d.tier === '2' &&
+					d.review_status === 'pending' &&
+					d.confidence >= HIGH_CONFIDENCE_THRESHOLD
 			)
 		);
 		if (children.length === 0) return;
@@ -780,23 +763,6 @@
 			// above the viewer will render it.
 		}
 	}
-
-	// Ctrl/Cmd+F opens the search panel. We preventDefault so the browser's
-	// native find bar stays closed — our search runs against the extracted
-	// PDF text, which the browser find can't reach through pdf.js's text
-	// layer anyway.
-	function handleGlobalKeydown(e: KeyboardEvent) {
-		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f' && !e.altKey) {
-			e.preventDefault();
-			searchStore.setOpen(true);
-			// Make sure the sidebar is visible so the panel actually appears.
-			if (!reviewStore.sidebarOpen) reviewStore.toggleSidebar();
-		}
-	}
-	$effect(() => {
-		window.addEventListener('keydown', handleGlobalKeydown);
-		return () => window.removeEventListener('keydown', handleGlobalKeydown);
-	});
 
 	// Search highlights consumed by PdfViewer — strip the UI-only fields
 	// (context, matchText) so the viewer stays agnostic of the store.
@@ -890,25 +856,20 @@
 		}
 	}
 
-	// Map from normalized term → number of live `custom` detections. The
-	// backend produces one detection per occurrence of each term, so the
-	// count is simply the number of rows whose reasoning contains the
-	// term. We compute it once here and pass it to the panel so the UI
-	// can show "4 gevonden" without duplicating the filter logic.
+	// Map from normalized term → number of live `custom` detections. For
+	// each known term we count detections whose reasoning contains
+	// `'<term>'` (the pipeline writes "Zoekterm '<term>' uit ..." so the
+	// quoted form is unambiguous). Iterating terms × custom-detections is
+	// cheap — term lists are short and custom detections are a tiny
+	// fraction of the total — and it avoids regex-parsing UI strings.
 	const customTermMatchCounts = $derived.by(() => {
 		const counts: Record<string, number> = {};
+		const customDetections = detectionStore.all.filter((d) => d.entity_type === 'custom');
 		for (const t of customTermsStore.terms) {
-			counts[t.normalized_term] = 0;
-		}
-		for (const d of detectionStore.all) {
-			if (d.entity_type !== 'custom') continue;
-			// The reasoning string is of the form "Zoekterm '<term>' uit
-			// documentspecifieke lijst." — extract the term between the
-			// single quotes and normalize to match the panel's keying.
-			const match = d.reasoning?.match(/Zoekterm '([^']+)'/);
-			if (!match) continue;
-			const normalized = match[1].trim().toLowerCase().replace(/\s+/g, ' ');
-			if (normalized in counts) counts[normalized] += 1;
+			const needle = `'${t.term}'`;
+			counts[t.normalized_term] = customDetections.filter(
+				(d) => d.reasoning?.includes(needle) ?? false
+			).length;
 		}
 		return counts;
 	});
@@ -947,6 +908,10 @@
 	onFlagPage={handleKeyFlagPage}
 	onSweepHeader={handleKeySweepHeader}
 	onSweepSignature={handleKeySweepSignature}
+	onOpenSearch={() => {
+		searchStore.setOpen(true);
+		if (!reviewStore.sidebarOpen) reviewStore.toggleSidebar();
+	}}
 />
 
 <div class="flex h-full flex-col">
@@ -1143,7 +1108,9 @@
 							reviewStore.setPage(p);
 						}}
 						onModeChange={(m) => {
-							if (m === 'review') manualSelectionStore.cancel();
+							// Hybrid model: both modes support text-drag /
+							// Shift+drag manual redaction, so the mode switch
+							// no longer has to discard an in-flight selection.
 							reviewStore.setMode(m);
 						}}
 						onManualSelection={(s) => manualSelectionStore.setSelection(s)}
@@ -1242,7 +1209,7 @@
 						onRemove={handleRemoveCustomTerm}
 						matchCounts={customTermMatchCounts}
 					/>
-					<div class="flex-1 overflow-y-auto p-4">
+					<div data-sidebar-scroll class="flex-1 overflow-y-auto p-4">
 						<DetectionList
 							detections={detectionStore.filtered}
 							selectedId={detectionStore.selectedId}
@@ -1357,3 +1324,12 @@
 		/>
 	{/if}
 </div>
+
+<style>
+	/* Lucide SVGs render inline and sit on the text baseline, which pushes
+	   them to the top of a Shoelace button's flex slot. Making them
+	   block-level lets Shoelace's internal flexbox center them vertically. */
+	:global(sl-button svg) {
+		display: block;
+	}
+</style>

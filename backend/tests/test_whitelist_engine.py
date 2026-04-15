@@ -14,7 +14,7 @@ import re
 
 import pytest
 
-from app.services.llm_engine import run_pipeline
+from app.services.pipeline_engine import run_pipeline
 from app.services.pdf_engine import ExtractionResult, PageText, TextSpan
 from app.services.whitelist_engine import (
     find_active_gemeenten,

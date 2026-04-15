@@ -17,32 +17,59 @@
 
 <div
 	class="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-white/95 px-4 py-2 backdrop-blur-sm"
-	class:toolbar-edit={mode === 'edit'}
 >
-	<div
-		class="inline-flex rounded-md border border-gray-200 bg-gray-50 p-0.5"
-		role="group"
-		aria-label="Modus"
-	>
+	<div class="mode-toggle" role="group" aria-label="Modus">
 		<button
 			type="button"
 			class="mode-btn"
 			class:mode-btn-active={mode === 'review'}
 			aria-pressed={mode === 'review'}
-			title="Beoordelen (M)"
+			title="Beoordelen — klik op een suggestie om te accepteren of af te wijzen. Sleep over tekst om handmatig te lakken. (M)"
 			onclick={() => onModeChange('review')}
 		>
-			Beoordelen
+			<svg
+				class="mode-icon"
+				viewBox="0 0 20 20"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.8"
+				aria-hidden="true"
+			>
+				<path
+					d="M1.5 10s3-6 8.5-6 8.5 6 8.5 6-3 6-8.5 6S1.5 10 1.5 10z"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				/>
+				<circle cx="10" cy="10" r="2.5" />
+			</svg>
+			<span>Beoordelen</span>
+			<kbd class="mode-kbd" aria-hidden="true">M</kbd>
 		</button>
 		<button
 			type="button"
 			class="mode-btn"
 			class:mode-btn-active={mode === 'edit'}
 			aria-pressed={mode === 'edit'}
-			title="Bewerken (M)"
+			title="Bewerken — klik op een bestaande markering om de grens aan te passen. Sleep over tekst om handmatig te lakken. (M)"
 			onclick={() => onModeChange('edit')}
 		>
-			Bewerken
+			<svg
+				class="mode-icon"
+				viewBox="0 0 20 20"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.8"
+				aria-hidden="true"
+			>
+				<path
+					d="M3 14.5V17h2.5l8.2-8.2-2.5-2.5L3 14.5z"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				/>
+				<path d="M12.3 5.3l2.5 2.5 1.6-1.6a1.2 1.2 0 0 0 0-1.7l-.8-.8a1.2 1.2 0 0 0-1.7 0l-1.6 1.6z" />
+			</svg>
+			<span>Bewerken</span>
+			<kbd class="mode-kbd" aria-hidden="true">M</kbd>
 		</button>
 	</div>
 
@@ -79,30 +106,73 @@
 </div>
 
 <style>
-	.toolbar-edit {
-		box-shadow: inset 0 2px 0 0 var(--color-primary, #1b4f72);
+	/* Segmented mode toggle. The previous version was a subtle white-on-
+	   white pill that reviewers reported couldn't be told apart from its
+	   inactive sibling. This rebuild leans on three cues in parallel —
+	   filled background + icon + visible `M` kbd hint — so the active mode
+	   is unambiguous even at a glance. */
+	.mode-toggle {
+		display: inline-flex;
+		gap: 0.25rem;
+		padding: 0.25rem;
+		border: 1px solid #e5e7eb;
+		border-radius: 0.5rem;
+		background: #f9fafb;
 	}
 	.mode-btn {
-		padding: 0.25rem 0.75rem;
-		font-size: 0.75rem;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.35rem 0.7rem;
+		font-size: 0.8rem;
 		font-weight: 500;
 		color: #4b5563;
-		border-radius: 0.25rem;
+		background: transparent;
+		border: 1px solid transparent;
+		border-radius: 0.35rem;
+		cursor: pointer;
 		transition:
 			background-color 120ms,
-			color 120ms;
+			color 120ms,
+			border-color 120ms,
+			box-shadow 120ms;
 	}
-	.mode-btn:hover {
+	.mode-btn:hover:not(.mode-btn-active) {
 		background-color: rgba(0, 0, 0, 0.04);
+		color: #1f2937;
 	}
 	.mode-btn-active {
-		background-color: white;
-		color: var(--color-primary, #1b4f72);
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-		/* #23 — brief background flash when the toggle flips. The
-		   animation runs once each time the element acquires the
-		   active class, then settles back to white. */
+		background-color: var(--color-primary, #1b4f72);
+		color: white;
+		border-color: var(--color-primary, #1b4f72);
+		box-shadow:
+			0 1px 2px rgba(0, 0, 0, 0.12),
+			0 0 0 1px rgba(27, 79, 114, 0.25);
 		animation: mode-toggle-pulse 220ms ease-out;
+	}
+	.mode-icon {
+		width: 1rem;
+		height: 1rem;
+		flex-shrink: 0;
+	}
+	.mode-kbd {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 1.1rem;
+		padding: 0 0.25rem;
+		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+		font-size: 0.65rem;
+		font-weight: 600;
+		line-height: 1.1rem;
+		border-radius: 0.2rem;
+		background: rgba(0, 0, 0, 0.08);
+		color: inherit;
+		opacity: 0.75;
+	}
+	.mode-btn-active .mode-kbd {
+		background: rgba(255, 255, 255, 0.22);
+		opacity: 0.95;
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.mode-btn,

@@ -15,6 +15,7 @@ import {
 	mergeDetections,
 	type CreateManualDetectionRequest
 } from '$lib/api/client';
+import { HIGH_CONFIDENCE_THRESHOLD } from '$lib/config/thresholds';
 import { structureSpansStore } from '$lib/stores/structure-spans.svelte';
 import { resolveEntityTexts } from '$lib/services/bbox-text-resolver';
 import type {
@@ -65,8 +66,6 @@ const filtered = $derived.by(() => {
 	return result;
 });
 
-const HIGH_CONFIDENCE_TIER2_THRESHOLD = 0.85;
-
 const tier1PendingCount = $derived(
 	allDetections.filter((d) => d.tier === '1' && d.review_status === 'pending').length
 );
@@ -75,11 +74,24 @@ const tier2HighConfidencePendingCount = $derived(
 		(d) =>
 			d.tier === '2' &&
 			d.review_status === 'pending' &&
-			d.confidence >= HIGH_CONFIDENCE_TIER2_THRESHOLD
+			d.confidence >= HIGH_CONFIDENCE_THRESHOLD
 	).length
 );
 
-const selected = $derived(allDetections.find((d) => d.id === selectedId) ?? null);
+/**
+ * O(1) id → detection lookup. Handler bodies in the review page used to
+ * re-run `allDetections.find(d => d.id === id)` for every keyboard
+ * shortcut and undo-replay; that's N checks per action times the number
+ * of handlers. The derived map rebuilds whenever the list changes and is
+ * read through `detectionStore.byId[id]` from the rest of the UI.
+ */
+const byId = $derived.by(() => {
+	const map: Record<string, Detection> = {};
+	for (const d of allDetections) map[d.id] = d;
+	return map;
+});
+
+const selected = $derived(selectedId ? byId[selectedId] ?? null : null);
 
 const counts = $derived.by(() => {
 	const byTier = { '1': 0, '2': 0, '3': 0 } as Record<DetectionTier, number>;
@@ -193,7 +205,7 @@ async function review(id: string, data: UpdateDetectionRequest) {
 		// carry the text and the sidebar/card would otherwise blank out on
 		// every status change. The text is derived from the original
 		// extraction and is not affected by review-status updates.
-		const existingText = allDetections.find((d) => d.id === id)?.entity_text;
+		const existingText = byId[id]?.entity_text;
 		allDetections = allDetections.map((d) =>
 			d.id === id
 				? {
@@ -293,7 +305,7 @@ async function adjustBoundary(
 		// resolved one — otherwise the sidebar row would suddenly lose its
 		// label on every bbox nudge. The text is derived from the original
 		// text-layer span so it is not affected by the bbox change.
-		const existingText = allDetections.find((d) => d.id === id)?.entity_text;
+		const existingText = byId[id]?.entity_text;
 		allDetections = allDetections.map((d) =>
 			d.id === id
 				? {
@@ -433,7 +445,7 @@ async function acceptHighConfidenceTier2() {
 		(d) =>
 			d.tier === '2' &&
 			d.review_status === 'pending' &&
-			d.confidence >= HIGH_CONFIDENCE_TIER2_THRESHOLD
+			d.confidence >= HIGH_CONFIDENCE_THRESHOLD
 	);
 	for (const d of pending) {
 		await accept(d.id, d.woo_article ?? undefined);
@@ -447,6 +459,9 @@ async function acceptHighConfidenceTier2() {
 export const detectionStore = {
 	get all() {
 		return allDetections;
+	},
+	get byId() {
+		return byId;
 	},
 	get extraction() {
 		return currentExtraction;

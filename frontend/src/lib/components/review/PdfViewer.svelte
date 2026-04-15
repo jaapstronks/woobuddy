@@ -26,7 +26,17 @@
 	import PdfViewerToolbar from './PdfViewerToolbar.svelte';
 	import PageStrip from './PageStrip.svelte';
 	import PageReviewActions from './PageReviewActions.svelte';
-	import BoundaryEditOverlay, { type HandleDir } from './BoundaryEditOverlay.svelte';
+	import BoundaryEditOverlay from './BoundaryEditOverlay.svelte';
+	import {
+		applyHandleDelta,
+		arrowKeyToNudge,
+		bboxesEqual,
+		cloneBboxes,
+		extendBboxToWord,
+		nudgeBbox,
+		shrinkBboxByWord,
+		type HandleDir
+	} from '$lib/services/boundary-edit-geometry';
 	import type { PageReviewStatusValue } from './page-review-status';
 
 	interface Props {
@@ -178,17 +188,9 @@
 	// `BoundaryAdjustCommand` for undo/redo. Escape reverts the draft to
 	// the snapshot taken when editing started.
 	//
-	// Per-bbox minimum size in PDF points: kept small because inline
-	// redactions (e.g. a four-character date) are genuinely tiny. The
-	// `BBOX_MIN_PT` floor just prevents degenerate zero/negative rects
-	// when dragging handles past each other.
+	// `BBOX_MIN_PT`, `ARROW_NUDGE_PT`, `ARROW_NUDGE_FINE_PT`, and the
+	// bbox-math helpers below live in `$lib/services/boundary-edit-geometry`.
 	// ---------------------------------------------------------------------
-	const BBOX_MIN_PT = 2;
-	// Keyboard nudge: pixels per Arrow keypress (no modifier) and Alt+Arrow
-	// for sub-point precision. Values are in PDF points so they stay
-	// zoom-independent on screen.
-	const ARROW_NUDGE_PT = 3;
-	const ARROW_NUDGE_FINE_PT = 0.5;
 
 	let editingDetectionId = $state<string | null>(null);
 	let editingBboxes = $state<BoundingBox[] | null>(null);
@@ -204,10 +206,6 @@
 		startClientY: number;
 		initialBbox: BoundingBox;
 	} | null = null;
-
-	function cloneBboxes(bboxes: BoundingBox[]): BoundingBox[] {
-		return bboxes.map((b) => ({ ...b }));
-	}
 
 	function enterBoundaryEdit(detectionId: string) {
 		const det = detections.find((d) => d.id === detectionId);
@@ -239,21 +237,6 @@
 		editingBboxes = cloneBboxes(editingOriginalBboxes);
 	}
 
-	/** Apply a handle drag delta (in px) to the initial bbox. */
-	function applyHandleDelta(
-		initial: BoundingBox,
-		dir: HandleDir,
-		dxPt: number,
-		dyPt: number
-	): BoundingBox {
-		let { x0, y0, x1, y1 } = initial;
-		if (dir.includes('w')) x0 = Math.min(x1 - BBOX_MIN_PT, x0 + dxPt);
-		if (dir.includes('e')) x1 = Math.max(x0 + BBOX_MIN_PT, x1 + dxPt);
-		if (dir.includes('n')) y0 = Math.min(y1 - BBOX_MIN_PT, y0 + dyPt);
-		if (dir.includes('s')) y1 = Math.max(y0 + BBOX_MIN_PT, y1 + dyPt);
-		return { page: initial.page, x0, y0, x1, y1 };
-	}
-
 	function handleResizeMouseDown(e: MouseEvent, boxIndex: number, dir: HandleDir) {
 		if (!editingBboxes) return;
 		e.preventDefault();
@@ -280,11 +263,10 @@
 	}
 
 	/**
-	 * Nudge the currently-editing bbox(es) with an arrow key. Shift+Arrow
-	 * shrinks the matching side (inward), plain Arrow extends outward.
-	 * Alt+Arrow uses the fine step. Operates on all bboxes of the editing
-	 * detection that sit on the current page — which for nearly all
-	 * single-line detections is exactly one box.
+	 * Nudge the currently-editing bbox(es) with an arrow key. Operates on
+	 * all bboxes of the editing detection that sit on the current page —
+	 * which for nearly all single-line detections is exactly one box.
+	 * Geometry lives in `boundary-edit-geometry.ts`.
 	 */
 	function nudgeEditingBbox(
 		side: 'left' | 'right' | 'top' | 'bottom',
@@ -292,16 +274,9 @@
 		shrink: boolean
 	) {
 		if (!editingBboxes) return;
-		const sign = shrink ? -1 : 1;
-		editingBboxes = editingBboxes.map((b) => {
-			if (b.page !== currentPage) return b;
-			const nb = { ...b };
-			if (side === 'left') nb.x0 = Math.min(nb.x1 - BBOX_MIN_PT, nb.x0 - sign * stepPt);
-			if (side === 'right') nb.x1 = Math.max(nb.x0 + BBOX_MIN_PT, nb.x1 + sign * stepPt);
-			if (side === 'top') nb.y0 = Math.min(nb.y1 - BBOX_MIN_PT, nb.y0 - sign * stepPt);
-			if (side === 'bottom') nb.y1 = Math.max(nb.y0 + BBOX_MIN_PT, nb.y1 + sign * stepPt);
-			return nb;
-		});
+		editingBboxes = editingBboxes.map((b) =>
+			b.page === currentPage ? nudgeBbox(b, side, stepPt, shrink) : b
+		);
 	}
 
 	/**
@@ -337,29 +312,7 @@
 
 		editingBboxes = editingBboxes.map((b) => {
 			if (b.page !== currentPage) return b;
-			if (e.shiftKey) {
-				// Extend: union of current bbox and clicked word.
-				return {
-					page: b.page,
-					x0: Math.min(b.x0, wordBbox.x0),
-					y0: Math.min(b.y0, wordBbox.y0),
-					x1: Math.max(b.x1, wordBbox.x1),
-					y1: Math.max(b.y1, wordBbox.y1)
-				};
-			}
-			// Alt+click: shrink to exclude the clicked word. We shrink along
-			// whichever horizontal edge the word occupies. For a word on the
-			// right edge, cap `x1` to the word's left; on the left edge, cap
-			// `x0` to the word's right. Words in the middle are left alone
-			// (mid-bbox exclusion would produce a gap we can't represent).
-			const mid = (b.x0 + b.x1) / 2;
-			const wMid = (wordBbox.x0 + wordBbox.x1) / 2;
-			if (wMid >= mid) {
-				const nx1 = Math.max(b.x0 + BBOX_MIN_PT, wordBbox.x0);
-				return { ...b, x1: nx1 };
-			}
-			const nx0 = Math.min(b.x1 - BBOX_MIN_PT, wordBbox.x1);
-			return { ...b, x0: nx0 };
+			return e.shiftKey ? extendBboxToWord(b, wordBbox) : shrinkBboxByWord(b, wordBbox);
 		});
 	}
 
@@ -446,21 +399,26 @@
 			suppressNextTextLayerMouseUp = false;
 			return;
 		}
-		if (mode !== 'edit' || !textLayerEl) return;
+		if (!textLayerEl) return;
 		// Defer: the browser finalizes the selection after the mouseup handler
 		// has already run synchronously on a fresh click-to-clear.
+		// Hybrid interaction: text-drag produces a manual redaction in both
+		// Beoordelen and Bewerken. The only thing the mode gates is what a
+		// click on an existing detection does (select-for-sidebar vs.
+		// enter-boundary-edit) — see handleOverlayClick.
 		setTimeout(() => emitSelection(e.altKey), 0);
 	}
 
 	// ---------------------------------------------------------------------
 	// Area selection (#07)
 	//
-	// In edit mode, Shift + mousedown on the PDF stage starts drawing a
-	// rectangle. We use window-level mousemove/mouseup so drags that leave
-	// the stage mid-gesture still finish cleanly. Text-layer selection is
-	// suppressed by preventing the default on mousedown; a dedicated
-	// `drawing-area` class also disables user-select on the text layer so
-	// the two interactions never interleave visually.
+	// Shift + mousedown on the PDF stage starts drawing a rectangle — works
+	// in both Beoordelen and Bewerken under the hybrid model, since Shift is
+	// the unambiguous signal. We use window-level mousemove/mouseup so
+	// drags that leave the stage mid-gesture still finish cleanly.
+	// Text-layer selection is suppressed by preventing the default on
+	// mousedown; a dedicated `drawing-area` class also disables user-select
+	// on the text layer so the two interactions never interleave visually.
 	// ---------------------------------------------------------------------
 
 	function cancelAreaDraw() {
@@ -470,7 +428,9 @@
 	}
 
 	function handleStageMouseDown(e: MouseEvent) {
-		if (mode !== 'edit' || !e.shiftKey || !stageEl) return;
+		// Area draw works in both modes — the Shift modifier is the explicit
+		// signal, so there's no ambiguity with review-mode clicks.
+		if (!e.shiftKey || !stageEl) return;
 		// Ignore mousedowns that land on existing detection overlays.
 		const target = e.target as HTMLElement | null;
 		if (target?.dataset?.overlay === 'detection') return;
@@ -573,20 +533,7 @@
 				// First Escape: revert draft to the snapshot. If the draft
 				// already matches the snapshot (reviewer just wants to bail
 				// out), exit boundary edit entirely.
-				const draft = editingBboxes;
-				const orig = editingOriginalBboxes;
-				const matches =
-					draft &&
-					orig &&
-					draft.length === orig.length &&
-					draft.every(
-						(b, i) =>
-							b.x0 === orig[i].x0 &&
-							b.y0 === orig[i].y0 &&
-							b.x1 === orig[i].x1 &&
-							b.y1 === orig[i].y1
-					);
-				if (matches) {
+				if (bboxesEqual(editingBboxes, editingOriginalBboxes)) {
 					cancelBoundaryEdit();
 				} else {
 					resetBoundaryEditDraft();
@@ -598,37 +545,16 @@
 				commitBoundaryEdit();
 				return;
 			}
-			const stepPt = e.altKey ? ARROW_NUDGE_FINE_PT : ARROW_NUDGE_PT;
-			// Shift inverts the gesture: shrink instead of extend.
-			const shrink = e.shiftKey;
 			// Both PdfViewer and KeyboardShortcuts register window keydown
 			// listeners. While a boundary edit is active the arrow keys
 			// belong to us — stopImmediatePropagation prevents the
 			// KeyboardShortcuts listener from also treating them as
 			// next/prev detection navigation.
-			if (e.key === 'ArrowLeft') {
+			const nudge = arrowKeyToNudge(e.key, e.shiftKey, e.altKey);
+			if (nudge) {
 				e.preventDefault();
 				e.stopImmediatePropagation();
-				nudgeEditingBbox(shrink ? 'right' : 'left', stepPt, shrink);
-				return;
-			}
-			if (e.key === 'ArrowRight') {
-				e.preventDefault();
-				e.stopImmediatePropagation();
-				nudgeEditingBbox(shrink ? 'left' : 'right', stepPt, shrink);
-				return;
-			}
-			if (e.key === 'ArrowUp') {
-				e.preventDefault();
-				e.stopImmediatePropagation();
-				nudgeEditingBbox(shrink ? 'bottom' : 'top', stepPt, shrink);
-				return;
-			}
-			if (e.key === 'ArrowDown') {
-				e.preventDefault();
-				e.stopImmediatePropagation();
-				nudgeEditingBbox(shrink ? 'top' : 'bottom', stepPt, shrink);
-				return;
+				nudgeEditingBbox(nudge.side, nudge.stepPt, nudge.shrink);
 			}
 		}
 	}
@@ -793,17 +719,15 @@
 		}
 	});
 
-	// Leaving edit mode clears any in-progress native selection so the
-	// browser's blue highlight doesn't linger into Review mode. Also aborts
-	// any area draw that was mid-gesture, and cancels any boundary edit in
-	// progress (Review mode has no concept of it).
+	// Leaving Bewerken cancels any in-progress boundary edit — that flow
+	// is the one interaction that's mode-specific (entered by click-on-
+	// detection in Bewerken) and has no representation in Beoordelen. Text
+	// selections and in-progress area draws are left alone: under the
+	// hybrid model they're valid in both modes.
 	$effect(() => {
 		if (mode === 'review') {
 			untrack(() => {
-				window.getSelection()?.removeAllRanges();
-				cancelAreaDraw();
 				cancelBoundaryEdit();
-				onManualSelectionCleared?.();
 			});
 		}
 	});
@@ -864,7 +788,6 @@
 
 <div
 	class="relative overflow-auto rounded-lg border border-gray-200 bg-white"
-	class:edit-mode={mode === 'edit'}
 >
 	<PdfViewerToolbar
 		{mode}
@@ -890,8 +813,6 @@
 			<div
 				bind:this={stageEl}
 				class="pdf-stage relative"
-				class:cursor-pointer={mode === 'review'}
-				class:edit-active={mode === 'edit'}
 				class:drawing-area={drawingAreaClass}
 				onmousedown={handleStageMouseDown}
 				onclick={(e) => {
@@ -947,10 +868,6 @@
 </div>
 
 <style>
-	.edit-mode {
-		border-top: 2px solid var(--color-primary, #1b4f72);
-	}
-
 	/* Live area-draw rectangle (#07). Sits on top of the text layer so the
 	   reviewer can see what they're about to redact; inert to pointer
 	   events so the window-level mousemove/mouseup still fire. */
@@ -1023,7 +940,11 @@
 		pointer-events: none;
 		z-index: 1;
 	}
-	.pdf-stage.edit-active .textLayer {
+	/* Text layer is interactive in both modes — a drag produces a manual
+	   redaction whether the reviewer is in Beoordelen or Bewerken. The mode
+	   only affects what clicking an existing detection does (see
+	   handleOverlayClick). */
+	.pdf-stage .textLayer {
 		user-select: text;
 		pointer-events: auto;
 		cursor: text;

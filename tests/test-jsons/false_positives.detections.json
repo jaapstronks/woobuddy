@@ -1,0 +1,507 @@
+{
+  "generated_at": "2026-04-15T11:36:17.043Z",
+  "schema_version": 1,
+  "document": {
+    "id": "7ce0662a-a92b-4714-86a9-da21360b4873",
+    "filename": "false_positives.pdf",
+    "page_count": 1,
+    "created_at": "2026-04-15T11:36:15.821263Z",
+    "five_year_warning": false
+  },
+  "counts": {
+    "total": 19,
+    "by_tier": {
+      "1": 5,
+      "2": 14
+    },
+    "by_status": {
+      "auto_accepted": 5,
+      "pending": 14
+    }
+  },
+  "detections": [
+    {
+      "id": "bf8d4e13-66c3-40ee-bb50-95731a34b4cb",
+      "tier": "1",
+      "entity_type": "telefoon",
+      "entity_text": "040 238 60 60",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Telefoonnummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 62,
+      "end_char": 75,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 112.4213043478261,
+          "y0": 105.50000299999999,
+          "x1": 167.56900000000002,
+          "y1": 114.50000299999999
+        }
+      ]
+    },
+    {
+      "id": "06f73b7f-034f-4722-a7b5-251c64a0cc2f",
+      "tier": "1",
+      "entity_type": "postcode",
+      "entity_text": "5600 RB",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Postcode gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 34,
+      "end_char": 41,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 138.01046875000003,
+          "y0": 94.70000000000005,
+          "x1": 169.74868750000005,
+          "y1": 103.70000000000005
+        }
+      ]
+    },
+    {
+      "id": "25b75875-1277-43e7-a598-f69bdd66641d",
+      "tier": "1",
+      "entity_type": "kvk",
+      "entity_text": "12345678",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "KvK-nummer gedetecteerd (contextanker binnen 20 tekens).",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1292,
+      "end_char": 1300,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 70,
+          "y0": 452.15003,
+          "x1": 108.28715789473682,
+          "y1": 462.15003
+        }
+      ]
+    },
+    {
+      "id": "6e76277e-448e-4e52-b481-eeb3f8ec2291",
+      "tier": "1",
+      "entity_type": "kvk",
+      "entity_text": "87654321",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "KvK-nummer gedetecteerd (contextanker binnen 20 tekens).",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1337,
+      "end_char": 1345,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 285.3652631578947,
+          "y0": 452.15003,
+          "x1": 323.65242105263144,
+          "y1": 462.15003
+        }
+      ]
+    },
+    {
+      "id": "c7ff2749-0f4d-4f56-b227-394070b3d643",
+      "tier": "1",
+      "entity_type": "kvk",
+      "entity_text": "24681012",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "KvK-nummer gedetecteerd (contextanker binnen 20 tekens).",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1388,
+      "end_char": 1396,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 70,
+          "y0": 466.65003,
+          "x1": 107.90190476190476,
+          "y1": 476.65003
+        }
+      ]
+    },
+    {
+      "id": "e0e18bf0-0d3e-44f7-a99b-02db8a88097b",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "Utrecht",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1886,
+      "end_char": 1893,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 248.7024719101123,
+          "y0": 241.65001000000007,
+          "x1": 281.62134831460673,
+          "y1": 251.65001000000007
+        },
+        {
+          "page": 0,
+          "x0": 120.45777777777776,
+          "y0": 616.05007,
+          "x1": 152.56727272727272,
+          "y1": 626.05007
+        }
+      ]
+    },
+    {
+      "id": "a15fcd80-5a22-46c3-9c4a-628a8cf5d01a",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "Noord-Holland",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1829,
+      "end_char": 1842,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 278.85295454545457,
+          "y0": 601.55007,
+          "x1": 341.99454545454546,
+          "y1": 611.55007
+        },
+        {
+          "page": 0,
+          "x0": 309.48410909090944,
+          "y0": 651.025,
+          "x1": 363.16158181818224,
+          "y1": 660.025
+        }
+      ]
+    },
+    {
+      "id": "289369a1-6ca7-421a-abe8-4634e0936cc0",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "Postbus 90150,",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 19,
+      "end_char": 32,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 70,
+          "y0": 94.70000000000005,
+          "x1": 128.94240625000003,
+          "y1": 103.70000000000005
+        }
+      ]
+    },
+    {
+      "id": "5ed0eeba-1bb0-4f80-b768-e8cef5c5b71a",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "Noord-Holland",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 2082,
+      "end_char": 2095,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 278.85295454545457,
+          "y0": 601.55007,
+          "x1": 341.99454545454546,
+          "y1": 611.55007
+        },
+        {
+          "page": 0,
+          "x0": 309.48410909090944,
+          "y0": 651.025,
+          "x1": 363.16158181818224,
+          "y1": 660.025
+        }
+      ]
+    },
+    {
+      "id": "b25795df-feed-4ea9-88b2-20eaac0b3db4",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "Amsterdam",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1805,
+      "end_char": 1814,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 162.28386363636363,
+          "y0": 601.55007,
+          "x1": 205.99727272727273,
+          "y1": 611.55007
+        },
+        {
+          "page": 0,
+          "x0": 214.51627272727293,
+          "y0": 651.025,
+          "x1": 251.67760000000027,
+          "y1": 660.025
+        }
+      ]
+    },
+    {
+      "id": "ebaedf6e-e45e-4a62-9517-0e4184b342ad",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "Amsterdam",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 2059,
+      "end_char": 2068,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 162.28386363636363,
+          "y0": 601.55007,
+          "x1": 205.99727272727273,
+          "y1": 611.55007
+        },
+        {
+          "page": 0,
+          "x0": 214.51627272727293,
+          "y0": 651.025,
+          "x1": 251.67760000000027,
+          "y1": 660.025
+        }
+      ]
+    },
+    {
+      "id": "da0e752e-2dc6-4c37-9bfa-d27e93dfb09a",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "5600 RB Eindhoven",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 34,
+      "end_char": 51,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 138.01046875000003,
+          "y0": 94.70000000000005,
+          "x1": 215.08900000000006,
+          "y1": 103.70000000000005
+        }
+      ]
+    },
+    {
+      "id": "b69e55d0-3b14-4c4f-bbed-ddcc88a06b4c",
+      "tier": "2",
+      "entity_type": "adres",
+      "entity_text": "Rotterdam",
+      "woo_article": "5.1.2e",
+      "confidence": 0.75,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Adres gedetecteerd — mogelijk woonadres.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 400,
+      "end_char": 409,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 112.32426966292134,
+          "y0": 241.65001000000007,
+          "x1": 154.64853932584268,
+          "y1": 251.65001000000007
+        }
+      ]
+    },
+    {
+      "id": "9ba91c87-0527-4a22-9136-108fc53f5a7e",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "21 februari 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 2006,
+      "end_char": 2022,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 206.7745833333334,
+          "y0": 630.55007,
+          "x1": 277.3679166666667,
+          "y1": 640.55007
+        }
+      ]
+    },
+    {
+      "id": "a1a71678-1fb9-4ea2-a9fa-835edf5104fa",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "21 februari 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 2229,
+      "end_char": 2245,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 206.7745833333334,
+          "y0": 630.55007,
+          "x1": 277.3679166666667,
+          "y1": 640.55007
+        }
+      ]
+    },
+    {
+      "id": "305c05b6-7d02-4429-aecf-bda30dd45649",
+      "tier": "2",
+      "entity_type": "id",
+      "entity_text": "[onbekend]",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Entiteit gedetecteerd (type: id).",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1593,
+      "end_char": 1613,
+      "bounding_boxes": []
+    },
+    {
+      "id": "1dfc591d-07fc-407a-8d1f-d2bd444d593d",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "14 februari 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 106,
+      "end_char": 122,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 129.24,
+          "y0": 149.20001000000002,
+          "x1": 202.06,
+          "y1": 159.20001000000002
+        }
+      ]
+    },
+    {
+      "id": "fa9ea96a-2dcb-4ce2-90f7-71fccfb7625f",
+      "tier": "2",
+      "entity_type": "zorginstelling",
+      "entity_text": "Universiteit Utrecht",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Entiteit gedetecteerd (type: zorginstelling).",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 416,
+      "end_char": 436,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 187.56741573033707,
+          "y0": 241.65001000000007,
+          "x1": 281.62134831460673,
+          "y1": 251.65001000000007
+        }
+      ]
+    },
+    {
+      "id": "68243e24-775f-49d4-af4f-8c26ffa817d4",
+      "tier": "2",
+      "entity_type": "id",
+      "entity_text": "987654321",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Entiteit gedetecteerd (type: id).",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 1075,
+      "end_char": 1084,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 392.97708333333327,
+          "y0": 377.45,
+          "x1": 434.50270833333326,
+          "y1": 387.45
+        }
+      ]
+    }
+  ]
+}

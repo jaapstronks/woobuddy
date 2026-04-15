@@ -21,7 +21,7 @@
 					target="_blank"
 					rel="noopener noreferrer">GitHub</a
 				>
-				<a href="/try" class="hover:text-ink">Probeer</a>
+				<a href="#try" class="hover:text-ink">Probeer</a>
 			</nav>
 		</div>
 

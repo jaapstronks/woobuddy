@@ -2,7 +2,7 @@
 
 Service-level matcher behavior is covered in
 `test_custom_term_matcher.py`; pipeline-level integration lives in
-`test_llm_engine.py`. This file only exercises the CRUD endpoints —
+`test_pipeline_engine.py`. This file only exercises the CRUD endpoints —
 the same shape as `test_reference_names.py` for feature #17.
 """
 

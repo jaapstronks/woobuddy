@@ -1,0 +1,510 @@
+{
+  "generated_at": "2026-04-15T11:36:36.842Z",
+  "schema_version": 1,
+  "document": {
+    "id": "0be88aac-2ace-4a92-a633-6da84bd1592b",
+    "filename": "email_mixed.pdf",
+    "page_count": 2,
+    "created_at": "2026-04-15T11:36:35.742513Z",
+    "five_year_warning": false
+  },
+  "counts": {
+    "total": 20,
+    "by_tier": {
+      "1": 11,
+      "2": 9
+    },
+    "by_status": {
+      "auto_accepted": 12,
+      "pending": 7,
+      "rejected": 1
+    }
+  },
+  "detections": [
+    {
+      "id": "12db9ccb-349b-4e40-af07-3b647a63aed0",
+      "tier": "1",
+      "entity_type": "bsn",
+      "entity_text": "999999990",
+      "woo_article": "5.1.1e",
+      "confidence": 0.98,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "BSN-nummer gedetecteerd (voldoet aan 11-proef).",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 1034,
+      "end_char": 1043,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 119.36000000000001,
+          "y0": 641.43,
+          "x1": 161.12947368421052,
+          "y1": 651.43
+        }
+      ]
+    },
+    {
+      "id": "8905e9b4-a8a4-4b53-961c-723a5e131134",
+      "tier": "1",
+      "entity_type": "iban",
+      "entity_text": "NL91ABNA0417164300",
+      "woo_article": "5.1.2e",
+      "confidence": 0.97,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "IBAN-nummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 381,
+      "end_char": 399,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 76.20750000000001,
+          "y0": 233.24,
+          "x1": 177.93000000000004,
+          "y1": 243.24
+        }
+      ]
+    },
+    {
+      "id": "6cb23e1d-a1e0-45c8-b78a-05997c73a7d7",
+      "tier": "1",
+      "entity_type": "email",
+      "entity_text": "m.devries@amsterdam.nl",
+      "woo_article": "5.1.2e",
+      "confidence": 0.97,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "E-mailadres gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 51,
+      "end_char": 73,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 58.20037037037037,
+          "y0": 63.870000000000005,
+          "x1": 177.09000000000003,
+          "y1": 73.87
+        },
+        {
+          "page": 0,
+          "x0": 56.62629629629629,
+          "y0": 518.8299999999999,
+          "x1": 168.59,
+          "y1": 528.8299999999999
+        }
+      ]
+    },
+    {
+      "id": "ae3fa4a4-1efb-470a-b273-99cb4deaae16",
+      "tier": "1",
+      "entity_type": "email",
+      "entity_text": "subsidies@amsterdam.nl",
+      "woo_article": "5.1.2e",
+      "confidence": 0.97,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "E-mailadres gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 79,
+      "end_char": 101,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 56.318888888888885,
+          "y0": 80.87,
+          "x1": 166.93,
+          "y1": 90.87
+        }
+      ]
+    },
+    {
+      "id": "ac21005b-aed3-4fea-a4ab-278771c93050",
+      "tier": "1",
+      "entity_type": "email",
+      "entity_text": "f.elamrani@buurtzorgnoord.nl",
+      "woo_article": "5.1.2e",
+      "confidence": 0.97,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "E-mailadres gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 485,
+      "end_char": 513,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 172.2065151515152,
+          "y0": 295.6,
+          "x1": 299.58530303030307,
+          "y1": 305.6
+        }
+      ]
+    },
+    {
+      "id": "c81a5603-71ac-4ad4-84fa-804953b353c3",
+      "tier": "1",
+      "entity_type": "email",
+      "entity_text": "r.hendriks@amsterdam.nl",
+      "woo_article": "5.1.2e",
+      "confidence": 0.97,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "E-mailadres gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 770,
+      "end_char": 793,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 57.531785714285725,
+          "y0": 501.82,
+          "x1": 178.75000000000006,
+          "y1": 511.82
+        }
+      ]
+    },
+    {
+      "id": "349c1871-5b06-4397-89fb-b4347f77aae7",
+      "tier": "1",
+      "entity_type": "email",
+      "entity_text": "directie@amsterdam.nl",
+      "woo_article": "5.1.2e",
+      "confidence": 0.97,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "E-mailadres gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 826,
+      "end_char": 847,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 50.852,
+          "y0": 535.8299999999999,
+          "x1": 154.13,
+          "y1": 545.8299999999999
+        }
+      ]
+    },
+    {
+      "id": "d489667a-e985-4f1b-a4ef-2384deef7d64",
+      "tier": "1",
+      "entity_type": "email",
+      "entity_text": "m.devries@amsterdam.nl",
+      "woo_article": "5.1.2e",
+      "confidence": 0.97,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "E-mailadres gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 799,
+      "end_char": 821,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 58.20037037037037,
+          "y0": 63.870000000000005,
+          "x1": 177.09000000000003,
+          "y1": 73.87
+        },
+        {
+          "page": 0,
+          "x0": 56.62629629629629,
+          "y0": 518.8299999999999,
+          "x1": 168.59,
+          "y1": 528.8299999999999
+        }
+      ]
+    },
+    {
+      "id": "8df87e01-614d-4bfe-aa8d-7849bb2ff6c3",
+      "tier": "1",
+      "entity_type": "geboortedatum",
+      "entity_text": "15-03-1985",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Geboortedatum gedetecteerd (contextanker + geldige datum).",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 328,
+      "end_char": 338,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 281.7721538461538,
+          "y0": 186.46000000000004,
+          "x1": 329.0536923076923,
+          "y1": 196.46000000000004
+        }
+      ]
+    },
+    {
+      "id": "c8ae3834-1877-416e-9acb-8c186b32d0c8",
+      "tier": "1",
+      "entity_type": "telefoon",
+      "entity_text": "020-6234567",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Telefoonnummer gedetecteerd.",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 530,
+      "end_char": 541,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 74.06714285714287,
+          "y0": 311.18999999999994,
+          "x1": 126.48476190476191,
+          "y1": 321.18999999999994
+        }
+      ]
+    },
+    {
+      "id": "87a6635c-e1b1-4f62-b62a-5a60daf655b1",
+      "tier": "1",
+      "entity_type": "kvk",
+      "entity_text": "87654321",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "KvK-nummer gedetecteerd (contextanker binnen 20 tekens).",
+      "source": "regex",
+      "subject_role": null,
+      "start_char": 445,
+      "end_char": 453,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 107.328,
+          "y0": 264.41999999999996,
+          "x1": 150.68000000000004,
+          "y1": 274.41999999999996
+        }
+      ]
+    },
+    {
+      "id": "3601c6a2-07a7-4fdf-9483-5458c84a7bfb",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "Rob Hendriks",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "auto_accepted",
+      "reasoning": "Naam in handtekeningblok — automatisch geaccepteerd op basis van context.",
+      "source": "structure",
+      "subject_role": null,
+      "start_char": 1287,
+      "end_char": 1299,
+      "bounding_boxes": [
+        {
+          "page": 1,
+          "x0": 31.18,
+          "y0": 44.73000000000002,
+          "x1": 91.75,
+          "y1": 54.73000000000002
+        }
+      ]
+    },
+    {
+      "id": "57e9ae7c-bf52-4e84-a2d9-6f4be7debce3",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "[onbekend]",
+      "woo_article": "5.1.2e",
+      "confidence": 0.95,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Persoonsnaam herkend: voornaam op lijst van het Meertens Instituut (Nederlandse Voornamenbank), achternaam op CBS-achternamenlijst.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 715,
+      "end_char": 764,
+      "bounding_boxes": []
+    },
+    {
+      "id": "467f72b0-4701-4712-a469-9ad0f8845862",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "De Groot",
+      "woo_article": null,
+      "confidence": 0.9000000000000001,
+      "confidence_level": "high",
+      "review_status": "rejected",
+      "reasoning": "Publiek functionaris: voorafgegaan door 'wethouder' in de brontekst.",
+      "source": "rule",
+      "subject_role": "publiek_functionaris",
+      "start_char": 1226,
+      "end_char": 1234,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 77.52516129032259,
+          "y0": 734.97,
+          "x1": 114.60129032258067,
+          "y1": 744.97
+        }
+      ]
+    },
+    {
+      "id": "c0d0e194-c289-4a82-ab74-4787ccdc1add",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "Marieke",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Voornaam herkend in Nederlandse Voornamenbank (Meertens Instituut).",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 941,
+      "end_char": 948,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 31.18,
+          "y0": 435.90999999999997,
+          "x1": 64.00125,
+          "y1": 445.90999999999997
+        },
+        {
+          "page": 0,
+          "x0": 59.76142857142857,
+          "y0": 594.65,
+          "x1": 93.10642857142858,
+          "y1": 604.65
+        }
+      ]
+    },
+    {
+      "id": "a293e5ee-f397-48f8-8456-1fb362948f5c",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "mw. Fatima El Amrani",
+      "woo_article": "5.1.2e",
+      "confidence": 0.9,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Voornaam herkend in Nederlandse Voornamenbank (Meertens Instituut).",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 291,
+      "end_char": 311,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 106.83046153846155,
+          "y0": 186.46000000000004,
+          "x1": 201.39353846153847,
+          "y1": 196.46000000000004
+        }
+      ]
+    },
+    {
+      "id": "04b3c21d-85d6-42a9-836c-40c449fc412e",
+      "tier": "2",
+      "entity_type": "persoon",
+      "entity_text": "dhr. R.W. Hendriks",
+      "woo_article": "5.1.2e",
+      "confidence": 0.8500000000000001,
+      "confidence_level": "high",
+      "review_status": "pending",
+      "reasoning": "Achternaam herkend op CBS-achternamenlijst.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 671,
+      "end_char": 689,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 231.8688888888889,
+          "y0": 389.14,
+          "x1": 313.9688888888889,
+          "y1": 399.14
+        }
+      ]
+    },
+    {
+      "id": "b2f4185f-de8a-482f-8c92-bf433bb284d3",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "10 januari 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 109,
+      "end_char": 124,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 64.11500000000001,
+          "y0": 97.88,
+          "x1": 134.69,
+          "y1": 107.88
+        }
+      ]
+    },
+    {
+      "id": "5cd61e1a-bd1d-4a8d-b84e-7fa384f9c048",
+      "tier": "2",
+      "entity_type": "datum",
+      "entity_text": "11 januari 2024",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Datum gedetecteerd — mogelijk geboortedatum.",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 855,
+      "end_char": 870,
+      "bounding_boxes": [
+        {
+          "page": 0,
+          "x0": 64.11500000000001,
+          "y0": 552.8399999999999,
+          "x1": 134.69,
+          "y1": 562.8399999999999
+        }
+      ]
+    },
+    {
+      "id": "328f81fb-5a36-4d91-b2fc-ed61ec639c8c",
+      "tier": "2",
+      "entity_type": "id",
+      "entity_text": "[onbekend]",
+      "woo_article": "5.1.2e",
+      "confidence": 0.6,
+      "confidence_level": "medium",
+      "review_status": "pending",
+      "reasoning": "Entiteit gedetecteerd (type: id).",
+      "source": "deduce",
+      "subject_role": null,
+      "start_char": 389,
+      "end_char": 399,
+      "bounding_boxes": []
+    }
+  ]
+}

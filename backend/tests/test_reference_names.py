@@ -17,7 +17,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.models.schemas import Document
-from app.services.llm_engine import run_pipeline
+from app.services.pipeline_engine import run_pipeline
 from app.services.name_engine import normalize_reference_name
 from app.services.pdf_engine import ExtractionResult, PageText, TextSpan
 

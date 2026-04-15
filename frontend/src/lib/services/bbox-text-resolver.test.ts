@@ -163,13 +163,20 @@ describe('resolveEntityTexts', () => {
 		expect(resolved[0].entity_text).toBe('Jan de Vries');
 	});
 
-	it('falls back to [onbekend] when no text items match', () => {
+	it('drops detections when no text items match the bbox', () => {
 		const ext = makeExtraction([[{ text: 'Jan', x0: 0, x1: 18 }]]);
 		const detections = [
 			{ id: '1', entity_text: undefined, bounding_boxes: [box(0, 500, 600)] }
 		];
 		const resolved = resolveEntityTexts(detections, ext);
-		expect(resolved[0].entity_text).toBe('[onbekend]');
+		expect(resolved).toHaveLength(0);
+	});
+
+	it('drops detections that carry no bounding boxes at all', () => {
+		const ext = makeExtraction([[{ text: 'Jan', x0: 0, x1: 18 }]]);
+		const detections = [{ id: '1', entity_text: undefined, bounding_boxes: [] }];
+		const resolved = resolveEntityTexts(detections, ext);
+		expect(resolved).toHaveLength(0);
 	});
 
 	it('preserves an existing entity_text (manual detections)', () => {

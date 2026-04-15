@@ -7,7 +7,7 @@ LLM verification pass in the future.
 
 import pytest
 
-from app.services.llm_engine import (
+from app.services.pipeline_engine import (
     _check_environmental_content,
     run_pipeline,
 )

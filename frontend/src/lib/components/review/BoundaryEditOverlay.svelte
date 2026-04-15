@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { BoundingBox } from '$lib/types';
+	import type { HandleDir } from '$lib/services/boundary-edit-geometry';
 
 	/**
 	 * Boundary adjustment draft overlay (#11). Renders the in-progress edit
@@ -13,7 +14,6 @@
 	 * text layer. Only handles capture the mouse.
 	 */
 
-	export type HandleDir = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 	const HANDLE_DIRS: HandleDir[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
 	interface Props {

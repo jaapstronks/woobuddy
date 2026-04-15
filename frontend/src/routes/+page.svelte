@@ -2,10 +2,7 @@
 	import Header from '$lib/components/landing/Header.svelte';
 	import Hero from '$lib/components/landing/Hero.svelte';
 	import HowItWorks from '$lib/components/landing/HowItWorks.svelte';
-	import WhatWeDetect from '$lib/components/landing/WhatWeDetect.svelte';
-	import YouDecide from '$lib/components/landing/YouDecide.svelte';
-	import OpenSource from '$lib/components/landing/OpenSource.svelte';
-	import StayInTheLoop from '$lib/components/landing/StayInTheLoop.svelte';
+	import Trust from '$lib/components/landing/Trust.svelte';
 	import Footer from '$lib/components/landing/Footer.svelte';
 </script>
 
@@ -54,7 +51,7 @@
 				'@id': 'https://woobuddy.nl/#org',
 				name: 'WOO Buddy',
 				url: 'https://woobuddy.nl/',
-				logo: 'https://woobuddy.nl/favicon.svg',
+				logo: 'https://woobuddy.nl/favicon/android-icon-192x192.png',
 				sameAs: ['https://github.com/jaapstronks/woobuddy']
 			}
 		]
@@ -66,10 +63,7 @@
 	<main>
 		<Hero />
 		<HowItWorks />
-		<WhatWeDetect />
-		<YouDecide />
-		<OpenSource />
-		<StayInTheLoop />
+		<Trust />
 	</main>
 	<Footer />
 </div>

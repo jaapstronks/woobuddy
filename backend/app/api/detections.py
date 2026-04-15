@@ -29,6 +29,15 @@ router = APIRouter(
 )
 
 
+async def _get_detection_or_404(detection_id: uuid.UUID, db: AsyncSession) -> Detection:
+    """Fetch a Detection by id or raise 404 with a Dutch detail string."""
+    result = await db.execute(select(Detection).where(Detection.id == detection_id))
+    detection = result.scalar_one_or_none()
+    if not detection:
+        raise HTTPException(status_code=404, detail="Detectie niet gevonden")
+    return detection
+
+
 @router.get(
     "/api/documents/{document_id}/detections",
     response_model=list[DetectionResponse],
@@ -112,10 +121,7 @@ async def update_detection(
     db: AsyncSession = Depends(get_db),
 ) -> Detection:
     """Update a single detection (accept/reject/defer/edit/boundary-adjust)."""
-    result = await db.execute(select(Detection).where(Detection.id == detection_id))
-    detection = result.scalar_one_or_none()
-    if not detection:
-        raise HTTPException(status_code=404, detail="Detectie niet gevonden")
+    detection = await _get_detection_or_404(detection_id, db)
 
     # Boundary adjustment (#11). When the client sends a fresh bbox set we
     # snapshot the prior set into `original_bounding_boxes` the first time
@@ -205,10 +211,7 @@ async def delete_detection(
     flips their `review_status` back instead, so the server-side detection set
     remains authoritative for everything the analyzers produced.
     """
-    result = await db.execute(select(Detection).where(Detection.id == detection_id))
-    detection = result.scalar_one_or_none()
-    if not detection:
-        raise HTTPException(status_code=404, detail="Detectie niet gevonden")
+    detection = await _get_detection_or_404(detection_id, db)
 
     if detection.source not in ("manual", "search_redact"):
         # 422 — the request is well-formed but the target is not eligible.
@@ -294,10 +297,7 @@ async def split_detection(
     inherit metadata from the original (including motivation text), tag
     both with `split_from` for audit, and delete the original row.
     """
-    result = await db.execute(select(Detection).where(Detection.id == detection_id))
-    original = result.scalar_one_or_none()
-    if not original:
-        raise HTTPException(status_code=404, detail="Detectie niet gevonden")
+    original = await _get_detection_or_404(detection_id, db)
 
     if not data.bboxes_a or not data.bboxes_b:
         raise HTTPException(

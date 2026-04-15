@@ -117,9 +117,10 @@ Once the core loop works, make it feel great **and** get it in front of real use
 | 43 | [Open source release & self-host](43-open-source-release.md) | P1 | M | Distribution strategy 2026-04 |
 | 44 | ~~[Sample documents on landing page](done/44-sample-documents-landing.md)~~ | P1 | S | Distribution strategy 2026-04 |
 | 45 | ~~[Lead capture email form](done/45-lead-capture.md)~~ | P1 | S | GTM plan 2026-04 |
-| 46 | [Convert-to-PDF ingestion (docx, odt, xlsx, images, zip)](46-convert-to-pdf-ingestion.md) | P1 | L | Multi-format support 2026-04 |
-| 47 | [Email / .msg thread ingestion](47-email-msg-ingestion.md) | P1 | M | Multi-format support 2026-04 |
+| 46 | [Client-side conversion pipeline (images, .txt, .docx, .zip)](46-convert-to-pdf-ingestion.md) | P1 | L | Multi-format support 2026-04 |
+| 47 | [Client-side email / .msg thread ingestion](47-email-msg-ingestion.md) | P1 | M | Multi-format support 2026-04 |
 | 48 | [Accessible PDF export (lang tag, XMP, alt text, PDF/A-2b)](48-accessible-pdf-export.md) | P1 | M | Accessibility plan 2026-04 |
+| 49 | [In-browser OCR for scanned PDFs (tesseract.js)](49-in-browser-ocr.md) | P2 | M | Multi-format support 2026-04 |
 
 Launch when all P1s in this phase are green. That is the "Phase D milestone" below.
 

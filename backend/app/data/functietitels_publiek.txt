@@ -18,35 +18,64 @@
 
 # Gemeentelijk / provinciaal / waterschap
 burgemeester
+burgemeesters
 loco-burgemeester
+loco-burgemeesters
 wethouder
+wethouders
 locoburgemeester
+locoburgemeesters
 gedeputeerde
+gedeputeerden
 commissaris van de koning
 commissaris van de koningin
 gemeentesecretaris
+gemeentesecretarissen
 griffier
+griffiers
 college van b&w
 college van burgemeester en wethouders
 raadslid
+raadsleden
 gemeenteraadslid
+gemeenteraadsleden
 statenlid
+statenleden
 provinciale statenlid
+provinciale statenleden
 dijkgraaf
+dijkgraven
 heemraad
+heemraden
 waterschapsbestuurder
+waterschapsbestuurders
 
 # Nationaal bestuur
 minister
+ministers
 staatssecretaris
+staatssecretarissen
 premier
 minister-president
 kamervoorzitter
+kamervoorzitters
 fractievoorzitter
+fractievoorzitters
+kamerlid
+kamerleden
+tweede kamerlid
+tweede kamerleden
+eerste kamerlid
+eerste kamerleden
 
 # Rechterlijke macht
 rechter
+rechters
 raadsheer
+raadsheren
 officier van justitie
+officieren van justitie
 advocaat-generaal
+advocaten-generaal
 procureur-generaal
+procureurs-generaal

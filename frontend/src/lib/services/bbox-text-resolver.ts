@@ -126,15 +126,44 @@ export function findTextForBboxes(
 
 /**
  * Resolve entity_text for all detections that are missing it.
- * Returns new detection objects with entity_text populated from local extraction.
+ *
+ * Returns new detection objects with entity_text populated from local
+ * extraction. Detections whose text cannot be recovered from the client
+ * extraction — either because they carry no bboxes or because the
+ * bboxes do not overlap any extracted text item — are dropped rather
+ * than surfaced as "[onbekend]" placeholder cards. A card with no
+ * recoverable text is never actionable (the reviewer has nothing to
+ * confirm, reject, or see highlighted), so dropping is always the
+ * right call. Detections with a reviewer-authored entity_text are
+ * preserved verbatim — those are manual/search_redact rows that never
+ * go through this resolution path at all.
  */
-export function resolveEntityTexts<T extends { entity_text?: string; bounding_boxes: BoundingBox[] }>(
+// Characters peeled off the tail of URL-like resolved texts. pdf.js
+// reports a whole line as one text item and our proportional bbox
+// slicing rounds up one character when the bbox ends a hair past the
+// URL — which leaks the trailing sentence period into the sidebar
+// card ("https://example.com."). Mirrors the server-side URL strip in
+// `_tier1.py`.
+const URL_TRAILING_PUNCT = /[.,;:!?)\]}>]+$/;
+
+export function resolveEntityTexts<T extends { entity_text?: string; bounding_boxes: BoundingBox[]; entity_type?: string }>(
 	detections: T[],
 	extraction: ExtractionResult
 ): T[] {
-	return detections.map((det) => {
-		if (det.entity_text && det.entity_text !== '[redacted]') return det;
-		const text = findTextForBboxes(det.bounding_boxes ?? [], extraction);
-		return { ...det, entity_text: text || '[onbekend]' };
-	});
+	const out: T[] = [];
+	for (const det of detections) {
+		if (det.entity_text && det.entity_text !== '[redacted]') {
+			out.push(det);
+			continue;
+		}
+		const bboxes = det.bounding_boxes ?? [];
+		if (bboxes.length === 0) continue;
+		let text = findTextForBboxes(bboxes, extraction);
+		if (!text) continue;
+		if (det.entity_type === 'url' || /^https?:\/\//i.test(text)) {
+			text = text.replace(URL_TRAILING_PUNCT, '');
+		}
+		out.push({ ...det, entity_text: text });
+	}
+	return out;
 }

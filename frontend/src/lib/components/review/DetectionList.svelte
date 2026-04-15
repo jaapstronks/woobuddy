@@ -139,19 +139,62 @@
 		return String(Math.min(...pages) + 1);
 	}
 
-	// Scroll selected card into view. `block: 'center'` (instead of 'nearest')
-	// so that clicking a highlight in the PDF reliably reveals the matching
-	// sidebar card — 'nearest' was a no-op whenever the card was already
-	// partially visible, which made the scroll feel broken.
+	// Scroll the selected sidebar card into the visible portion of the
+	// sidebar scroll container.
+	//
+	// Two subtleties driving this implementation:
+	//
+	// 1. `PdfViewer` *also* stamps `data-detection-id="..."` onto its
+	//    highlight-overlay elements (see PdfViewer.svelte), so a global
+	//    `document.querySelector(...)` would match the PDF overlay first
+	//    (earlier in DOM order) and miss the sidebar card entirely. We
+	//    scope the lookup to this component's root via `bind:this`.
+	//
+	// 2. We avoid `Element.scrollIntoView` because the sidebar ancestor
+	//    chain mixes `overflow: hidden` and `overflow: auto`, and the
+	//    cross-container cascade is unreliable — it sometimes scrolls
+	//    the `overflow: hidden` parent and moves children out of view.
+	//    We resolve the known sidebar scroller via `[data-sidebar-scroll]`
+	//    (marked in review/+page.svelte) and compute the target scrollTop
+	//    ourselves so the card lands centered.
+	//
+	// `requestAnimationFrame` defers the measurement until after the
+	// selection-highlight DOM mutation has been painted, so
+	// `getBoundingClientRect` sees the final layout.
+	let rootEl: HTMLElement | null = $state(null);
+
 	$effect(() => {
-		if (selectedId) {
-			const el = document.querySelector(`[data-detection-id="${selectedId}"]`);
-			el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-		}
+		if (!selectedId || !rootEl) return;
+		const id = selectedId;
+		const root = rootEl;
+		requestAnimationFrame(() => {
+			const el = root.querySelector<HTMLElement>(
+				`[data-detection-id="${id}"]`
+			);
+			if (!el) return;
+			const scroller = el.closest<HTMLElement>('[data-sidebar-scroll]');
+			if (!scroller) {
+				// Fallback for tests / storybook where the marker is absent.
+				el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+				return;
+			}
+			const elRect = el.getBoundingClientRect();
+			const scRect = scroller.getBoundingClientRect();
+			// Offset of the card relative to the scroller's current scroll
+			// origin, minus half the viewport so the card lands centered.
+			const delta =
+				elRect.top - scRect.top - scroller.clientHeight / 2 + elRect.height / 2;
+			scroller.scrollTo({ top: scroller.scrollTop + delta, behavior: 'smooth' });
+		});
 	});
 </script>
 
-<div class="space-y-4 overflow-y-auto">
+<!-- No `overflow-y-auto` here: the sidebar's `flex-1 overflow-y-auto`
+     wrapper in +page.svelte is the actual scroll container. `bind:this`
+     gives the selection effect a scoped root so `querySelector` can't
+     accidentally match PdfViewer overlay elements (which also carry
+     `data-detection-id`). -->
+<div bind:this={rootEl} class="space-y-4">
 	<!-- Handmatige gebieden (#07) -->
 	{#if grouped.areas.length > 0}
 		<div>

@@ -11,11 +11,10 @@ LLM-based Tier 2 verification pass (person-role classification), see
 Google Gemma) so document text never leaves the operator's machine.
 
 Deduce `persoon` detections that survive the rule-based filters surface
-as `review_status="pending"` and the reviewer decides. The file is still
-named `llm_engine.py` for historical reasons; the module imported by
-`app.api.analyze` is `run_pipeline`.
+as `review_status="pending"` and the reviewer decides.
 """
 
+import asyncio
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -308,6 +307,37 @@ def _person_whitelist_to_detection(
     )
 
 
+def _ner_passthrough(
+    det: NERDetection,
+    bboxes: list[dict[str, Any]],
+    *,
+    tier: str,
+    review_status: str,
+    woo_article_fallback: str | None = None,
+) -> PipelineDetection:
+    """Pass an NER hit through to a PipelineDetection with no rewrite.
+
+    Used for Tier 1 regex hits (auto_accepted, no fallback article) and for
+    the generic Tier 2 "no rule matched" tail (pending, fallback article
+    5.1.2e). Both code paths used to inline a 10-field constructor that
+    drifted every time a new field was added — see the start_char /
+    end_char backfill in #20.
+    """
+    return PipelineDetection(
+        entity_text=det.text,
+        entity_type=det.entity_type,
+        tier=tier,
+        confidence=det.confidence,
+        woo_article=det.woo_article or woo_article_fallback,
+        review_status=review_status,
+        bounding_boxes=bboxes,
+        reasoning=det.reasoning,
+        source=det.source,
+        start_char=det.start_char,
+        end_char=det.end_char,
+    )
+
+
 def _address_whitelist_to_detection(
     det: NERDetection,
     bboxes: list[dict[str, float]],
@@ -419,6 +449,11 @@ async def run_pipeline(
 ) -> PipelineResult:
     """Run the detection pipeline on an extracted document.
 
+    The body is pure-CPU (regex, Deduce NER, dict lookups) and would
+    otherwise block the FastAPI event loop for hundreds of milliseconds
+    on large documents. We hand it off to a worker thread so concurrent
+    requests can still make progress while NER is running.
+
     Args:
         extraction: Result from pdf_engine.extract_text().
         public_official_names: Names from the dossier's public officials
@@ -432,6 +467,20 @@ async def run_pipeline(
             with `source="custom_wordlist"`. The reviewer already
             decided to redact these by typing them into the panel.
     """
+    return await asyncio.to_thread(
+        _run_pipeline_sync,
+        extraction,
+        public_official_names,
+        custom_terms,
+    )
+
+
+def _run_pipeline_sync(
+    extraction: ExtractionResult,
+    public_official_names: list[str] | None,
+    custom_terms: Sequence[CustomTermLike] | None,
+) -> PipelineResult:
+    """Synchronous pipeline body — see `run_pipeline` for public docs."""
     result = PipelineResult(page_count=extraction.page_count)
     # #17 — reference list matching. Normalize once (lowercase + NFKD
     # diacritic strip + collapsed whitespace) so "De Vries" typed in the
@@ -518,20 +567,33 @@ async def run_pipeline(
                 result.detections.append(_address_whitelist_to_detection(det, bboxes, addr_reason))
                 continue
 
-            result.detections.append(
-                PipelineDetection(
-                    entity_text=det.text,
-                    entity_type=det.entity_type,
-                    tier="1",
-                    confidence=det.confidence,
-                    woo_article=det.woo_article,
-                    review_status="auto_accepted",
-                    bounding_boxes=bboxes,
-                    reasoning=det.reasoning,
-                    source=det.source,
-                    start_char=det.start_char,
-                    end_char=det.end_char,
+            # KvK numbers validate cleanly (8 digits + context anchor)
+            # but are public handelsregister data — never auto-redact.
+            # Surface them for review so the user can decide, but with
+            # reasoning that explains the default.
+            if det.entity_type == "kvk":
+                result.detections.append(
+                    PipelineDetection(
+                        entity_text=det.text,
+                        entity_type=det.entity_type,
+                        tier="1",
+                        confidence=det.confidence,
+                        woo_article=det.woo_article,
+                        review_status="pending",
+                        bounding_boxes=bboxes,
+                        reasoning=(
+                            "KvK-nummer gedetecteerd — openbaar "
+                            "handelsregistergegeven, standaard niet lakken."
+                        ),
+                        source=det.source,
+                        start_char=det.start_char,
+                        end_char=det.end_char,
+                    )
                 )
+                continue
+
+            result.detections.append(
+                _ner_passthrough(det, bboxes, tier="1", review_status="auto_accepted")
             )
             continue
 
@@ -645,18 +707,12 @@ async def run_pipeline(
             continue
 
         result.detections.append(
-            PipelineDetection(
-                entity_text=det.text,
-                entity_type=det.entity_type,
+            _ner_passthrough(
+                det,
+                bboxes,
                 tier="2",
-                confidence=det.confidence,
-                woo_article=det.woo_article or "5.1.2e",
                 review_status="pending",
-                bounding_boxes=bboxes,
-                reasoning=det.reasoning,
-                source=det.source,
-                start_char=det.start_char,
-                end_char=det.end_char,
+                woo_article_fallback="5.1.2e",
             )
         )
 

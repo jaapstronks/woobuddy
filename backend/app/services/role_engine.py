@@ -50,6 +50,33 @@ DEFAULT_WINDOW_CHARS = 40
 # firing incorrectly: the wethouder there refers to a different person.
 _MAX_TOKENS_BETWEEN = 2
 
+# List-context window: when a plural title ("raadsleden",
+# "fractievoorzitters", "wethouders") is followed by a comma-separated
+# list of names, we need to look further back than the standard window
+# to reach the title from the 2nd/3rd/4th name in the list. This window
+# is only used when the intervening text parses cleanly as a list
+# (names + optional honorific prefixes + commas + "en"), so unrelated
+# titles further up the paragraph cannot bleed in.
+_LIST_CONTEXT_WINDOW_CHARS = 240
+
+# Text between the list-introducing title and the span must consist of
+# list-separator tokens only: honorific prefixes (dhr./mw./mr./drs./
+# prof./dr./mevrouw/meneer/familie), initials (A./A.B./F.A.), surname
+# particles, proper-noun tokens, comma/semicolon/slash separators, and
+# the coordinator "en". Any other token — a verb, a connector like
+# "zei", a whole sentence — breaks the list and the scan stops.
+_LIST_INTERIOR_PATTERN = re.compile(
+    r"^(?:"
+    r"\s*,\s*|\s*;\s*|\s*/\s*|\s+en\s+|"  # separators
+    r"dhr\.?|mw\.?|mr\.?|drs\.?|prof\.?|dr\.?|"  # honorifics
+    r"mevr\.?|mevrouw|meneer|familie|de\s+heer|"
+    r"[A-Z]\.(?:\s*[A-Z]\.)*|"  # initials "A." / "A.B." / "F.A."
+    r"(?:van|ter|ten|der|den|de|da|du|del|la|le|bin|al|el|in\s+'t|op\s+den)|"
+    r"[A-ZÄÖÜÁÀÉÈÍÎÏÓÔÚÛÇŞİĞ][\wÄÖÜäöüáàéèíîïóôúûçşığ'’-]{1,30}"  # proper-noun token
+    r")+\s*$",
+    re.IGNORECASE | re.UNICODE,
+)
+
 
 ListName = Literal["publiek", "ambtenaar"]
 Position = Literal["before", "after"]
@@ -237,6 +264,12 @@ def find_function_title_near(
     after_end = min(len(full_text), span_end + window)
     after_text = full_text[span_end:after_end]
 
+    # Wider slice used only for list-context matching (see below). We
+    # compute it once instead of per-title because it is only consulted
+    # when the narrow window produced no hit.
+    list_start = max(0, span_start - _LIST_CONTEXT_WINDOW_CHARS)
+    list_before_text = full_text[list_start:span_start]
+
     best: FunctionTitleMatch | None = None
 
     for list_name, title, pattern in lists.iter_all():
@@ -253,6 +286,35 @@ def find_function_title_near(
                     list_name=list_name,
                     position="before",
                     tokens_between=tokens_between,
+                )
+                if _is_better(candidate, best):
+                    best = candidate
+
+        # List-context before: look further back and accept only when
+        # the intervening text parses as a comma/en-separated list of
+        # names (honorifics + initials + proper-noun tokens + separators).
+        # This is what lets "fractievoorzitters dhr. R. van Gelderen,
+        # mw. L. Rozendaal, dhr. M. Dirkse en mw. S. Abdelkader" apply
+        # the title to all four names instead of only the first.
+        list_before_hit: re.Match[str] | None = None
+        for m in pattern.finditer(list_before_text):
+            list_before_hit = m
+        # Skip if the wider scan hit the same match as the narrow one —
+        # the narrow path already produced (or rejected) that candidate.
+        narrow_offset = len(list_before_text) - len(before_text)
+        same_as_narrow = (
+            last_before is not None
+            and list_before_hit is not None
+            and list_before_hit.start() == last_before.start() + narrow_offset
+        )
+        if list_before_hit is not None and not same_as_narrow:
+            interior = list_before_text[list_before_hit.end() :]
+            if interior and _LIST_INTERIOR_PATTERN.match(interior):
+                candidate = FunctionTitleMatch(
+                    title=title,
+                    list_name=list_name,
+                    position="before",
+                    tokens_between=_count_tokens(interior),
                 )
                 if _is_better(candidate, best):
                     best = candidate

@@ -3,7 +3,7 @@
 Covers the pure matcher at the service level. End-to-end pipeline
 behavior (how matches become `PipelineDetection` rows and how they
 merge with overlapping Tier 1/2 detections) is covered in
-`test_llm_engine.py`; HTTP CRUD round-trips live in their own test
+`test_pipeline_engine.py`; HTTP CRUD round-trips live in their own test
 file.
 """
 

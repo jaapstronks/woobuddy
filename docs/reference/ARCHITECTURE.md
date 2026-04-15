@@ -8,8 +8,8 @@
 >   content analysis" sections below describe the historical design,
 >   not the live system. The current pipeline is regex + Deduce NER +
 >   wordlists + structure heuristics + rule-based public-official
->   filter. See `backend/app/services/llm_engine.py` for the actual
->   `run_pipeline` implementation (the filename is legacy) and
+>   filter. See `backend/app/services/pipeline_engine.py` for the actual
+>   `run_pipeline` implementation and
 >   `docs/reference/llm-revival.md` for the constraints a future
 >   contributor would need to satisfy to reintroduce a local LLM.
 > - **No MinIO for documents.** Client-first architecture: PDFs live
@@ -117,7 +117,7 @@ src/lib/components/
 app/services/
 ├── pdf_engine.py         Text extraction with bounding boxes + redaction application
 ├── ner_engine.py         Deduce NER + regex patterns (Tier 1 + Tier 2 detection)
-├── llm_engine.py         LLM analysis (Tier 2 role classification + Tier 3 content + environmental flagging)
+├── pipeline_engine.py    Rule-based pipeline orchestration (Tier 1 regex + Tier 2 Deduce + whitelists + structure + custom terms)
 ├── propagation.py        Name propagation logic across dossier
 ├── motivation.py         Motivation text generation per detection
 ├── export_engine.py      ZIP packaging + motivation report generation

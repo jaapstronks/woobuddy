@@ -92,7 +92,7 @@ hooks into the pipeline matter more than the file layout.
 3. **Ollama implementation** using `httpx` (already a dependency) and
    the Ollama tool-calling API. Budget a hard timeout (~5s per request).
    Retry once, then fall back to `pending` with the Deduce reasoning.
-4. **Pipeline hook** in `backend/app/services/llm_engine.py`
+4. **Pipeline hook** in `backend/app/services/pipeline_engine.py`
    (`run_pipeline`): after the rule-based passes, before the fallback
    `_persoon_pending`, if `settings.llm_verification_enabled` is true,
    bucket the remaining Tier 2 `persoon` hits, call the provider with
@@ -107,7 +107,7 @@ hooks into the pipeline matter more than the file layout.
 6. **Health endpoint**: `/api/health` may optionally report LLM
    reachability when the flag is on. It must still return 200 when the
    provider is down — the LLM is advisory, never required.
-7. **Docs**: update `CLAUDE.md`, `backend/app/services/llm_engine.py`
+7. **Docs**: update `CLAUDE.md`, `backend/app/services/pipeline_engine.py`
    module docstring, and this file.
 
 ## Prompts

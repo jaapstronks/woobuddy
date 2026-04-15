@@ -28,6 +28,13 @@
 		 * selected detection.
 		 */
 		onSweepSignature?: () => void;
+		/**
+		 * Ctrl/Cmd+F opens the search & redact panel. Handled here so the
+		 * review page has a single global keydown listener for all its
+		 * shortcuts instead of a second `$effect` that can drift out of
+		 * sync with this one's typing-target guard.
+		 */
+		onOpenSearch?: () => void;
 	}
 
 	let {
@@ -42,7 +49,8 @@
 		onMarkPage,
 		onFlagPage,
 		onSweepHeader,
-		onSweepSignature
+		onSweepSignature,
+		onOpenSearch
 	}: Props = $props();
 
 	let showHelp = $state(false);
@@ -75,6 +83,8 @@
 		const typing = isTypingTarget(e);
 
 		// Ctrl/Cmd + Z / Shift+Z / Y → undo/redo.
+		// Ctrl/Cmd + F → open search (handled here so there is a single
+		// global listener with one typing-target guard).
 		if ((e.metaKey || e.ctrlKey) && !e.altKey) {
 			const k = e.key.toLowerCase();
 			if (k === 'z') {
@@ -88,6 +98,15 @@
 				if (typing) return;
 				e.preventDefault();
 				onRedo?.();
+				return;
+			}
+			if (k === 'f' && !e.shiftKey) {
+				// Allow search even when typing — reviewers hit Ctrl+F while
+				// their focus is anywhere. We preventDefault to keep the
+				// browser's native find bar closed: it can't see pdf.js's
+				// rendered text layer so the native bar would just confuse.
+				e.preventDefault();
+				onOpenSearch?.();
 				return;
 			}
 		}
@@ -192,7 +211,10 @@
 			<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">&larr;</kbd>
 		</div>
 		<div class="flex justify-between">
-			<span>Wissel modus (Beoordelen/Bewerken)</span>
+			<span
+				>Wissel modus — klik op suggestie: accepteren (Beoordelen) of grens aanpassen (Bewerken).
+				Slepen over tekst lakt handmatig in beide modi.</span
+			>
 			<kbd class="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs">M</kbd>
 		</div>
 		<div class="flex justify-between">

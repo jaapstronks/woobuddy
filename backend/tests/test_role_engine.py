@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.llm_engine import run_pipeline
+from app.services.pipeline_engine import run_pipeline
 from app.services.pdf_engine import ExtractionResult, PageText, TextSpan
 from app.services.role_engine import (
     find_function_title_near,

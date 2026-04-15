@@ -299,7 +299,7 @@
 	const deletableSelectedIds = $derived.by(() => {
 		const ids: string[] = [];
 		for (const id of selectedIds) {
-			const d = detectionStore.all.find((x) => x.id === id);
+			const d = detectionStore.byId[id];
 			if (d && (d.source === 'manual' || d.source === 'search_redact')) ids.push(id);
 		}
 		return ids;
@@ -336,7 +336,7 @@
 	// -----------------------------------------------------------------------
 
 	async function rowAccept(id: string) {
-		const det = detectionStore.all.find((d) => d.id === id);
+		const det = detectionStore.byId[id];
 		await detectionStore.review(id, {
 			review_status: 'accepted',
 			woo_article: det?.woo_article ?? undefined
