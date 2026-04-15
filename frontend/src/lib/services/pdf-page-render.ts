@@ -55,11 +55,23 @@ export async function renderPdfPage({
 	const baseViewport = page.getViewport({ scale: 1 });
 	const viewport = page.getViewport({ scale });
 
+	// Render off-screen first so the visible canvas keeps its previous
+	// content (and its previous CSS size) until the new page is fully
+	// painted. Resizing the visible canvas synchronously — as we used to —
+	// cleared it the moment a zoom or fit-to-width recompute fired, which
+	// left a window where overlays could be drawn at the new scale on top
+	// of a blank/half-painted canvas. Blitting at the end keeps canvas
+	// size, canvas content, and the `viewportSize` state update atomic
+	// from the reviewer's point of view.
+	const offscreen = document.createElement('canvas');
+	offscreen.width = viewport.width;
+	offscreen.height = viewport.height;
+	const offCtx = offscreen.getContext('2d')!;
+	await page.render({ canvasContext: offCtx, viewport }).promise;
+
 	canvas.width = viewport.width;
 	canvas.height = viewport.height;
-
-	const ctx = canvas.getContext('2d')!;
-	await page.render({ canvasContext: ctx, viewport }).promise;
+	canvas.getContext('2d')!.drawImage(offscreen, 0, 0);
 
 	const textLayer = await renderTextLayer(page, viewport, textLayerEl, scale, previousTextLayer);
 

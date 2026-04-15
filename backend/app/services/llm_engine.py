@@ -1,28 +1,26 @@
-"""LLM engine — orchestrates the full detection pipeline.
+"""Detection pipeline — orchestrates the full detection pipeline.
 
 Runs Tier 1 (regex) and Tier 2 (Deduce NER + heuristic filters). Tier 3
 is reserved and currently unused.
 
-The LLM person-role classification pass is **dormant by default**. The
-live pipeline is regex + Deduce + heuristics; there is no Ollama call on
-the default code path. Set `settings.llm_tier2_enabled=True` to re-enable
-the verification pass for experimentation. See `app/llm/README.md` for
-why the code is kept in-tree.
+The pipeline is 100% rule-based: regex + Deduce NER + wordlists +
+structure heuristics. There is no LLM anywhere in the live path, and
+the codebase does not ship an LLM provider. If you want to revive the
+LLM-based Tier 2 verification pass (person-role classification), see
+`docs/reference/llm-revival.md` — the focus is local-only (Ollama +
+Google Gemma) so document text never leaves the operator's machine.
 
-When the LLM layer is dormant, Deduce `persoon` detections surface as
-`review_status="pending"` and the reviewer decides. The rule-based
-replacement for LLM role classification (public-official lists,
-structure heuristics, function titles) lands in todos #36–#40.
+Deduce `persoon` detections that survive the rule-based filters surface
+as `review_status="pending"` and the reviewer decides. The file is still
+named `llm_engine.py` for historical reasons; the module imported by
+`app.api.analyze` is `run_pipeline`.
 """
 
-import asyncio
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.config import settings
-from app.llm.provider import LLMProvider, RoleClassification
 from app.logging_config import get_logger
 from app.services.custom_term_matcher import (
     CustomTermLike,
@@ -31,7 +29,11 @@ from app.services.custom_term_matcher import (
 )
 from app.services.name_engine import normalize_reference_name
 from app.services.ner_engine import NERDetection, detect_all
-from app.services.pdf_engine import ExtractionResult, find_span_for_text
+from app.services.pdf_engine import (
+    ExtractionResult,
+    count_word_boundary_matches,
+    find_span_for_text,
+)
 from app.services.role_engine import (
     FunctionTitleMatch,
     find_function_title_near,
@@ -42,19 +44,16 @@ from app.services.structure_engine import (
     detect_structures,
     find_enclosing_structure,
 )
-
-# NOTE: `app.llm.provider` is import-safe when the layer is dormant — it only
-# declares the abstract interface and dataclasses. The concrete Ollama
-# implementation lives in `app.llm.ollama` and is imported lazily, inside the
-# verification pass below, so a dormant pipeline never pulls in the HTTP client
-# or triggers the provider factory's log line.
+from app.services.whitelist_engine import (
+    PersonWhitelistHit,
+    WhitelistIndex,
+    find_active_gemeenten,
+    get_whitelist_index,
+    match_address_whitelist,
+    match_person_whitelist,
+)
 
 logger = get_logger(__name__)
-
-# How much text to show the LLM around each detection. Enough for the
-# model to see a salutation, functietitel, or surrounding sentence
-# without pulling in the whole document.
-_LLM_CONTEXT_WINDOW = 200
 
 # Environmental information keywords (Art. 5.1 lid 6-7 Woo)
 # Environmental info has restricted redaction possibilities
@@ -138,17 +137,6 @@ class PipelineResult:
     # bulk sweeps and returned via AnalyzeResponse so the frontend can
     # render "lak dit blok" affordances on top of the PDF.
     structure_spans: list[StructureSpan] = field(default_factory=list)
-
-
-def _context_around(full_text: str, start: int, end: int, window: int) -> str:
-    """Return a slice of `full_text` roughly centred on [start, end] with
-    up to `window` characters on each side. Used to give the LLM enough
-    surrounding text to decide whether a detected string is actually a
-    person — and in what capacity — without sending the whole document.
-    """
-    left = max(0, start - window)
-    right = min(len(full_text), end + window)
-    return full_text[left:right].strip()
 
 
 def _match_function_title(
@@ -286,6 +274,68 @@ def _persoon_pending(
     )
 
 
+def _person_whitelist_to_detection(
+    det: NERDetection,
+    bboxes: list[dict[str, float]],
+    hit: PersonWhitelistHit,
+) -> PipelineDetection:
+    """Map a gemeente-official whitelist hit onto a PipelineDetection.
+
+    Same semantics as a publiek-functionaris title match: the detection
+    is emitted at ``review_status="rejected"`` so the reviewer sees the
+    card but the default is "niet lakken". The reasoning names the
+    municipality so the reviewer can verify the call in one glance.
+    """
+    initials_note = " (initialen komen overeen)" if hit.used_initials else ""
+    reasoning = (
+        f"{hit.official.functie} bij {hit.municipality_name} "
+        f"({hit.official.display_name}){initials_note} — "
+        "gemeente wordt genoemd in het document."
+    )
+    return PipelineDetection(
+        entity_text=det.text,
+        entity_type="persoon",
+        tier="2",
+        confidence=min(det.confidence + 0.05, 0.95),
+        woo_article=None,
+        review_status="rejected",
+        bounding_boxes=bboxes,
+        reasoning=reasoning,
+        source="whitelist_gemeente",
+        subject_role="publiek_functionaris",
+        start_char=det.start_char,
+        end_char=det.end_char,
+    )
+
+
+def _address_whitelist_to_detection(
+    det: NERDetection,
+    bboxes: list[dict[str, float]],
+    reason: str,
+) -> PipelineDetection:
+    """Map an address-whitelist hit onto a PipelineDetection.
+
+    The original Tier 1 regex (postcode, email, phone, url) or Tier 2
+    Deduce ``adres`` would have auto-accepted this detection; the
+    whitelist flips it to ``rejected`` so the reviewer sees it in the
+    list but the default is to leave it visible. Reviewers can still
+    flip it back in one click if they disagree.
+    """
+    return PipelineDetection(
+        entity_text=det.text,
+        entity_type=det.entity_type,
+        tier=det.tier,
+        confidence=det.confidence,
+        woo_article=None,
+        review_status="rejected",
+        bounding_boxes=bboxes,
+        reasoning=reason,
+        source="whitelist_gemeente",
+        start_char=det.start_char,
+        end_char=det.end_char,
+    )
+
+
 _STRUCTURE_REASON: dict[str, str] = {
     "email_header": "Naam in e-mailheader",
     "signature_block": "Naam in handtekeningblok",
@@ -334,86 +384,6 @@ def _structure_to_pipeline_detection(
     )
 
 
-async def _classify_person(
-    provider: LLMProvider,
-    name: str,
-    context: str,
-) -> RoleClassification | None:
-    """Call the LLM role classifier, returning None on any failure.
-
-    The pipeline must not fail if the LLM is unreachable or returns
-    junk — in that case we fall back to the original Deduce verdict
-    (detection kept as `pending` for manual review).
-    """
-    try:
-        return await provider.classify_role(
-            person_name=name,
-            surrounding_context=context,
-        )
-    except Exception:
-        logger.warning("pipeline.llm_verification_failed", exc_info=True)
-        return None
-
-
-def _verdict_to_pipeline_detection(
-    det: NERDetection,
-    bboxes: list[dict[str, Any]],
-    verdict: RoleClassification | None,
-) -> PipelineDetection | None:
-    """Map an LLM verdict onto a PipelineDetection.
-
-    Returns None if the detection should be dropped entirely (the LLM
-    says the text is not actually a person). On unclear verdicts we
-    default to `pending` so a human can decide.
-    """
-    # LLM unavailable or failed → keep as pending with Deduce reasoning.
-    if verdict is None:
-        return _persoon_pending(
-            det,
-            bboxes,
-            reasoning=det.reasoning,
-            source="deduce",
-        )
-
-    # LLM says this is not a person at all — drop the detection.
-    if verdict.role == "not_a_person":
-        logger.info(
-            "pipeline.llm_dropped_non_person",
-            reason=verdict.reason_nl[:80] if verdict.reason_nl else "",
-        )
-        return None
-
-    # LLM says the person is a public official acting in capacity —
-    # suggest keeping visible (review_status='rejected' meaning
-    # "suggestion rejected", not the person being rejected).
-    if verdict.role == "public_official" and not verdict.should_redact:
-        return PipelineDetection(
-            entity_text=det.text,
-            entity_type="persoon",
-            tier="2",
-            confidence=verdict.confidence,
-            woo_article=None,
-            review_status="rejected",
-            bounding_boxes=bboxes,
-            reasoning=(
-                verdict.reason_nl or "Publiek functionaris in officiële hoedanigheid — niet lakken."
-            ),
-            source="llm",
-            start_char=det.start_char,
-            end_char=det.end_char,
-        )
-
-    # Citizens, civil servants, or anything else the model wants to
-    # redact — queue for manual confirmation with the LLM's reasoning.
-    return _persoon_pending(
-        det,
-        bboxes,
-        reasoning=verdict.reason_nl or det.reasoning,
-        source="llm",
-        confidence=verdict.confidence,
-    )
-
-
 def _custom_term_match_to_detection(
     match: TermMatch,
     bboxes: list[dict[str, Any]],
@@ -446,7 +416,6 @@ async def run_pipeline(
     extraction: ExtractionResult,
     public_official_names: list[str] | None = None,
     custom_terms: Sequence[CustomTermLike] | None = None,
-    use_llm_verification: bool | None = None,
 ) -> PipelineResult:
     """Run the detection pipeline on an extracted document.
 
@@ -462,17 +431,7 @@ async def run_pipeline(
             becomes a `custom` detection at `review_status="accepted"`
             with `source="custom_wordlist"`. The reviewer already
             decided to redact these by typing them into the panel.
-        use_llm_verification: If True, Tier 2 `persoon` detections that
-            are not on the public officials list are passed through the
-            local LLM for false-positive filtering and role
-            classification. **Dormant by default** — when None, the
-            value is read from `settings.llm_tier2_enabled`, which
-            defaults to False. Callers that want deterministic behavior
-            (tests) can pass an explicit True/False.
     """
-    if use_llm_verification is None:
-        use_llm_verification = settings.llm_tier2_enabled
-
     result = PipelineResult(page_count=extraction.page_count)
     # #17 — reference list matching. Normalize once (lowercase + NFKD
     # diacritic strip + collapsed whitespace) so "De Vries" typed in the
@@ -486,11 +445,23 @@ async def run_pipeline(
     logger.info(
         "pipeline.started",
         page_count=extraction.page_count,
-        llm_enabled=use_llm_verification,
     )
 
     # Check for environmental content (Art. 5.1 lid 6-7 Woo)
     result.has_environmental_content = _check_environmental_content(extraction.full_text)
+
+    # Whitelist — pre-compute once per document. The address whitelist is
+    # global (postcodes and municipal contact details are public
+    # everywhere), but the public-officials whitelist is gated on the
+    # `active_gemeenten` set: a raadslid of Alblasserdam only short-
+    # circuits when the document actually mentions gemeente Alblasserdam.
+    whitelist_index: WhitelistIndex = get_whitelist_index()
+    active_gemeenten = find_active_gemeenten(extraction.full_text, whitelist_index)
+    if active_gemeenten:
+        logger.info(
+            "pipeline.whitelist_active_gemeenten",
+            count=len(active_gemeenten),
+        )
 
     # --- Structure pass (#14): scan the full text for email headers,
     # signature blocks, and salutations. The spans are also returned to
@@ -509,15 +480,44 @@ async def run_pipeline(
     ner_detections = detect_all(extraction.full_text)
     logger.info("pipeline.ner_completed", detection_count=len(ner_detections))
 
-    # Bucket detections. Tier 1 and non-person Tier 2 pass through
-    # unchanged; person detections either match the officials list
-    # (instant decision) or need LLM verification.
-    persons_needing_llm: list[tuple[NERDetection, list[dict[str, Any]]]] = []
-
     for det in ner_detections:
-        bboxes = find_span_for_text(extraction.pages, det.text)
+        # Resolve this detection to exactly ONE bbox — the occurrence at
+        # `det.start_char` in the combined full text. `find_span_for_text`
+        # would otherwise return every bbox for every match of `det.text`
+        # on the page, and the frontend bbox→text resolver would join
+        # them all back into a single sidebar card ("A.B. Bakker A.B.
+        # Bakker"). Counting word-boundary matches up to `start_char`
+        # gives us the occurrence index of this specific hit.
+        occurrence_idx = count_word_boundary_matches(
+            extraction.full_text, det.text, limit=det.start_char
+        )
+        bboxes = find_span_for_text(extraction.pages, det.text, occurrence_index=occurrence_idx)
+        if not bboxes:
+            # Defensive fallback: if occurrence counting and span
+            # matching disagree (different tokenisation between Deduce's
+            # full-text view and pdf.js's text items), still return a
+            # single bbox rather than re-emitting the multi-bbox bug.
+            all_bboxes = find_span_for_text(extraction.pages, det.text)
+            bboxes = all_bboxes[:1]
 
         if det.tier == "1":
+            # Address whitelist (postcode / email / telefoon / url). A
+            # hit flips the default to "niet lakken" with a municipality
+            # reasoning string, but the detection still shows up in the
+            # review list so the reviewer can override. The full-text
+            # context is threaded through so the postbus-postcode rule
+            # can inspect the characters before the span.
+            addr_reason = match_address_whitelist(
+                det.text,
+                det.entity_type,
+                whitelist_index,
+                full_text=extraction.full_text,
+                start_char=det.start_char,
+            )
+            if addr_reason is not None:
+                result.detections.append(_address_whitelist_to_detection(det, bboxes, addr_reason))
+                continue
+
             result.detections.append(
                 PipelineDetection(
                     entity_text=det.text,
@@ -564,6 +564,24 @@ async def run_pipeline(
                 )
                 continue
 
+            # Gemeente-officials whitelist — context-gated on the
+            # `active_gemeenten` set. Applied before the title-matcher so
+            # a raadslid match wins over a generic "wethouder" window
+            # match (the whitelist is more specific — it names the
+            # person, not just the role). Common surnames additionally
+            # require a visible-initials match; see whitelist_engine.
+            whitelist_hit = match_person_whitelist(
+                det.text,
+                det.start_char,
+                det.end_char,
+                extraction.full_text,
+                active_gemeenten,
+                whitelist_index,
+            )
+            if whitelist_hit is not None:
+                result.detections.append(_person_whitelist_to_detection(det, bboxes, whitelist_hit))
+                continue
+
             # Rule-based role classifier (#13): scan a small window around
             # the detection for a Dutch function title. A publiek match
             # flips the default to "don't redact"; an ambtenaar match
@@ -600,11 +618,7 @@ async def run_pipeline(
                     result.detections.append(rule_det)
                     continue
 
-            if use_llm_verification:
-                persons_needing_llm.append((det, bboxes))
-                continue
-
-            # LLM disabled, no rule hit — fall back to Deduce-only pending.
+            # No rule hit — fall back to Deduce-only pending.
             result.detections.append(
                 _persoon_pending(
                     det,
@@ -616,6 +630,20 @@ async def run_pipeline(
             continue
 
         # Other Tier 2 entities (adres, datum, organisatie, …).
+        # Address whitelist applies here too — a Deduce ``adres`` span
+        # that resolves to a gemeente bezoekadres or the woonplaats of a
+        # municipal address is public and should not be redacted.
+        addr_reason = match_address_whitelist(
+            det.text,
+            det.entity_type,
+            whitelist_index,
+            full_text=extraction.full_text,
+            start_char=det.start_char,
+        )
+        if addr_reason is not None:
+            result.detections.append(_address_whitelist_to_detection(det, bboxes, addr_reason))
+            continue
+
         result.detections.append(
             PipelineDetection(
                 entity_text=det.text,
@@ -630,44 +658,6 @@ async def run_pipeline(
                 start_char=det.start_char,
                 end_char=det.end_char,
             )
-        )
-
-    # --- Tier 2 LLM verification pass ---
-    if persons_needing_llm:
-        # Lazy import so the dormant path never touches `app.llm.ollama`
-        # (and thus httpx/ollama client setup). Only runs when the flag
-        # explicitly enables verification.
-        from app.llm import get_llm_provider
-
-        provider = get_llm_provider()
-        verdicts = await asyncio.gather(
-            *[
-                _classify_person(
-                    provider,
-                    det.text,
-                    _context_around(
-                        extraction.full_text,
-                        det.start_char,
-                        det.end_char,
-                        _LLM_CONTEXT_WINDOW,
-                    ),
-                )
-                for det, _ in persons_needing_llm
-            ]
-        )
-
-        dropped = 0
-        for (det, bboxes), verdict in zip(persons_needing_llm, verdicts, strict=True):
-            pipeline_det = _verdict_to_pipeline_detection(det, bboxes, verdict)
-            if pipeline_det is None:
-                dropped += 1
-                continue
-            result.detections.append(pipeline_det)
-
-        logger.info(
-            "pipeline.llm_verification_completed",
-            verified=len(persons_needing_llm),
-            dropped_as_non_person=dropped,
         )
 
     # --- Custom wordlist pass (#21) ---
@@ -741,11 +731,9 @@ async def run_pipeline(
             merged=custom_merged,
         )
 
-    # --- Tier 3: skipped (LLM disabled for fast mode) ---
     logger.info(
         "pipeline.completed",
         detection_count=len(result.detections),
-        tier3_skipped=True,
     )
 
     return result

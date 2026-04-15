@@ -64,7 +64,7 @@
 				<ArrowRight size={18} class="transition-transform group-hover:translate-x-0.5" />
 			</a>
 			<span class="text-sm text-ink-mute">
-				Geen account · geen registratie · niets te installeren
+				Geen account nodig · niets te installeren · MIT open source
 			</span>
 		</div>
 	</div>

@@ -23,6 +23,12 @@
 				Open source
 			</a>
 			<a
+				href="#updates"
+				class="hidden text-sm text-ink-soft transition-colors hover:text-ink sm:inline"
+			>
+				Updates
+			</a>
+			<a
 				href="/try"
 				class="rounded-md border border-ink bg-ink px-4 py-2 text-sm font-medium text-bg transition-colors hover:bg-primary hover:border-primary"
 			>

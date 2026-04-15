@@ -1,7 +1,7 @@
 """Analyze API — ephemeral text processing for client-first architecture.
 
 The client extracts text from PDFs in the browser (via pdf.js) and sends it
-here for NER/LLM analysis. The server processes the text, returns detections,
+here for rule-based NER analysis. The server processes the text, returns detections,
 and discards the text. No document content is stored in the database.
 
 SECURITY: Request bodies on this endpoint must NEVER be logged. The

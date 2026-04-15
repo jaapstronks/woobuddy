@@ -6,13 +6,13 @@ WOO Buddy helps Dutch government employees redact privacy-sensitive information 
 
 - **Tier 1** (hard identifiers): Regex + validation. Auto-redacted. Opt-out by reviewer.
 - **Tier 2** (contextual personal data): Deduce NER + wordlists (Meertens voornamen, CBS achternamen) + structure heuristics (e-mailheaders, handtekeningblokken, aanhef) + a rule-based public-official filter. Suggested. One-click confirm/reject.
-- **Tier 3** (content judgments): Reserved. **No LLM in the active pipeline.** Kept as a slot for future rule-based content signals (e.g. beleidsopvatting-verdacht zinnen). See `backend/app/llm/README.md` for the dormant revival path.
+- **Tier 3** (content judgments): Reserved. **No LLM anywhere in the codebase.** Kept as a slot for future rule-based content signals (e.g. beleidsopvatting-verdacht zinnen).
 
-### No LLM in the live pipeline
+### No LLM in the codebase
 
-As of April 2026 (see `docs/reference/woo-redactietool-analyse.md` and `docs/todo/done/35-deactivate-llm.md`), WOO Buddy runs without any LLM in the default code path. Detection is regex + Deduce + wordlists + structure heuristics. The Ollama provider in `backend/app/llm/` is kept in-tree but dormant — flip `settings.llm_tier2_enabled`/`llm_tier3_enabled` to revive it for experimentation.
+As of April 2026 (see `docs/reference/woo-redactietool-analyse.md` and `docs/todo/done/35-deactivate-llm.md`), WOO Buddy runs without any LLM. Detection is regex + Deduce + wordlists + structure heuristics. The Ollama provider code and all LLM settings have been removed — there is no dormant revival path in-tree.
 
-Do not reintroduce LLM calls into the live pipeline without an explicit product decision to the contrary. Rule-based replacements for what the LLM used to do (person-role classification, false-positive filtering) live in todos #12–#17.
+Do not reintroduce LLM calls without an explicit product decision to the contrary. If one is ever made, the revival must be **local-only** (Ollama + Google Gemma, or equivalent) and opt-in; read `docs/reference/llm-revival.md` before you start. The trust story ("uw PDF verlaat nooit uw browser") and the cost model of the generous free tier both depend on there being no LLM on the default path.
 
 ## Branding
 
@@ -41,7 +41,7 @@ Monorepo with two applications:
 - `frontend/` — SvelteKit (Svelte 5 with runes), TypeScript strict, Tailwind CSS v4, Shoelace web components, pdf.js
 - `backend/` — FastAPI, Python 3.12, async throughout
 
-Infrastructure: PostgreSQL 16 (metadata only — no document content). No LLM in the live pipeline (dormant Ollama code kept in `backend/app/llm/` for future revival). No MinIO or persistent file storage for documents.
+Infrastructure: PostgreSQL 16 (metadata only — no document content). No LLM anywhere in the codebase. No MinIO or persistent file storage for documents.
 
 ### Single-document flow (current shape)
 
@@ -72,7 +72,7 @@ There is **no dossier concept, no document list, no cross-document state**. A do
 - **Async everywhere**: use `async def` for all route handlers and services.
 - **Pydantic v2** for request/response validation.
 - **SQLAlchemy v2** async with `asyncpg` driver.
-- **No LLM in the live pipeline.** The LLM layer under `app/llm/` is dormant — kept as a parked revival path behind `settings.llm_tier2_enabled`/`llm_tier3_enabled` flags. See `app/llm/README.md`. Don't import from `app.llm.*` in new code unless you are explicitly working on the revival path; the default detection pipeline must not touch it.
+- **No LLM in the codebase.** The detection pipeline is rule-based end to end. There is no `app/llm/` package, no `anthropic`/`openai`/`ollama` dependency, no `llm_*` settings. If you believe you need an LLM for something, read `docs/reference/llm-revival.md` first — the default path must remain LLM-free.
 - **Deduce** (Dutch NER) must be initialized once at startup (in FastAPI lifespan), not per-request (~2s load time).
 - PDF redaction with PyMuPDF is **irreversible** and happens **in-memory only** during ephemeral export. Never write the original PDF to disk.
 
@@ -84,7 +84,7 @@ WOO Buddy is **open core with a generous free tier**. Hosting cost is essentiall
 - **The hosted Gratis tier has no signup wall on `/try` and no document cap.** Anonymous reviewers can analyze and export full PDFs without an account. The trust unlock is "uw PDF verlaat nooit uw browser" — do not undermine it with watermarks, preview-only modes, document caps, or forced login on the trial flow. (Earlier drafts of `32-authentication.md` and `37-mollie-billing.md` proposed those gates and were explicitly reversed.)
 - **Billing gates team features, not the review loop.** The Team tier (~€79–€99/month per organization) sells multi-user, shared custom wordlists, audit log, SSO, NL-hosted DPA, and priority support. The Enterprise tier sells SLA, ISO27001/NEN7510 paperwork, and dedicated instances. Pricing is per-org flat — never per-document.
 - **Anonymous `/api/analyze` requests must not persist anything to PostgreSQL.** No `Document` row, no `Detection` rows. Detection metadata is computed in memory and returned. Persistence kicks in only when the user logs in and explicitly chooses to save.
-- **Don't introduce LLM/GPU dependencies into the default code path.** They would break the cost model that makes the generous free tier viable. The dormant Ollama layer stays dormant.
+- **Don't introduce LLM/GPU dependencies into the default code path.** They would break the cost model that makes the generous free tier viable. If a future product decision revives a local LLM verification step, it must be opt-in per operator and local-only — see `docs/reference/llm-revival.md`.
 
 When you build a new feature, ask: "Does this gate something on the trial path?" If yes, the design is wrong — gate it on team features instead.
 

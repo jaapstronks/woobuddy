@@ -3,12 +3,70 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="color-scheme" content="light" />
+		<meta name="theme-color" content="#fafaf7" />
+
 		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-		<title>WOO Buddy — privacyvriendelijk Woo-documenten lakken in je browser</title>
+		<link rel="apple-touch-icon" href="/favicon.svg" />
+
+		<!--
+			Default SEO + social tags. Individual routes override title,
+			description, og:url, and og:type via <svelte:head>. Keep this file
+			as the fallback so unknown routes still share cleanly.
+		-->
+		<title>WOO Buddy — Woo-documenten lakken in je browser, zonder upload</title>
 		<meta
 			name="description"
-			content="WOO Buddy lakt Woo-documenten volledig in je browser. Geen upload, geen AI, geen trackers. AVG-proof by design en open source."
+			content="WOO Buddy lakt Woo-documenten volledig in je browser. Herkent BSN's, namen, adressen en meer. Geen upload, geen AI, geen trackers. AVG-proof by design en open source."
 		/>
+		<meta
+			name="keywords"
+			content="Woo, Wet open overheid, redactie, lakken, BSN, AVG, privacy, open source, Rijksoverheid, persoonsgegevens"
+		/>
+		<meta name="author" content="WOO Buddy" />
+		<meta name="robots" content="index, follow, max-image-preview:large" />
+		<meta name="format-detection" content="telephone=no" />
+
+		<link rel="canonical" href="https://woobuddy.nl/" />
+
+		<!-- Open Graph -->
+		<meta property="og:site_name" content="WOO Buddy" />
+		<meta property="og:locale" content="nl_NL" />
+		<meta property="og:type" content="website" />
+		<meta property="og:url" content="https://woobuddy.nl/" />
+		<meta
+			property="og:title"
+			content="WOO Buddy — Woo-documenten lakken in je browser, zonder upload"
+		/>
+		<meta
+			property="og:description"
+			content="Lak BSN's, namen en adressen in Woo-documenten zonder dat er één byte je laptop verlaat. Geen upload, geen AI, geen trackers."
+		/>
+		<meta property="og:image" content="https://woobuddy.nl/og-image.png" />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:image:type" content="image/png" />
+		<meta
+			property="og:image:alt"
+			content="WOO Buddy — Lak Woo-documenten zonder uploaden, zonder AI"
+		/>
+
+		<!-- Twitter / X -->
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta
+			name="twitter:title"
+			content="WOO Buddy — Woo-documenten lakken in je browser"
+		/>
+		<meta
+			name="twitter:description"
+			content="Lak BSN's, namen en adressen in Woo-documenten zonder dat er één byte je laptop verlaat. Open source."
+		/>
+		<meta name="twitter:image" content="https://woobuddy.nl/og-image.png" />
+		<meta
+			name="twitter:image:alt"
+			content="WOO Buddy — Lak Woo-documenten zonder uploaden, zonder AI"
+		/>
+
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

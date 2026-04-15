@@ -16,7 +16,7 @@
 		'Geen Google Analytics, Plausible, Hotjar of andere trackers',
 		'Geen cookies (echt: nul, ook geen "essentiële")',
 		'Geen third-party fonts, scripts of CDN-calls',
-		'Geen account, geen e-mailadres, geen registratie',
+		'Geen account of registratie nodig om de tool te gebruiken',
 		'Geen telemetrie naar onze servers'
 	];
 </script>

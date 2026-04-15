@@ -1,3 +1,10 @@
+<script lang="ts" module>
+	// Re-exported so existing call sites that import these from PdfViewer
+	// keep working after the Phase 1/2 refactor.
+	export type { SearchHighlight } from '$lib/services/pdf-overlay-draw';
+	export type { PageReviewStatusValue } from './page-review-status';
+</script>
+
 <script lang="ts">
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import type { Detection, BoundingBox } from '$lib/types';
@@ -10,32 +17,17 @@
 		snapRangeToWordBoundaries,
 		type ManualSelection
 	} from '$lib/services/selection-bbox';
-
-	/**
-	 * Lightweight shape for search-and-redact overlays (#09). The PdfViewer
-	 * doesn't need the full `SearchOccurrence` — only the id, page, bboxes
-	 * and whether it's already-redacted (for the muted style). Declaring a
-	 * local interface keeps the viewer's import surface narrow.
-	 */
-	export interface SearchHighlight {
-		id: string;
-		page: number;
-		bboxes: BoundingBox[];
-		alreadyRedacted: boolean;
-	}
-
-	/**
-	 * Page completeness (#10). The parent passes a sparse map of
-	 * page-number → status; any page not in the map is treated as
-	 * `unreviewed`. The viewer renders a compact strip of numbered circles
-	 * across the toolbar and a corner "Pagina beoordeeld" button on the
-	 * current page — both drive the same two callbacks.
-	 */
-	export type PageReviewStatusValue =
-		| 'unreviewed'
-		| 'in_progress'
-		| 'complete'
-		| 'flagged';
+	import {
+		drawDetectionOverlays,
+		drawSearchHighlights,
+		type SearchHighlight
+	} from '$lib/services/pdf-overlay-draw';
+	import { loadPdfDocument, renderPdfPage } from '$lib/services/pdf-page-render';
+	import PdfViewerToolbar from './PdfViewerToolbar.svelte';
+	import PageStrip from './PageStrip.svelte';
+	import PageReviewActions from './PageReviewActions.svelte';
+	import BoundaryEditOverlay, { type HandleDir } from './BoundaryEditOverlay.svelte';
+	import type { PageReviewStatusValue } from './page-review-status';
 
 	interface Props {
 		pdfData: ArrayBuffer | null;
@@ -126,33 +118,28 @@
 		onPageNaturalSize
 	}: Props = $props();
 
-	function getPageStatus(page: number): PageReviewStatusValue {
-		return pageStatuses[page] ?? 'unreviewed';
-	}
-
-	function pageStatusLabel(status: PageReviewStatusValue): string {
-		switch (status) {
-			case 'unreviewed':
-				return 'Nog niet beoordeeld';
-			case 'in_progress':
-				return 'In behandeling';
-			case 'complete':
-				return 'Beoordeeld';
-			case 'flagged':
-				return 'Gemarkeerd';
-		}
-	}
-
 	let canvasEl = $state<HTMLCanvasElement | null>(null);
 	let overlayEl = $state<HTMLDivElement | null>(null);
 	let searchLayerEl = $state<HTMLDivElement | null>(null);
 	let textLayerEl = $state<HTMLDivElement | null>(null);
 	let pdfDoc = $state<any>(null);
 
-	const currentPageStatus = $derived(getPageStatus(currentPage));
+	const currentPageStatus = $derived<PageReviewStatusValue>(
+		pageStatuses[currentPage] ?? 'unreviewed'
+	);
 	const totalPages = $derived(pdfDoc?.numPages ?? 0);
 	let rendering = false; // not reactive — just a guard flag
-	let viewportSize = { width: 0, height: 0 };
+	// Reactive so the overlay/search-highlight effects re-run once renderPdf
+	// finishes and updates the current viewport dimensions. Without this the
+	// overlays would read stale container sizes after a zoom or resize.
+	let viewportSize = $state({ width: 0, height: 0 });
+	// Scale actually painted onto the canvas. Distinct from the `scale` prop,
+	// which can be a frame ahead of the canvas when fit-to-width recomputes
+	// mid-render. Overlays must read THIS value — not the live prop — or they
+	// get drawn at coordinates that don't yet match the canvas paint, which
+	// manifests as rectangles landing a few pixels off on initial load and
+	// only "snapping" when a later resize forces another full render cycle.
+	let renderedScale = $state(0);
 	let currentTextLayer: { cancel: () => void } | null = null;
 
 	// Area-selection draw state (#07). The live rectangle is reactive so it
@@ -181,9 +168,10 @@
 	//
 	// When the reviewer clicks an existing detection in Edit mode, the
 	// component enters a "boundary edit" state for that detection. Draft
-	// bboxes are cloned into `editingBboxes` and rendered via Svelte
-	// markup with 8 resize handles per box; `drawOverlays` hides the
-	// original overlay for the editing detection so the two don't double up.
+	// bboxes are cloned into `editingBboxes` and rendered via the
+	// BoundaryEditOverlay child with 8 resize handles per box;
+	// drawDetectionOverlays hides the original overlay for the editing
+	// detection so the two don't double up.
 	//
 	// Committing the edit (Enter or the floating Opslaan button) emits
 	// `onBoundaryAdjust` to the parent, which wraps it in a
@@ -209,8 +197,6 @@
 	let editingOriginalBboxes: BoundingBox[] | null = null;
 
 	// Handle drag state — plain vars because they mutate on every mousemove.
-	type HandleDir = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
-	const HANDLE_DIRS: HandleDir[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 	let dragHandle: {
 		boxIndex: number;
 		dir: HandleDir;
@@ -285,12 +271,7 @@
 		if (!dragHandle || !editingBboxes) return;
 		const dxPt = (e.clientX - dragHandle.startClientX) / scale;
 		const dyPt = (e.clientY - dragHandle.startClientY) / scale;
-		const updated = applyHandleDelta(
-			dragHandle.initialBbox,
-			dragHandle.dir,
-			dxPt,
-			dyPt
-		);
+		const updated = applyHandleDelta(dragHandle.initialBbox, dragHandle.dir, dxPt, dyPt);
 		editingBboxes = editingBboxes.map((b, i) => (i === dragHandle!.boxIndex ? updated : b));
 	}
 
@@ -382,40 +363,6 @@
 		});
 	}
 
-	// Tier-based overlay styles
-	function getOverlayStyle(det: Detection): string {
-		const isSelected = det.id === selectedDetectionId;
-		// Selected overlays get a thick primary outline placed *outside* the
-		// rectangle so the underlying tier styling stays intact and the
-		// reviewer can spot the active row at a glance.
-		const selectedAccent = isSelected
-			? 'outline: 3px solid var(--color-primary); outline-offset: 3px; box-shadow: 0 0 0 6px rgba(27,79,114,0.18);'
-			: '';
-
-		// Rejected detections render the same way regardless of tier — they
-		// are visible in the export, so the preview must show the underlying
-		// text rather than a black box. (Previously Tier 1 short-circuited
-		// to a black box even after "Ontlakken", which made the action look
-		// like a no-op.)
-		if (det.review_status === 'rejected') {
-			return `background: rgba(39,174,96,0.10); border: 1px dashed rgba(39,174,96,0.55); ${selectedAccent}`;
-		}
-		// Area redactions (#07) are always fully opaque black on creation —
-		// they are accepted the moment the form is confirmed and have no
-		// "review pending" state. Keep the same look as a Tier 1 auto-redact
-		// so the reviewer sees exactly what the exported PDF will cover.
-		if (det.entity_type === 'area') {
-			return `background: rgba(0,0,0,0.85); color: white; ${selectedAccent}`;
-		}
-		if (det.tier === '1' || det.review_status === 'accepted' || det.review_status === 'auto_accepted') {
-			return `background: rgba(0,0,0,0.7); color: white; ${selectedAccent}`;
-		}
-		if (det.tier === '2') {
-			return `background: rgba(243,156,18,0.1); border: 2px solid rgba(243,156,18,0.6); ${selectedAccent}`;
-		}
-		return `background: rgba(27,79,114,0.05); border-left: 3px solid var(--color-primary); ${selectedAccent}`;
-	}
-
 	onMount(async () => {
 		// Area-selection listeners live on the window so a drag that leaves
 		// the stage mid-gesture still finishes cleanly.
@@ -423,17 +370,9 @@
 		window.addEventListener('mouseup', handleWindowMouseUp);
 		window.addEventListener('keydown', handleWindowKeyDown);
 
-		const pdfjsLib = await import('pdfjs-dist');
-		pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-			'pdfjs-dist/build/pdf.worker.mjs',
-			import.meta.url
-		).toString();
-
 		// Client-first: PDF comes from the in-memory ArrayBuffer only.
-		// .slice(0) copies the buffer so pdf.js Worker transfer doesn't detach the original.
 		if (!pdfData) return;
-		const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfData.slice(0)) });
-		pdfDoc = await loadingTask.promise;
+		pdfDoc = await loadPdfDocument(pdfData);
 	});
 
 	onDestroy(() => {
@@ -445,173 +384,55 @@
 	async function renderPdf(pageNum: number) {
 		if (!pdfDoc || !canvasEl || rendering) return;
 		rendering = true;
-
+		// Snapshot the scale we're about to paint so later `renderedScale`
+		// update matches what actually landed on the canvas — reading `scale`
+		// again after the await could return a newer value if the reviewer
+		// zoomed mid-render.
+		const activeScale = scale;
 		try {
-			const page = await pdfDoc.getPage(pageNum + 1);
-			// Report the unscaled page size so the parent can compute fit-to-width /
-			// fit-to-page scales. Done before applying `scale` so the math is
-			// independent of whatever scale the parent currently has.
-			const baseViewport = page.getViewport({ scale: 1 });
-			onPageNaturalSize?.({ width: baseViewport.width, height: baseViewport.height });
-			const viewport = page.getViewport({ scale });
-			viewportSize = { width: viewport.width, height: viewport.height };
-
-			canvasEl.width = viewport.width;
-			canvasEl.height = viewport.height;
-
-			const ctx = canvasEl.getContext('2d')!;
-			await page.render({ canvasContext: ctx, viewport }).promise;
-
-			await renderTextLayer(page, viewport);
+			const result = await renderPdfPage({
+				pdfDoc,
+				pageNum,
+				scale: activeScale,
+				canvas: canvasEl,
+				textLayerEl,
+				previousTextLayer: currentTextLayer
+			});
+			viewportSize = { width: result.width, height: result.height };
+			renderedScale = activeScale;
+			currentTextLayer = result.textLayer;
+			// Report the unscaled page size so the parent can compute
+			// fit-to-width / fit-to-page scales without peeking into pdf.js.
+			onPageNaturalSize?.({ width: result.naturalWidth, height: result.naturalHeight });
 		} finally {
 			rendering = false;
 		}
 	}
 
-	async function renderTextLayer(page: any, viewport: any) {
-		if (!textLayerEl) return;
-		// Cancel any previous render — switching pages quickly can leave a
-		// stale TextLayer half-painted if we don't explicitly abort.
-		currentTextLayer?.cancel();
-		textLayerEl.innerHTML = '';
-		textLayerEl.style.width = `${viewport.width}px`;
-		textLayerEl.style.height = `${viewport.height}px`;
-		// pdf.js expects this CSS var to equal 1x scale so it can size glyphs.
-		textLayerEl.style.setProperty('--scale-factor', String(scale));
-
-		const pdfjsLib = await import('pdfjs-dist');
-		const textContent = await page.getTextContent();
-		const textLayer = new pdfjsLib.TextLayer({
-			textContentSource: textContent,
-			container: textLayerEl,
-			viewport
-		});
-		currentTextLayer = textLayer;
-		try {
-			await textLayer.render();
-		} catch {
-			// pdf.js throws on cancel — nothing to do.
-		}
-	}
-
 	/**
-	 * Draw search-and-redact highlights (#09) on their own layer, above the
-	 * canvas but below the detection overlay and the text layer. A distinct
-	 * yellow color separates them from detection rectangles so the reviewer
-	 * immediately sees the difference between "detected" and "search hit".
-	 * Already-redacted hits render with a muted style so they don't compete
-	 * visually with the still-actionable matches.
+	 * Click handler passed into drawDetectionOverlays. Routes the click to
+	 * split-point reporting, boundary-edit entry, or plain selection
+	 * depending on the current mode and split-pending state.
 	 */
-	function drawSearchHighlights(pageNum: number) {
-		if (!searchLayerEl) return;
-		searchLayerEl.innerHTML = '';
-		searchLayerEl.style.width = `${viewportSize.width}px`;
-		searchLayerEl.style.height = `${viewportSize.height}px`;
-
-		for (const hit of searchHighlights) {
-			for (const bbox of hit.bboxes) {
-				if (bbox.page !== pageNum) continue;
-				const el = document.createElement('div');
-				const x = bbox.x0 * scale;
-				const y = bbox.y0 * scale;
-				const w = (bbox.x1 - bbox.x0) * scale;
-				const h = (bbox.y1 - bbox.y0) * scale;
-				el.className = 'search-hit';
-				if (hit.alreadyRedacted) el.classList.add('search-hit-muted');
-				if (hit.id === focusedSearchId) el.classList.add('search-hit-focused');
-				el.style.cssText += `left:${x}px;top:${y}px;width:${w}px;height:${h}px;`;
-				el.dataset.searchHitId = hit.id;
-				searchLayerEl.appendChild(el);
-			}
+	function handleOverlayClick(e: MouseEvent, det: Detection, bboxIdx: number) {
+		// #18 — split pending: clicking the target detection's bbox reports a
+		// PDF-space click position instead of the usual boundary-edit entry.
+		// Fires only for the pending detection; clicks on other detections
+		// fall through to their normal behavior.
+		if (splitPendingId === det.id && onSplitPointClick && stageEl) {
+			const stageRect = stageEl.getBoundingClientRect();
+			const pdfX = (e.clientX - stageRect.left) / scale;
+			const pdfY = (e.clientY - stageRect.top) / scale;
+			onSplitPointClick({ detectionId: det.id, bboxIndex: bboxIdx, pdfX, pdfY });
+			return;
 		}
-	}
-
-	function drawOverlays(pageNum: number) {
-		if (!overlayEl) return;
-
-		overlayEl.innerHTML = '';
-		overlayEl.style.width = `${viewportSize.width}px`;
-		overlayEl.style.height = `${viewportSize.height}px`;
-
-		for (const det of detections) {
-			if (!det.bounding_boxes) continue;
-			// The detection currently being boundary-edited is rendered via
-			// the Svelte markup block below (with handles + live draft
-			// bboxes), not here. Skip it to avoid a ghost overlay beneath
-			// the draft.
-			if (det.id === editingDetectionId) continue;
-			const bboxes = det.bounding_boxes;
-			const isSplitTarget = splitPendingId !== null && splitPendingId === det.id;
-			const isMergeStaged = mergeStagingIds.includes(det.id);
-			for (let bboxIdx = 0; bboxIdx < bboxes.length; bboxIdx++) {
-				const bbox = bboxes[bboxIdx];
-				if (bbox.page !== pageNum) continue;
-
-				const el = document.createElement('div');
-				const x = bbox.x0 * scale;
-				const y = bbox.y0 * scale;
-				const w = (bbox.x1 - bbox.x0) * scale;
-				const h = (bbox.y1 - bbox.y0) * scale;
-
-				// Split-target and merge-staged detections get stacked visual
-				// cues on top of the tier-based style — a dashed amber outline
-				// for "click here to split" and a solid accent outline for
-				// "queued for merge".
-				let extraStyle = '';
-				if (isSplitTarget) {
-					extraStyle += 'outline: 2px dashed rgba(243,156,18,0.9); outline-offset: 2px; cursor: crosshair;';
-				} else if (isMergeStaged) {
-					extraStyle += 'outline: 2px solid rgba(27,79,114,0.8); outline-offset: 2px;';
-				}
-
-				el.style.cssText = `
-					position: absolute;
-					left: ${x}px; top: ${y}px;
-					width: ${w}px; height: ${h}px;
-					cursor: pointer; pointer-events: auto;
-					border-radius: 2px;
-					${getOverlayStyle(det)}
-					${extraStyle}
-				`;
-				el.dataset.overlay = 'detection';
-				el.dataset.detectionId = det.id;
-				el.dataset.bboxIndex = String(bboxIdx);
-
-				if ((det.tier === '1' || det.entity_type === 'area') && det.woo_article) {
-					el.innerHTML = `<span style="font-size:8px;padding:1px 3px;">${det.woo_article}</span>`;
-				}
-
-				el.addEventListener('click', (e) => {
-					e.stopPropagation();
-					// #18 — split pending: clicking the target detection's
-					// bbox reports a PDF-space click position instead of the
-					// usual boundary-edit entry. Fires only for the pending
-					// detection; clicks on other detections fall through to
-					// their normal behavior.
-					if (isSplitTarget && onSplitPointClick && stageEl) {
-						const stageRect = stageEl.getBoundingClientRect();
-						const pdfX = (e.clientX - stageRect.left) / scale;
-						const pdfY = (e.clientY - stageRect.top) / scale;
-						onSplitPointClick({
-							detectionId: det.id,
-							bboxIndex: bboxIdx,
-							pdfX,
-							pdfY
-						});
-						return;
-					}
-					// Edit mode: clicking an existing detection enters the
-					// boundary-edit flow instead of just highlighting it.
-					// Review mode keeps the classic select-for-sidebar
-					// behavior.
-					if (mode === 'edit') {
-						enterBoundaryEdit(det.id);
-					} else {
-						onSelectDetection(det.id);
-					}
-				});
-				overlayEl.appendChild(el);
-			}
+		// Edit mode: clicking an existing detection enters the
+		// boundary-edit flow instead of just highlighting it. Review mode
+		// keeps the classic select-for-sidebar behavior.
+		if (mode === 'edit') {
+			enterBoundaryEdit(det.id);
+		} else {
+			onSelectDetection(det.id);
 		}
 	}
 
@@ -744,11 +565,7 @@
 			// boundary-editing, but the review page has textareas for
 			// motivations).
 			const t = e.target as HTMLElement | null;
-			if (
-				t?.tagName === 'INPUT' ||
-				t?.tagName === 'TEXTAREA' ||
-				t?.isContentEditable
-			) {
+			if (t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA' || t?.isContentEditable) {
 				return;
 			}
 			if (e.key === 'Escape') {
@@ -887,8 +704,30 @@
 		// parent flips these props.
 		void splitPendingId;
 		void mergeStagingIds;
-		if (pdfDoc) {
-			untrack(() => drawOverlays(currentPage));
+		// Zoom/resize: `renderedScale` + `viewportSize` are written together
+		// at the end of `renderPdf`, so reading them here guarantees the
+		// overlays always use the same scale that was actually painted onto
+		// the canvas. Reading the live `scale` prop used to be the bug — it
+		// could be one render ahead, leaving rectangles at the new scale on
+		// top of the old canvas paint until a later resize forced another
+		// full render cycle.
+		void renderedScale;
+		void viewportSize;
+		if (pdfDoc && overlayEl && renderedScale > 0) {
+			untrack(() => {
+				drawDetectionOverlays({
+					overlayEl: overlayEl!,
+					detections,
+					pageNum: currentPage,
+					scale: renderedScale,
+					viewportSize,
+					selectedDetectionId,
+					editingDetectionId,
+					splitPendingId,
+					mergeStagingIds,
+					onOverlayClick: handleOverlayClick
+				});
+			});
 		}
 	});
 
@@ -902,7 +741,7 @@
 	$effect(() => {
 		const id = selectedDetectionId;
 		void currentPage;
-		void scale;
+		void renderedScale;
 		if (!overlayEl || !id) {
 			lastScrolledKey = null;
 			return;
@@ -932,15 +771,25 @@
 	});
 
 	// Draw search highlights whenever the result set, focus, page, or scale
-	// changes. Kept separate from `drawOverlays` so typing in the search box
-	// doesn't force a detection re-render.
+	// changes. Kept separate from the detection overlay redraw so typing in
+	// the search box doesn't force a detection re-render.
 	$effect(() => {
 		void searchHighlights;
 		void focusedSearchId;
 		void currentPage;
-		void scale;
-		if (pdfDoc) {
-			untrack(() => drawSearchHighlights(currentPage));
+		void renderedScale;
+		void viewportSize;
+		if (pdfDoc && searchLayerEl && renderedScale > 0) {
+			untrack(() => {
+				drawSearchHighlights({
+					searchLayerEl: searchLayerEl!,
+					searchHighlights,
+					pageNum: currentPage,
+					scale: renderedScale,
+					viewportSize,
+					focusedSearchId
+				});
+			});
 		}
 	});
 
@@ -1005,11 +854,9 @@
 				el.classList.remove('overlay-flash');
 				void el.offsetWidth;
 				el.classList.add('overlay-flash');
-				el.addEventListener(
-					'animationend',
-					() => el.classList.remove('overlay-flash'),
-					{ once: true }
-				);
+				el.addEventListener('animationend', () => el.classList.remove('overlay-flash'), {
+					once: true
+				});
 			}
 		}
 	}
@@ -1019,103 +866,24 @@
 	class="relative overflow-auto rounded-lg border border-gray-200 bg-white"
 	class:edit-mode={mode === 'edit'}
 >
-	<!-- Toolbar: mode toggle + page navigation -->
-	<div
-		class="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-white/95 px-4 py-2 backdrop-blur-sm"
-		class:toolbar-edit={mode === 'edit'}
-	>
-		<div class="inline-flex rounded-md border border-gray-200 bg-gray-50 p-0.5" role="group" aria-label="Modus">
-			<button
-				type="button"
-				class="mode-btn"
-				class:mode-btn-active={mode === 'review'}
-				aria-pressed={mode === 'review'}
-				title="Beoordelen (M)"
-				onclick={() => onModeChange('review')}
-			>
-				Beoordelen
-			</button>
-			<button
-				type="button"
-				class="mode-btn"
-				class:mode-btn-active={mode === 'edit'}
-				aria-pressed={mode === 'edit'}
-				title="Bewerken (M)"
-				onclick={() => onModeChange('edit')}
-			>
-				Bewerken
-			</button>
-		</div>
+	<PdfViewerToolbar
+		{mode}
+		{currentPage}
+		{totalPages}
+		{currentPageStatus}
+		{onModeChange}
+		{onPageChange}
+	/>
 
-		<div class="flex items-center gap-3">
-			<button
-				class="rounded px-2 py-1 text-sm hover:bg-gray-100 disabled:opacity-40"
-				disabled={currentPage <= 0}
-				onclick={() => onPageChange(currentPage - 1)}
-			>
-				&larr; Vorige
-			</button>
-			<span class="flex items-center gap-1.5 text-sm text-neutral">
-				<!-- Inline indicator beside the page counter so the reviewer
-				     always sees the current page's status, regardless of
-				     whether the page strip is scrolled into view. -->
-				<span
-					class="page-status-dot"
-					class:status-unreviewed={currentPageStatus === 'unreviewed'}
-					class:status-in-progress={currentPageStatus === 'in_progress'}
-					class:status-complete={currentPageStatus === 'complete'}
-					class:status-flagged={currentPageStatus === 'flagged'}
-					aria-hidden="true"
-				></span>
-				{currentPage + 1} / {pdfDoc?.numPages ?? '...'}
-			</span>
-			<button
-				class="rounded px-2 py-1 text-sm hover:bg-gray-100 disabled:opacity-40"
-				disabled={!pdfDoc || currentPage >= pdfDoc.numPages - 1}
-				onclick={() => onPageChange(currentPage + 1)}
-			>
-				Volgende &rarr;
-			</button>
-		</div>
-	</div>
-
-	<!-- Page strip (#10). A horizontally-scrolling row of numbered circles,
-	     one per page, showing per-page review status at a glance. The active
-	     page gets an outlined ring so the reviewer can find their place even
-	     in a long document. -->
+	<!-- Page strip (#10): horizontally-scrolling row of numbered chips -->
 	{#if pdfDoc && totalPages > 1}
-		<div class="page-strip flex items-center gap-1 overflow-x-auto border-b border-gray-200 bg-white px-4 py-2">
-			{#each Array.from({ length: totalPages }, (_, i) => i) as p (p)}
-				{@const st = getPageStatus(p)}
-				<button
-					type="button"
-					class="page-chip"
-					class:chip-unreviewed={st === 'unreviewed'}
-					class:chip-in-progress={st === 'in_progress'}
-					class:chip-complete={st === 'complete'}
-					class:chip-flagged={st === 'flagged'}
-					class:chip-current={p === currentPage}
-					title={`Pagina ${p + 1} — ${pageStatusLabel(st)}`}
-					onclick={() => onPageChange(p)}
-				>
-					{#if st === 'complete'}
-						&#10003;
-					{:else if st === 'flagged'}
-						&#9873;
-					{:else}
-						{p + 1}
-					{/if}
-				</button>
-			{/each}
-		</div>
+		<PageStrip {totalPages} {currentPage} {pageStatuses} {onPageChange} />
 	{/if}
 
 	<!-- PDF canvas + overlay + text layer -->
 	<div class="relative flex justify-center p-4">
 		{#if !pdfDoc}
-			<div class="flex h-96 items-center justify-center text-neutral">
-				PDF laden...
-			</div>
+			<div class="flex h-96 items-center justify-center text-neutral">PDF laden...</div>
 		{:else}
 			<!-- svelte-ignore a11y_click_events_have_key_events -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1148,47 +916,14 @@
 				     the box (but outside a handle) still reach the text
 				     layer for Shift/Alt+click word extension. -->
 				{#if editingBboxes}
-					{#each editingBboxes as b, i (i)}
-						{#if b.page === currentPage}
-							<div
-								class="edit-box"
-								style="left: {b.x0 * scale}px; top: {b.y0 * scale}px; width: {(b.x1 - b.x0) * scale}px; height: {(b.y1 - b.y0) * scale}px;"
-							>
-								{#each HANDLE_DIRS as dir (dir)}
-									<button
-										type="button"
-										class="edit-handle handle-{dir}"
-										aria-label="Grens aanpassen ({dir})"
-										onmousedown={(e) => handleResizeMouseDown(e, i, dir)}
-									></button>
-								{/each}
-							</div>
-						{/if}
-					{/each}
-					{@const primary = editingBboxes.find((b) => b.page === currentPage)}
-					{#if primary}
-						<div
-							class="edit-toolbar"
-							style="left: {primary.x0 * scale}px; top: {Math.max(0, primary.y0 * scale - 34)}px;"
-						>
-							<button
-								type="button"
-								class="edit-toolbar-btn edit-toolbar-save"
-								title="Opslaan (Enter)"
-								onclick={commitBoundaryEdit}
-							>
-								Opslaan
-							</button>
-							<button
-								type="button"
-								class="edit-toolbar-btn"
-								title="Annuleren (Escape)"
-								onclick={cancelBoundaryEdit}
-							>
-								Annuleren
-							</button>
-						</div>
-					{/if}
+					<BoundaryEditOverlay
+						{editingBboxes}
+						{currentPage}
+						{scale}
+						onHandleMouseDown={handleResizeMouseDown}
+						onCommit={commitBoundaryEdit}
+						onCancel={cancelBoundaryEdit}
+					/>
 				{/if}
 				{#if drawRect}
 					<!-- Live area-draw rectangle (#07). Inert to pointer events so
@@ -1198,40 +933,13 @@
 						style="left: {drawRect.x}px; top: {drawRect.y}px; width: {drawRect.w}px; height: {drawRect.h}px;"
 					></div>
 				{/if}
-				<!-- Floating per-page completeness actions (#10). Anchored to
-				     the top-right of the rendered page so it follows zoom and
-				     stays out of the bottom where pagination controls live. -->
 				{#if onMarkPageReviewed || onFlagPage}
-					<div class="page-review-actions">
-						{#if currentPageStatus === 'complete'}
-							<button
-								type="button"
-								class="page-action-btn page-action-done"
-								title="Beoordeling ongedaan maken"
-								onclick={() => onMarkPageReviewed?.(currentPage)}
-							>
-								&#10003; Beoordeeld
-							</button>
-						{:else}
-							<button
-								type="button"
-								class="page-action-btn page-action-mark"
-								title="Pagina beoordeeld (P)"
-								onclick={() => onMarkPageReviewed?.(currentPage)}
-							>
-								Pagina beoordeeld
-							</button>
-						{/if}
-						<button
-							type="button"
-							class="page-action-btn"
-							class:page-action-flagged={currentPageStatus === 'flagged'}
-							title="Later terugkomen (F)"
-							onclick={() => onFlagPage?.(currentPage)}
-						>
-							&#9873;
-						</button>
-					</div>
+					<PageReviewActions
+						{currentPage}
+						{currentPageStatus}
+						{onMarkPageReviewed}
+						{onFlagPage}
+					/>
 				{/if}
 			</div>
 		{/if}
@@ -1241,36 +949,6 @@
 <style>
 	.edit-mode {
 		border-top: 2px solid var(--color-primary, #1b4f72);
-	}
-	.toolbar-edit {
-		box-shadow: inset 0 2px 0 0 var(--color-primary, #1b4f72);
-	}
-	.mode-btn {
-		padding: 0.25rem 0.75rem;
-		font-size: 0.75rem;
-		font-weight: 500;
-		color: #4b5563;
-		border-radius: 0.25rem;
-		transition: background-color 120ms, color 120ms;
-	}
-	.mode-btn:hover {
-		background-color: rgba(0, 0, 0, 0.04);
-	}
-	.mode-btn-active {
-		background-color: white;
-		color: var(--color-primary, #1b4f72);
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-		/* #23 — brief background flash when the toggle flips. The
-		   animation runs once each time the element acquires the
-		   active class, then settles back to white. */
-		animation: mode-toggle-pulse 220ms ease-out;
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.mode-btn,
-		.mode-btn-active {
-			animation: none;
-			transition: none;
-		}
 	}
 
 	/* Live area-draw rectangle (#07). Sits on top of the text layer so the
@@ -1370,216 +1048,6 @@
 		background: rgba(27, 79, 114, 0.35);
 	}
 
-	/* Page completeness (#10). Compact strip of numbered circles, one per
-	   page, showing per-page review status. The strip scrolls horizontally
-	   on long documents so it never forces the toolbar to wrap. */
-	.page-strip {
-		scrollbar-width: thin;
-	}
-	.page-chip {
-		flex: 0 0 auto;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-width: 1.75rem;
-		height: 1.75rem;
-		padding: 0 0.375rem;
-		border-radius: 9999px;
-		border: 1px solid #d1d5db;
-		background: white;
-		font-size: 0.7rem;
-		font-weight: 500;
-		color: #4b5563;
-		transition: transform 120ms, box-shadow 120ms, background-color 120ms;
-	}
-	.page-chip:hover {
-		transform: translateY(-1px);
-	}
-	.chip-unreviewed {
-		background: white;
-		color: #6b7280;
-	}
-	.chip-in-progress {
-		background: #fef3c7;
-		border-color: #f59e0b;
-		color: #78350f;
-	}
-	.chip-complete {
-		background: #10b981;
-		border-color: #059669;
-		color: white;
-	}
-	.chip-flagged {
-		background: #fbbf24;
-		border-color: #d97706;
-		color: #78350f;
-	}
-	.chip-current {
-		box-shadow: 0 0 0 2px var(--color-primary, #1b4f72);
-	}
-
-	/* Inline dot beside the toolbar's page counter — mirrors the chip
-	   colors so the reviewer recognises the state language. */
-	.page-status-dot {
-		display: inline-block;
-		width: 0.6rem;
-		height: 0.6rem;
-		border-radius: 9999px;
-		border: 1px solid #d1d5db;
-		background: white;
-	}
-	.page-status-dot.status-in-progress {
-		background: #f59e0b;
-		border-color: #b45309;
-	}
-	.page-status-dot.status-complete {
-		background: #10b981;
-		border-color: #059669;
-	}
-	.page-status-dot.status-flagged {
-		background: #fbbf24;
-		border-color: #d97706;
-	}
-
-	/* Floating corner button — stacked above the PDF canvas on the top
-	   right of the current page. Kept small so it doesn't cover document
-	   content; the page strip is the primary overview. */
-	.page-review-actions {
-		position: absolute;
-		top: 0.5rem;
-		right: 0.5rem;
-		display: flex;
-		gap: 0.25rem;
-		z-index: 4;
-	}
-	.page-action-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25rem;
-		padding: 0.3rem 0.6rem;
-		border-radius: 9999px;
-		border: 1px solid rgba(0, 0, 0, 0.08);
-		background: rgba(255, 255, 255, 0.92);
-		backdrop-filter: blur(4px);
-		font-size: 0.75rem;
-		font-weight: 500;
-		color: #374151;
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-		cursor: pointer;
-		transition: background-color 120ms, transform 120ms;
-	}
-	.page-action-btn:hover {
-		background: white;
-		transform: translateY(-1px);
-	}
-	.page-action-mark:hover {
-		background: #ecfdf5;
-		color: #065f46;
-		border-color: #10b981;
-	}
-	.page-action-done {
-		background: #10b981;
-		color: white;
-		border-color: #059669;
-	}
-	.page-action-done:hover {
-		background: #059669;
-	}
-	.page-action-flagged {
-		background: #fbbf24;
-		color: #78350f;
-		border-color: #d97706;
-	}
-
-	/* Boundary adjustment (#11). The draft box sits above the text layer
-	   and above detection overlays so its handles are always hit-testable.
-	   The box itself is inert (pointer-events: none) — only the handles
-	   capture mouse events, so Shift/Alt+click on words underneath the
-	   box (for text-based extend/shrink) still reaches the text layer. */
-	.edit-box {
-		position: absolute;
-		z-index: 5;
-		pointer-events: none;
-		border: 2px solid var(--color-primary, #1b4f72);
-		background: rgba(27, 79, 114, 0.08);
-		border-radius: 2px;
-	}
-	.edit-handle {
-		position: absolute;
-		width: 10px;
-		height: 10px;
-		padding: 0;
-		margin: 0;
-		background: white;
-		border: 2px solid var(--color-primary, #1b4f72);
-		border-radius: 1px;
-		pointer-events: auto;
-		box-sizing: border-box;
-	}
-	/* Corner handles. Each handle is nudged so its center sits exactly on
-	   the box corner (half the handle size = 5px). */
-	.handle-nw { left: -6px; top: -6px; cursor: nwse-resize; }
-	.handle-ne { right: -6px; top: -6px; cursor: nesw-resize; }
-	.handle-se { right: -6px; bottom: -6px; cursor: nwse-resize; }
-	.handle-sw { left: -6px; bottom: -6px; cursor: nesw-resize; }
-	/* Edge handles — positioned on the midpoint of each edge. */
-	.handle-n {
-		left: 50%;
-		top: -6px;
-		transform: translateX(-50%);
-		cursor: ns-resize;
-	}
-	.handle-s {
-		left: 50%;
-		bottom: -6px;
-		transform: translateX(-50%);
-		cursor: ns-resize;
-	}
-	.handle-e {
-		right: -6px;
-		top: 50%;
-		transform: translateY(-50%);
-		cursor: ew-resize;
-	}
-	.handle-w {
-		left: -6px;
-		top: 50%;
-		transform: translateY(-50%);
-		cursor: ew-resize;
-	}
-	/* Floating Save/Cancel toolbar above the primary draft bbox. */
-	.edit-toolbar {
-		position: absolute;
-		z-index: 6;
-		display: inline-flex;
-		gap: 0.25rem;
-		padding: 0.25rem;
-		border-radius: 0.375rem;
-		background: white;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
-	}
-	.edit-toolbar-btn {
-		padding: 0.25rem 0.6rem;
-		font-size: 0.72rem;
-		font-weight: 600;
-		border-radius: 0.25rem;
-		border: 1px solid #d1d5db;
-		background: white;
-		color: #374151;
-		cursor: pointer;
-	}
-	.edit-toolbar-btn:hover {
-		background: #f3f4f6;
-	}
-	.edit-toolbar-save {
-		background: var(--color-primary, #1b4f72);
-		color: white;
-		border-color: var(--color-primary, #1b4f72);
-	}
-	.edit-toolbar-save:hover {
-		background: #143a57;
-	}
-
 	/* Undo/redo flash (#08). A short yellow pulse applied to a detection
 	   overlay by `flashDetections()`. CSS-only — the class removes itself
 	   on animationend, no JS timer bookkeeping. */
@@ -1612,10 +1080,14 @@
 	}
 	@keyframes overlay-selected-pulse {
 		0% {
-			box-shadow: 0 0 0 0 rgba(27, 79, 114, 0.7), 0 0 0 0 rgba(27, 79, 114, 0.45);
+			box-shadow:
+				0 0 0 0 rgba(27, 79, 114, 0.7),
+				0 0 0 0 rgba(27, 79, 114, 0.45);
 		}
 		60% {
-			box-shadow: 0 0 0 6px rgba(27, 79, 114, 0.0), 0 0 0 14px rgba(27, 79, 114, 0.18);
+			box-shadow:
+				0 0 0 6px rgba(27, 79, 114, 0),
+				0 0 0 14px rgba(27, 79, 114, 0.18);
 		}
 		100% {
 			box-shadow: 0 0 0 6px rgba(27, 79, 114, 0.18);

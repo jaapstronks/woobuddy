@@ -133,7 +133,7 @@ async def test_pipeline_publiek_functionaris_rule_fires():
     text = "Wethouder Jan de Vries ondertekent het besluit namens de gemeente."
     extraction = _make_extraction(text)
 
-    result = await run_pipeline(extraction, use_llm_verification=False)
+    result = await run_pipeline(extraction)
 
     persons = [d for d in result.detections if d.entity_type == "persoon"]
     assert persons, "expected Deduce to detect a persoon in the input"

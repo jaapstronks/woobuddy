@@ -95,8 +95,10 @@ class DetectionResponse(BaseModel):
     original_bounding_boxes: list[BoundingBoxResponse] | None = None
     reasoning: str | None
     # #19 — pipeline label, surfaced in the redaction log table and filter
-    # bar. Auto rows are `regex`/`deduce`/`llm`; reviewer-authored rows are
-    # `manual` or `search_redact`.
+    # bar. Auto rows are `regex`/`deduce`/`rule`/`structure`/`custom_wordlist`/
+    # `whitelist_gemeente`/`reference_list`; reviewer-authored rows are
+    # `manual` or `search_redact`. (`llm` is legacy — kept in the frontend
+    # status map so historical rows still render correctly.)
     source: str = "regex"
     propagated_from: uuid.UUID | None
     reviewer_id: str | None
@@ -289,3 +291,38 @@ class CustomTermResponse(BaseModel):
     match_mode: CustomTermMatchModeLiteral
     woo_article: str
     created_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Leads (#45 — email capture for public launch without auth)
+# ---------------------------------------------------------------------------
+
+
+LeadSourceLiteral = Literal["landing", "post-export"]
+
+
+class LeadCreate(BaseModel):
+    """Payload for the public lead-capture form.
+
+    All optional fields are strings rather than nullable types because an
+    HTML form sends `""` for empty inputs; the server coerces blanks to
+    None before persisting.
+    """
+
+    email: str
+    name: str | None = None
+    organization: str | None = None
+    message: str | None = None
+    source: LeadSourceLiteral
+    consent: bool
+
+
+class LeadResponse(BaseModel):
+    """Deliberately opaque response.
+
+    We return the same shape for a fresh insert and a duplicate submission
+    so the form can't be used to probe whether an address is already on
+    the list. No id, no timestamp — just `{ok: true}`.
+    """
+
+    ok: bool = True

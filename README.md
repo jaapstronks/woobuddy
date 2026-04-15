@@ -28,7 +28,7 @@ PDF's verlaten nooit de browser van de gebruiker. De server slaat geen documenti
 - **Backend**: FastAPI, PyMuPDF, Deduce (Nederlandse NER), SQLAlchemy v2
 - **Infrastructuur**: PostgreSQL 16 (alleen metadata), Docker Compose
 
-> De LLM-laag (Ollama + Gemma) in `backend/app/llm/` is sinds april 2026 dormant. De code blijft in de repo staan als geparkeerd pad voor toekomstig experiment, maar wordt niet aangeroepen in het actieve detectiepad. Zie `backend/app/llm/README.md`.
+> Er zit **geen taalmodel in de codebase**. De Ollama/Gemma-laag is in april 2026 volledig verwijderd. Wie later ooit een lokale LLM-stap wil terugbrengen (alleen lokaal, bijvoorbeeld Ollama + Google Gemma) moet beginnen bij `docs/reference/llm-revival.md`.
 
 ---
 

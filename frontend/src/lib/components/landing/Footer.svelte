@@ -25,11 +25,8 @@
 			</nav>
 		</div>
 
-		<div class="mt-10 flex flex-col gap-2 border-t border-border pt-6 text-xs text-ink-mute sm:flex-row sm:items-center sm:justify-between">
+		<div class="mt-10 border-t border-border pt-6 text-xs text-ink-mute">
 			<p>MIT License · WOO Buddy</p>
-			<p>
-				Niet gelieerd aan de Rijksoverheid. Een onafhankelijk burgerinitiatief.
-			</p>
 		</div>
 	</div>
 </footer>

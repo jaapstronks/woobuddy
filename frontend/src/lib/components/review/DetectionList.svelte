@@ -139,11 +139,14 @@
 		return String(Math.min(...pages) + 1);
 	}
 
-	// Scroll selected card into view
+	// Scroll selected card into view. `block: 'center'` (instead of 'nearest')
+	// so that clicking a highlight in the PDF reliably reveals the matching
+	// sidebar card — 'nearest' was a no-op whenever the card was already
+	// partially visible, which made the scroll feel broken.
 	$effect(() => {
 		if (selectedId) {
 			const el = document.querySelector(`[data-detection-id="${selectedId}"]`);
-			el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+			el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 		}
 	});
 </script>

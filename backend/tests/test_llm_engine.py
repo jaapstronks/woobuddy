@@ -1,13 +1,9 @@
-"""Tests for the LLM engine — pipeline orchestration.
+"""Tests for the detection pipeline orchestration.
 
-The LLM verification layer is dormant by default (pivot 2026-04, see
-`backend/app/llm/README.md`). These tests pass `use_llm_verification=False`
-explicitly so the assertions are stable regardless of the global flag.
-The LLM verification path itself is exercised in
-test_llm_verification.py with a mocked provider.
+The pipeline is 100% rule-based — no LLM anywhere in the live path.
+See `docs/reference/llm-revival.md` if you want to revive a local
+LLM verification pass in the future.
 """
-
-import sys
 
 import pytest
 
@@ -84,7 +80,7 @@ class TestRunPipeline:
         """Tier 1 detections from regex should be auto_accepted."""
         extraction = _make_extraction("Het BSN is 111222333 in dit document.")
 
-        result = await run_pipeline(extraction, use_llm_verification=False)
+        result = await run_pipeline(extraction)
         tier1 = [d for d in result.detections if d.tier == "1"]
         assert len(tier1) >= 1
         for d in tier1:
@@ -97,7 +93,7 @@ class TestRunPipeline:
             "De heer Jan de Vries heeft een verzoek ingediend bij de gemeente."
         )
 
-        result = await run_pipeline(extraction, use_llm_verification=False)
+        result = await run_pipeline(extraction)
         persons = [d for d in result.detections if d.entity_type == "persoon"]
         assert len(persons) >= 1
         for p in persons:
@@ -116,7 +112,6 @@ class TestRunPipeline:
         result = await run_pipeline(
             extraction,
             public_official_names=["Jan de Vries"],
-            use_llm_verification=False,
         )
         persons = [d for d in result.detections if d.entity_type == "persoon"]
         jan = [p for p in persons if "Jan de Vries" in p.entity_text]
@@ -133,7 +128,6 @@ class TestRunPipeline:
         result = await run_pipeline(
             extraction,
             public_official_names=["jan de vries"],
-            use_llm_verification=False,
         )
         persons = [d for d in result.detections if d.entity_type == "persoon"]
         jan = [p for p in persons if "jan de vries" in p.entity_text.lower()]
@@ -147,21 +141,21 @@ class TestRunPipeline:
             "De luchtkwaliteit in het plangebied is onderzocht. BSN: 111222333."
         )
 
-        result = await run_pipeline(extraction, use_llm_verification=False)
+        result = await run_pipeline(extraction)
         assert result.has_environmental_content is True
 
     @pytest.mark.asyncio
     async def test_no_environmental_flag_for_normal_text(self):
         extraction = _make_extraction("BSN: 111222333 in een ambtelijk document.")
 
-        result = await run_pipeline(extraction, use_llm_verification=False)
+        result = await run_pipeline(extraction)
         assert result.has_environmental_content is False
 
     @pytest.mark.asyncio
     async def test_page_count_from_extraction(self):
         extraction = _make_extraction("Tekst", page_count=5)
 
-        result = await run_pipeline(extraction, use_llm_verification=False)
+        result = await run_pipeline(extraction)
         assert result.page_count == 5
 
     @pytest.mark.asyncio
@@ -169,7 +163,7 @@ class TestRunPipeline:
         """Detections should have bounding boxes from the extraction spans."""
         extraction = _make_extraction("BSN: 111222333")
 
-        result = await run_pipeline(extraction, use_llm_verification=False)
+        result = await run_pipeline(extraction)
         bsn_dets = [d for d in result.detections if d.entity_type == "bsn"]
         # bboxes may be empty if span text doesn't match — but the list should exist
         for d in bsn_dets:
@@ -179,7 +173,7 @@ class TestRunPipeline:
     async def test_empty_text_returns_empty_result(self):
         extraction = _make_extraction("")
 
-        result = await run_pipeline(extraction, use_llm_verification=False)
+        result = await run_pipeline(extraction)
         assert len(result.detections) == 0
 
     @pytest.mark.asyncio
@@ -189,7 +183,7 @@ class TestRunPipeline:
             "De heer Jan de Vries, BSN 111222333, heeft een klacht ingediend."
         )
 
-        result = await run_pipeline(extraction, use_llm_verification=False)
+        result = await run_pipeline(extraction)
         tiers = {d.tier for d in result.detections}
         assert "1" in tiers
         assert "2" in tiers
@@ -222,7 +216,6 @@ class TestCustomWordlist:
         result = await run_pipeline(
             extraction,
             custom_terms=[_CustomTerm("Project Apollo", woo_article="5.1.2b")],
-            use_llm_verification=False,
         )
         customs = [d for d in result.detections if d.entity_type == "custom"]
         assert len(customs) == 2
@@ -238,7 +231,6 @@ class TestCustomWordlist:
         result = await run_pipeline(
             extraction,
             custom_terms=[_CustomTerm("Project Apollo")],
-            use_llm_verification=False,
         )
         customs = [d for d in result.detections if d.entity_type == "custom"]
         assert len(customs) == 1
@@ -249,32 +241,5 @@ class TestCustomWordlist:
         result = await run_pipeline(
             extraction,
             custom_terms=[],
-            use_llm_verification=False,
         )
         assert not any(d.entity_type == "custom" for d in result.detections)
-
-
-# ---------------------------------------------------------------------------
-# Dormant LLM layer — default pipeline must not touch `app.llm.ollama`
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_default_pipeline_does_not_import_ollama_provider():
-    """With `llm_tier2_enabled=False` (the default), the dormant path
-    must not pull in `app.llm.ollama` — the revival-only module that
-    instantiates the HTTP client. If this assertion fails, something in
-    the live pipeline is touching the parked revival code.
-    """
-    # Clear any previously-cached import so the assertion is meaningful.
-    sys.modules.pop("app.llm.ollama", None)
-
-    extraction = _make_extraction(
-        "De heer Jan de Vries, BSN 111222333, heeft een klacht ingediend."
-    )
-    # Deliberately omit `use_llm_verification` so the flag default is used.
-    await run_pipeline(extraction)
-
-    assert "app.llm.ollama" not in sys.modules, (
-        "Dormant default pipeline must not import app.llm.ollama"
-    )

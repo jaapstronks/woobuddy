@@ -32,12 +32,17 @@ _VOORNAMEN_FILE = _DATA_DIR / "Top_eerste_voornamen_NL_2017.csv"
 _ACHTERNAMEN_FILE = _DATA_DIR / "cbs_achternamen.csv"
 
 
-# Dutch naamvoorvoegsels ("tussenvoegsels"). A surname may legitimately
-# start with one of these — e.g. "Van den Berg" — so we strip them
-# before the surname lookup while still accepting the span as a
-# potential name. Kept as a space-joined string so multi-word
-# tussenvoegsels like "van den", "op de" match too.
+# Dutch naamvoorvoegsels ("tussenvoegsels") plus a pragmatic set of
+# non-Dutch particles that routinely precede surnames in Woo documents
+# (see todo #48 — Woo-stukken name residents, ambtenaren, and
+# inspraak-deelnemers with Arabic, Italian, Portuguese, German, … roots).
+# A surname may legitimately start with one of these — e.g. "Van den
+# Berg", "El Khatib", "Da Silva" — so we strip them before the surname
+# lookup while still accepting the span as a potential name. Kept as
+# space-joined strings so multi-word tussenvoegsels like "van den" or
+# "de la" match too.
 _TUSSENVOEGSELS_RAW: tuple[str, ...] = (
+    # Dutch
     "van",
     "van den",
     "van der",
@@ -62,6 +67,37 @@ _TUSSENVOEGSELS_RAW: tuple[str, ...] = (
     "in 't",
     "in de",
     "in den",
+    # Arabic / Maghrebi (todo #48). "El" / "Al" before a capitalized
+    # surname ("El Khatib", "Al Hassan") needs to be skipped or the CBS
+    # lookup lands on the particle instead of the real surname.
+    "el",
+    "al",
+    "abu",
+    "abd",
+    "ben",
+    "bin",
+    "ibn",
+    # Italian / Portuguese / Brazilian
+    "da",
+    "do",
+    "dos",
+    "das",
+    "di",
+    "del",
+    "della",
+    "dal",
+    "lo",
+    "la",
+    # Spanish — "de" already covered, add the multi-word forms.
+    "de la",
+    "de los",
+    "de las",
+    # German — "von der" mirrors "van der".
+    "von",
+    "von der",
+    "von den",
+    "zu",
+    "vom",
 )
 
 

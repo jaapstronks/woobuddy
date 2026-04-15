@@ -70,8 +70,18 @@ _IBAN_PATTERN = re.compile(
 # fails to match "op +31...". International patterns use explicit
 # `(?<!\w)` / `(?!\w)` lookarounds instead.
 _PHONE_PATTERNS = [
-    re.compile(r"\b(0[1-9]\d{1,2}[-\s]?\d{6,7})\b"),  # landline: 020-1234567
-    re.compile(r"\b(06[-\s]?\d{8})\b"),  # mobile: 06-12345678
+    re.compile(r"\b(0[1-9]\d{1,2}[-\s]?\d{6,7})\b"),  # landline: 020-1234567 / 020 1234567
+    # Grouped landline layouts that briefings, letterheads, and municipal
+    # sites tend to use. Each alternation enforces a specific digit layout
+    # so the total always sums to exactly 10 digits — keeps the regex tight
+    # enough to avoid matching random numeric runs.
+    re.compile(r"\b(0[1-9]\d[-\s]\d{3}[-\s]\d{2}[-\s]\d{2})\b"),  # 071 516 50 00 (3+3+2+2)
+    re.compile(r"\b(0[1-9]\d[-\s]\d{3}[-\s]\d{4})\b"),  # 071 516 5000 (3+3+4)
+    re.compile(r"\b(0[1-9]\d{2}[-\s]\d{2}[-\s]\d{2}[-\s]\d{2})\b"),  # 0412 12 34 56 (4+2+2+2)
+    re.compile(r"\b(0[1-9]\d{2}[-\s]\d{3}[-\s]\d{3})\b"),  # 0412 123 456 (4+3+3)
+    re.compile(r"\b(06[-\s]?\d{8})\b"),  # mobile: 06-12345678 / 06 12345678
+    re.compile(r"\b(06[-\s]\d{4}[-\s]\d{4})\b"),  # 06 1234 5678 (mobile grouped)
+    re.compile(r"\b(06[-\s]\d{2}[-\s]\d{2}[-\s]\d{2}[-\s]\d{2})\b"),  # 06 12 34 56 78
     # International mobile: +31 6 12345678, +316-12345678, +31612345678
     re.compile(r"(?<!\w)(\+31[-\s]?6[-\s]?\d{8})(?!\w)"),
     # International landline with any grouping of spaces/dashes:
@@ -136,6 +146,15 @@ _GEBOORTEDATUM_ANCHOR_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _GEBOORTEDATUM_WINDOW_CHARS = 20
+
+# Tier 2 `datum` filter: Deduce flags every date it finds as a possible
+# geboortedatum, but in Woo documents plain dates are overwhelmingly event
+# dates (meeting dates, letter dates, request dates). If the year is within
+# the last few years the subject would be a toddler and almost never appears
+# by name — so we drop it. Genuine recent birth dates with an explicit
+# anchor word are still caught by the Tier 1 path above.
+_RECENT_DATE_MIN_BIRTH_AGE_YEARS = 2
+_DATE_YEAR_PATTERN = re.compile(r"\b(19|20)\d{2}\b")
 
 # Dutch month names (and a few English ones that show up in bilingual
 # templates). Order matters in the alternation: longer forms first so
@@ -705,13 +724,298 @@ def _is_plausible_person_name(text: str) -> bool:
     return not (len(original_tokens) >= 2 and len(last) == 1 and last.isalpha())
 
 
+# ---------------------------------------------------------------------------
+# Title-prefix rule (#48) — catch names whose surname is NOT in CBS.
+#
+# Deduce + the CBS achternamenlijst handle "W. de Groot" well, but they
+# silently miss common non-Dutch surnames ("El Khatib", "Bekir Yılmaz",
+# "Agnieszka Kowalski") because those tokens are absent from CBS. The
+# fix is a second rule path: when a Dutch salutation / family anchor
+# immediately precedes one or more capitalized tokens, treat the
+# sequence as a person name regardless of the CBS lookup.
+#
+# Anchors are *salutations*, not function titles. The publiek-
+# functionaris filter (#13) still runs on the full pipeline, so
+# "burgemeester Rutte" continues to be suppressed — this rule
+# intentionally does not fire on functietitels. Confidence is lower
+# (0.75 vs 0.90 on a CBS hit) because the false-positive potential is
+# higher.
+# ---------------------------------------------------------------------------
+
+# Salutation / family anchors. Case-insensitive whole-word match, with a
+# required trailing whitespace so we don't match inside bigger words.
+# Listed longest first so "de familie" wins over "familie" when both
+# would apply. `(?<![\w'])` anchors the left edge without requiring a
+# word character boundary (which would fail after punctuation).
+_TITLE_ANCHOR_PATTERN = re.compile(
+    r"(?<![\w'])"
+    r"(?:"
+    r"de\s+familie|de\s+heer|"
+    r"dhr\.|mevr\.|mw\.|mr\.|drs\.|prof\.|dr\.|"
+    r"mevrouw|meneer|familie"
+    r")"
+    r"(?=\s)",
+    re.IGNORECASE,
+)
+
+# Characters after a title that we step over before scanning for name
+# tokens. Generous enough to cover "dhr., " or "mevr.\n" spacing.
+_TITLE_SCAN_WINDOW_CHARS = 80
+
+# A "capitalized name token" — leading uppercase letter (ASCII or
+# Latin-1 Supplement), followed by letters / apostrophes / hyphens.
+# `İ` (Turkish dotted I) and similar are handled via the NFKD-stripped
+# comparison in `_is_plausible_person_name`, not this regex.
+_NAME_CAP_TOKEN = re.compile(r"[A-ZÀ-Þ][A-Za-zÀ-ÿ'\-]+")
+
+# A "name token" in general: either an initial ("W.", "A.M."), a
+# lowercase-led tussenvoegsel candidate, or a capitalized token.
+# Tokenization is whitespace-delimited; the caller strips trailing
+# sentence punctuation for everything except initials (where the
+# trailing period is load-bearing).
+_NAME_INITIAL = re.compile(r"(?:[A-Z]\.)+")
+_NAME_TRAILING_PUNCT = ",.;:!?)]}"
+
+
+def _detect_persoon_via_title_prefix(
+    text: str,
+    name_lists: NameLists,
+) -> list[NERDetection]:
+    """Emit Tier 2 `persoon` detections via the salutation + capitals rule.
+
+    For each salutation anchor in `text`, walk forward past optional
+    initials and tussenvoegsels, then consume capitalized tokens. The
+    emitted span covers the name portion only — the anchor itself is
+    excluded (same slicing convention as the CBS / Deduce hits).
+
+    The result is a list of `NERDetection` with:
+    - `entity_type="persoon"`, `tier="2"`
+    - `confidence=0.75`
+    - `source="title_rule"`
+    - `reasoning="Naam herkend via titel + hoofdlettersequentie (niet in CBS-lijst)."`
+
+    Caller is responsible for overlap-deduping against higher-confidence
+    Deduce hits — see `detect_tier2`.
+    """
+    tussen_single = name_lists.tussenvoegsels
+    tussen_sequences = name_lists.tussenvoegsel_sequences
+    max_seq_len = max((len(s) for s in tussen_sequences), default=0)
+
+    detections: list[NERDetection] = []
+
+    for anchor in _TITLE_ANCHOR_PATTERN.finditer(text):
+        scan_start = anchor.end()
+        scan_end = min(len(text), scan_start + _TITLE_SCAN_WINDOW_CHARS)
+        window = text[scan_start:scan_end]
+
+        # Tokenize by whitespace, keeping absolute char offsets.
+        # Initials ("W.") keep their trailing period — stripping it
+        # would turn them into bare capitals that no longer match the
+        # initial pattern. Every other trailing sentence punctuation
+        # mark is peeled off so "Khatib," / "Kowalski." still parse.
+        tokens: list[tuple[str, int, int]] = []
+        for m in re.finditer(r"\S+", window):
+            raw = m.group(0)
+            raw_clean = raw if _NAME_INITIAL.fullmatch(raw) else raw.rstrip(_NAME_TRAILING_PUNCT)
+            if not raw_clean:
+                continue
+            tokens.append(
+                (
+                    raw_clean,
+                    scan_start + m.start(),
+                    scan_start + m.start() + len(raw_clean),
+                )
+            )
+
+        if not tokens:
+            continue
+
+        span_start: int | None = None
+        span_end: int | None = None
+        has_capitalized = False
+        i = 0
+
+        while i < len(tokens):
+            tok, tok_start, tok_end = tokens[i]
+
+            # Multi-token tussenvoegsel sequence ("van den", "de la", …).
+            matched_seq = False
+            if max_seq_len >= 2 and len(tokens) - i >= 2:
+                for seq_len in range(min(max_seq_len, len(tokens) - i), 1, -1):
+                    window_tup = tuple(tokens[i + k][0].lower() for k in range(seq_len))
+                    if window_tup in tussen_sequences:
+                        if span_start is None:
+                            span_start = tok_start
+                        span_end = tokens[i + seq_len - 1][2]
+                        i += seq_len
+                        matched_seq = True
+                        break
+            if matched_seq:
+                continue
+
+            # Initial: "W.", "A."
+            if _NAME_INITIAL.fullmatch(tok):
+                if span_start is None:
+                    span_start = tok_start
+                span_end = tok_end
+                i += 1
+                continue
+
+            # Single-token tussenvoegsel ("de", "van", "el", "di", …).
+            if tok.lower() in tussen_single:
+                if span_start is None:
+                    span_start = tok_start
+                span_end = tok_end
+                i += 1
+                continue
+
+            # Capitalized name token ("Khatib", "Yılmaz", "Kowalski").
+            if _NAME_CAP_TOKEN.fullmatch(tok):
+                has_capitalized = True
+                if span_start is None:
+                    span_start = tok_start
+                span_end = tok_end
+                i += 1
+                continue
+
+            # Anything else (lowercase non-tussenvoegsel, digits, …): stop.
+            break
+
+        if not has_capitalized or span_start is None or span_end is None:
+            continue
+
+        name_text = text[span_start:span_end]
+
+        # Sanity filter — reuses the Deduce heuristic so "de heer
+        # Voorzitter" / organisation-keyword false positives are dropped
+        # here too.
+        if not _is_plausible_person_name(name_text):
+            continue
+
+        detections.append(
+            NERDetection(
+                text=name_text,
+                entity_type="persoon",
+                tier="2",
+                confidence=0.75,
+                woo_article="5.1.2e",
+                source="title_rule",
+                start_char=span_start,
+                end_char=span_end,
+                reasoning=("Naam herkend via titel + hoofdlettersequentie (niet in CBS-lijst)."),
+            )
+        )
+
+    # Drop any detection whose span is fully contained within another
+    # title-rule detection. Stacked anchors ("dhr. dr. Prof. Henk de
+    # Vries") would otherwise emit "Prof. Henk de Vries" AND "Henk de
+    # Vries" — keep the outermost span so the reviewer sees one card.
+    if len(detections) > 1:
+        kept: list[NERDetection] = []
+        for d in sorted(
+            detections,
+            key=lambda x: (x.start_char, -(x.end_char - x.start_char)),
+        ):
+            if any(k.start_char <= d.start_char and k.end_char >= d.end_char for k in kept):
+                continue
+            kept.append(d)
+        detections = kept
+
+    return detections
+
+
+# --- Huisnummer / residence-cued "nummer N" (#51) ---------------------
+#
+# Woo documents routinely anonymize partially: the street is dropped
+# but "(huisnummer 22)" or "bewoner van nummer 26" stays in the prose.
+# When the street name is mentioned elsewhere in the document, those
+# bare numbers are directly identifying — exactly the contextual PII
+# Tier 2 `adres` is meant to cover. Deduce's built-in `huisnummer` tag
+# only fires when there is already a street token adjacent to the
+# number, so it misses these partially-anonymized cases entirely.
+#
+# `huisnummer N` always fires — the literal word is effectively
+# unambiguous in Dutch government prose. The whole phrase is the span
+# so the redacted output reads "mevrouw T. Bakker (███)" instead of
+# leaking the category with "huisnummer ███".
+#
+# `nummer N` is gated on a residence cue (`bewoner`, `woont`,
+# `woonachtig`) to keep `zaaknummer`, `dossiernummer`, `volgnummer`,
+# `artikelnummer`, etc. out of the review list. The emitted span
+# covers only "nummer N" so "bewoner van ███ heeft ingediend" still
+# conveys "a resident filed this" without naming the residence.
+_HUISNUMMER_PATTERN = re.compile(
+    r"\bhuisnummer\s+\d{1,4}[a-zA-Z]?\b",
+    re.IGNORECASE,
+)
+
+_RESIDENCE_NUMMER_PATTERN = re.compile(
+    r"\b(?:bewoners?\s+(?:van\s+)?|woon(?:t|achtig)\s+op\s+)"
+    r"(nummer\s+\d{1,4}[a-zA-Z]?)\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_adres_by_huisnummer(text: str) -> list[NERDetection]:
+    """Emit Tier 2 `adres` detections for `huisnummer N` and
+    residence-cued `nummer N` fragments that Deduce misses in
+    partially-anonymized Woo prose.
+
+    These are Tier 2 because the number alone is only identifying in
+    context (when the street is mentioned elsewhere in the document).
+    Review default is `pending` — reviewer confirms or rejects.
+    """
+    detections: list[NERDetection] = []
+
+    for m in _HUISNUMMER_PATTERN.finditer(text):
+        detections.append(
+            NERDetection(
+                text=m.group(0),
+                entity_type="adres",
+                tier="2",
+                confidence=0.85,
+                woo_article="5.1.2e",
+                source="regex",
+                start_char=m.start(),
+                end_char=m.end(),
+                reasoning=(
+                    "Huisnummer in tekst — in combinatie met een straatnaam "
+                    "elders in het document herleidbaar tot een woonadres."
+                ),
+            )
+        )
+
+    for m in _RESIDENCE_NUMMER_PATTERN.finditer(text):
+        # Span covers only the `nummer N` group, not the preceding
+        # "bewoner van" / "woont op". Leaving the cue in place keeps
+        # the redacted sentence readable.
+        inner_start = m.start(1)
+        inner_end = m.end(1)
+        detections.append(
+            NERDetection(
+                text=text[inner_start:inner_end],
+                entity_type="adres",
+                tier="2",
+                confidence=0.80,
+                woo_article="5.1.2e",
+                source="regex",
+                start_char=inner_start,
+                end_char=inner_end,
+                reasoning=(
+                    "Huisnummer met bewonerscontext — mogelijk woonadres."
+                ),
+            )
+        )
+
+    return detections
+
+
 def detect_tier2(text: str) -> list[NERDetection]:
     """Detect Tier 2 contextual personal data using Deduce NER."""
     deduce = _get_deduce()
     doc = deduce.deidentify(text)
     name_lists = _get_name_lists()
     detections: list[NERDetection] = []
-
     for annotation in doc.annotations:
         tag = annotation.tag.lower()
         entity_type = _DEDUCE_TAG_MAP.get(tag, tag)
@@ -781,6 +1085,16 @@ def detect_tier2(text: str) -> list[NERDetection]:
             woo_article = "5.1.2e"
             reasoning = "Adres gedetecteerd — mogelijk woonadres."
         elif entity_type == "datum":
+            # Drop dates too recent to plausibly be a birth date of anyone
+            # named in a Woo document — they're almost always event dates
+            # (meeting, letter, request). Tier 1 still catches explicit
+            # `geboortedatum:`-anchored dates regardless of year.
+            year_match = _DATE_YEAR_PATTERN.search(annotation.text)
+            if year_match is not None:
+                year = int(year_match.group(0))
+                cutoff_year = datetime.date.today().year - _RECENT_DATE_MIN_BIRTH_AGE_YEARS
+                if year >= cutoff_year:
+                    continue
             confidence = 0.60
             woo_article = "5.1.2e"
             reasoning = "Datum gedetecteerd — mogelijk geboortedatum."
@@ -807,21 +1121,92 @@ def detect_tier2(text: str) -> list[NERDetection]:
             )
         )
 
+    # Huisnummer rule (#51) — catches `huisnummer N` and residence-cued
+    # `nummer N` fragments that Deduce does not emit when the street
+    # token is absent. Run after the Deduce pass so we can drop any
+    # Deduce adres hit that falls fully inside a new huisnummer span
+    # (prevents double cards on the same passage).
+    huisnummer_hits = _detect_adres_by_huisnummer(text)
+    if huisnummer_hits:
+        hn_ranges = [(h.start_char, h.end_char) for h in huisnummer_hits]
+        detections = [
+            d
+            for d in detections
+            if not (
+                d.entity_type == "adres"
+                and any(
+                    start <= d.start_char and end >= d.end_char
+                    for start, end in hn_ranges
+                )
+            )
+        ]
+        detections.extend(huisnummer_hits)
+
+    # Title-prefix rule (#48) — catches non-Dutch surnames that Deduce
+    # produces but the CBS name-list filter drops (e.g. "El Khatib",
+    # "Yılmaz", "Kowalski"). Runs on the same text and is filtered
+    # against existing `persoon` hits so a Deduce + CBS win is never
+    # demoted to the title rule's lower 0.75 confidence.
+    title_hits = _detect_persoon_via_title_prefix(text, name_lists)
+    if title_hits:
+        existing_person_ranges = [
+            (d.start_char, d.end_char) for d in detections if d.entity_type == "persoon"
+        ]
+        for th in title_hits:
+            overlaps = any(
+                th.start_char < end and th.end_char > start for start, end in existing_person_ranges
+            )
+            if overlaps:
+                logger.debug(
+                    "ner.title_rule_dropped_overlap",
+                    start=th.start_char,
+                    end=th.end_char,
+                )
+                continue
+            detections.append(th)
+
     return _deduplicate(detections)
 
 
 def detect_all(text: str) -> list[NERDetection]:
-    """Run both Tier 1 and Tier 2 detection, with confidence boosting."""
+    """Run both Tier 1 and Tier 2 detection.
+
+    Tier 1 regex identifiers (postcode, telefoon, IBAN, …) take precedence
+    over Tier 2 Deduce hits at the same char range. Deduce frequently
+    re-tags a postcode as an "adres" span, producing two detections for
+    the same text — one auto-redacted (Tier 1 black) and one pending
+    (Tier 2 amber). The reviewer then rejects the Tier 2 card but the
+    Tier 1 overlay stays dark, giving the misleading impression the
+    rejection did not take. Dropping the Tier 2 duplicate here is the
+    quietest fix — the Tier 1 detection is already authoritative and
+    comes with a stronger review_status anyway.
+    """
     tier1 = detect_tier1(text)
     tier2 = detect_tier2(text)
 
-    # Confidence boosting: if both Tier 1 and Tier 2 find the same text, boost
-    tier1_texts = {d.text.lower() for d in tier1}
-    for d in tier2:
-        if d.text.lower() in tier1_texts:
-            d.confidence = min(d.confidence + 0.10, 1.0)
+    # Build a set of char ranges occupied by Tier 1 detections. Equality is
+    # fine for the dedupe: Deduce reports its `locatie` span for a postcode
+    # using the exact same char offsets as the Tier 1 regex.
+    tier1_ranges: set[tuple[int, int]] = {(d.start_char, d.end_char) for d in tier1}
+    tier1_lower_texts = {d.text.lower() for d in tier1}
 
-    return tier1 + tier2
+    deduped_tier2: list[NERDetection] = []
+    for d in tier2:
+        if (d.start_char, d.end_char) in tier1_ranges:
+            logger.debug(
+                "ner.tier2_dropped_duplicate_of_tier1",
+                entity_type=d.entity_type,
+                start_char=d.start_char,
+                end_char=d.end_char,
+            )
+            continue
+        if d.text.lower() in tier1_lower_texts:
+            # Same text at a different char offset — still the same piece
+            # of PII, just matched twice. Boost confidence and keep.
+            d.confidence = min(d.confidence + 0.10, 1.0)
+        deduped_tier2.append(d)
+
+    return tier1 + deduped_tier2
 
 
 def _deduplicate(detections: list[NERDetection]) -> list[NERDetection]:

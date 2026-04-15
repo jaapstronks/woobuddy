@@ -1,10 +1,12 @@
 # 26 — Draft Preview & Side-by-Side
 
-- **Priority:** P2
+- **Priority:** P2 — blocked on team-pilot demand signal (see README Phase F)
 - **Size:** M (1–3 days)
 - **Source:** Draft Workflow briefing, "Draft preview" + "Side-by-side mode" sections
-- **Depends on:** #25 (Document lifecycle — draft status)
+- **Depends on:** #25 (Document lifecycle — draft status), **and a real team pilot asking for it**
 - **Blocks:** #27 (Draft comments)
+
+> **Do not start this before Phase D's public launch + validation decision gate.** "Draft preview" only matters when a second person reviews your draft — solo users just export when ready. See README "GTM & launch sequencing."
 
 ## Why
 

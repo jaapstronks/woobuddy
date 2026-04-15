@@ -79,7 +79,6 @@ class TestPipelineReferenceList:
         result = await run_pipeline(
             extraction,
             public_official_names=["Jan de Vries"],
-            use_llm_verification=False,
         )
         persons = [d for d in result.detections if d.entity_type == "persoon"]
         jan = [p for p in persons if "Jan de Vries" in p.entity_text]
@@ -102,7 +101,6 @@ class TestPipelineReferenceList:
         result = await run_pipeline(
             extraction,
             public_official_names=["de Vries"],
-            use_llm_verification=False,
         )
         persons = [d for d in result.detections if d.entity_type == "persoon"]
         assert any(p.review_status == "rejected" and p.source == "reference_list" for p in persons)
@@ -113,7 +111,6 @@ class TestPipelineReferenceList:
         result = await run_pipeline(
             extraction,
             public_official_names=[],
-            use_llm_verification=False,
         )
         persons = [d for d in result.detections if d.entity_type == "persoon"]
         # At least one Jan-de-Vries detection should exist and NOT be flipped

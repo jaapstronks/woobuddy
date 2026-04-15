@@ -12,7 +12,7 @@ dependencies = [
     "pymupdf>=1.25.0",
     # Dutch NER / de-identification
     "deduce>=3.0.0",
-    # LLM providers (local Ollama only)
+    # HTTP client (used by the Brevo leads integration)
     "httpx>=0.28.0",
     # Database
     "sqlalchemy[asyncio]>=2.0.0",

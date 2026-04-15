@@ -1,10 +1,10 @@
 # WOO Buddy — Todo Backlog
 
-> **2026-04 pivot — "dormant LLM, regex-first"** — The backlog was rewritten to reflect the decision to remove the LLM from the live detection pipeline and lean on regex + Dutch wordlists + structure heuristics instead. Core redaction UX still comes first, then polish, then the SaaS layer. See "Guiding philosophy" below and `docs/reference/woo-redactietool-analyse.md` for the rationale.
+> **2026-04 pivot — "no LLM, regex-first"** — The backlog was rewritten to reflect the decision to remove the LLM from the detection pipeline and lean on regex + Dutch wordlists + structure heuristics instead. Core redaction UX still comes first, then polish, then the SaaS layer. See "Guiding philosophy" below and `docs/reference/woo-redactietool-analyse.md` for the rationale.
 
 ## Guiding philosophy
 
-**1. No LLM in the live pipeline.** Detection is regex + Deduce NER + Meertens/CBS wordlists + structure heuristics (e-mailheaders, handtekeningblokken, aanhef) + a rule-based public-official filter. The Ollama/Gemma layer under `backend/app/llm/` is dormant behind a flag — kept in-tree as a parked revival path, never called on the default code path. The value of the tool is the review workflow, not a smarter model. See `docs/reference/woo-redactietool-analyse.md`.
+**1. No LLM in the codebase.** Detection is regex + Deduce NER + Meertens/CBS wordlists + structure heuristics (e-mailheaders, handtekeningblokken, aanhef) + a rule-based public-official filter. The Ollama/Gemma layer was removed entirely in April 2026 — there is no dormant code in the tree. The value of the tool is the review workflow, not a smarter model. See `docs/reference/woo-redactietool-analyse.md` for the rationale and `docs/reference/llm-revival.md` for the constraints on any future revival.
 
 **2. Core functionality first.** The prototype has to feel great at the one thing it does: helping a Woo reviewer redact a document. Manual text selection, area selection, undo, search-and-redact, and page completeness are done. The next detection work is beefing up the rule-based layer (todos #12–#16) and the UX that leans on it (#17, #19, #20, #21) — this is what compensates for removing the LLM.
 
@@ -95,10 +95,13 @@ This phase turns the viewer into an actual editing tool and beefs up the rule-ba
 | 16 | ~~[Tier 1 gaps: KvK, BTW, geboortedatum](done/16-tier1-gaps.md)~~ | P2 | S | Pivot 2026-04 |
 | 17 | ~~[Publieke functionarissen referentielijst (per-document)](done/17-publieke-functionarissen-referentielijst.md)~~ | P2 | M | Pivot 2026-04 |
 | 18 | ~~[Split and merge detections](done/18-split-merge.md)~~ | P3 | M | Editing |
+| 48 | ~~[Non-Dutch surname coverage for Tier 2 persoon](done/48-non-dutch-surnames.md)~~ | P2 | M | Bug surfaced 2026-04 |
 
-## Phase C — Polish & UX (make the prototype feel premium)
+## Phase C — Polish & launch-ready (the "can we ship this to the public?" phase)
 
-Once the core loop works, make it feel great. This is the "wow moment" phase — the tool should look and behave like a product, not an engineering demo. **Audit trail moved up** — the analyse.md identifies "onderbouwing per gelakte passage, exporteerbaar naar het Woo-besluit" as the headline sales feature, so the redaction log is P1 in this phase, not P2 in Phase D.
+Once the core loop works, make it feel great **and** get it in front of real users. This phase absorbs the polish work *and* the marketing/infra items that used to live in the old "SaaS Launch" phase, because the GTM plan is to launch **without auth or billing** and validate demand first. See the "GTM & launch sequencing" section below for the rationale.
+
+**Audit trail moved up** — the analyse.md identifies "onderbouwing per gelakte passage, exporteerbaar naar het Woo-besluit" as the headline sales feature, so the redaction log is P1 here (already done).
 
 | # | Todo | Priority | Size | Source |
 |---|------|----------|------|--------|
@@ -107,52 +110,81 @@ Once the core loop works, make it feel great. This is the "wow moment" phase —
 | 21 | ~~[Per-document custom wordlist](done/21-per-document-custom-wordlist.md)~~ | P2 | S | Pivot 2026-04 |
 | 22 | ~~[Loading states & skeletons](done/22-loading-states.md)~~ | P2 | M | Testing & Polish |
 | 23 | ~~[Landing page animations](done/23-animations.md)~~ | P3 | S | Testing & Polish |
-| 24 | [Mobile responsive polish](24-mobile-responsive.md) | P3 | S | Testing & Polish |
+| 24 | ~~[Mobile responsive polish](done/24-mobile-responsive.md)~~ | P3 | S | Testing & Polish |
+| 39 | [Deployment setup](39-deployment.md) | P1 | M | Testing & Polish |
+| 40 | [Legal pages & SEO](40-legal-seo.md) | P1 | S | Testing & Polish |
+| 41 | [Analytics (Plausible)](41-analytics.md) | P1 | S | Testing & Polish |
+| 43 | [Open source release & self-host](43-open-source-release.md) | P1 | M | Distribution strategy 2026-04 |
+| 44 | ~~[Sample documents on landing page](done/44-sample-documents-landing.md)~~ | P1 | S | Distribution strategy 2026-04 |
+| 45 | ~~[Lead capture email form](done/45-lead-capture.md)~~ | P1 | S | GTM plan 2026-04 |
+| 46 | [Convert-to-PDF ingestion (docx, odt, xlsx, images, zip)](46-convert-to-pdf-ingestion.md) | P1 | L | Multi-format support 2026-04 |
+| 47 | [Email / .msg thread ingestion](47-email-msg-ingestion.md) | P1 | M | Multi-format support 2026-04 |
+| 48 | [Accessible PDF export (lang tag, XMP, alt text, PDF/A-2b)](48-accessible-pdf-export.md) | P1 | M | Accessibility plan 2026-04 |
 
-## Phase D — Draft Workflow & Oversight
+Launch when all P1s in this phase are green. That is the "Phase D milestone" below.
 
-Supervisors, jurists, and multi-step approval. Note: several items here presuppose a multi-user / persistent-draft model, so they may need to be revisited under the client-first constraint (drafts live in IndexedDB, approval is a metadata flag). Revisit scope before starting each item. (The redaction log — previously in this phase — has been promoted to Phase C, P1, because the pivot analysis identifies it as the headline feature.)
+## Phase D — Public launch & market validation (milestone, not a work item)
+
+No new todos — this is the "ship it, drive traffic, measure" checkpoint. Expected activities:
+
+- Deploy to production URL
+- Soft launch via personal network (ex-colleagues in gemeenten, privacy/BOFH-style blogs, LinkedIn)
+- Measure in Plausible: `/try` starts, sample opens, exports completed, email signups
+- Collect qualitative feedback through the email list and any direct outreach
+- **Decision gate:** is there enough signal — repeat users, team-lead inquiries, "my colleagues need this too" — to justify building multi-user features? If yes → Phase E. If no → iterate on detection quality, UX, samples, and marketing until there is signal, or kill the project.
+
+**Do not start Phase E before this gate.** Building auth + orgs speculatively is the single biggest way to waste weeks on this project.
+
+## Phase E — Team features (only once a team lead asks)
+
+Triggered by the Phase D decision gate. The ordering here reflects the real dependency graph (auth → orgs → roles → members). **#33 (Organizations) was written against the old multi-document shape and needs a rewrite before implementation** — the app is currently single-document; see `CLAUDE.md`.
 
 | # | Todo | Priority | Size | Source |
 |---|------|----------|------|--------|
-| 25 | [Document lifecycle (draft/approve)](25-document-lifecycle.md) | P1 | M | Draft Workflow |
+| 32 | [Authentication (Better Auth)](32-authentication.md) | P0 (once triggered) | L | Auth & Billing |
+| 33 | [Organizations & data scoping](33-organizations.md) | P0 (once triggered) | L | Auth & Billing |
+| 34 | [Roles & permissions](34-roles-permissions.md) | P1 | M | Auth & Billing |
+| 36 | [Member management & invitations](36-member-management.md) | P1 | M | Auth & Billing |
+
+## Phase F — Draft workflow & export enhancements (for paying team pilots)
+
+Everything in this phase presupposes a multi-user model: approval gates, jurist comments, re-export audit trails. Solo users on a single-doc prototype do not need any of this — they just export when ready. Do not build any of it before Phase E is done AND a team pilot is asking for it. If you catch yourself planning this phase before that signal exists, stop.
+
+Concept export (#29) is the one arguable exception: the watermark prevents accidental publication and could sneak into Phase C if a pilot reviewer asks for it. Leave it here by default.
+
+| # | Todo | Priority | Size | Source |
+|---|------|----------|------|--------|
+| 25 | [Document lifecycle (draft/approve)](25-document-lifecycle.md) | P2 (post-signal) | M | Draft Workflow |
 | 26 | [Draft preview & side-by-side](26-draft-preview.md) | P2 | M | Draft Workflow |
 | 27 | [Draft comments](27-draft-comments.md) | P3 | M | Draft Workflow |
-
-## Phase E — Export Enhancements
-
-| # | Todo | Priority | Size | Source |
-|---|------|----------|------|--------|
 | 28 | [Export versioning & re-export](28-export-versioning.md) | P2 | M | Draft Workflow |
-| 29 | [Concept export with watermark](29-concept-export.md) | P2 | S | Draft Workflow |
+| 29 | [Concept export with watermark](29-concept-export.md) | P3 | S | Draft Workflow |
 | 30 | [Redaction map generation](30-redaction-map.md) | P3 | M | Draft Workflow |
 | 31 | [Redaction inventory (CSV/XLSX)](31-redaction-inventory.md) | P3 | S | Draft Workflow |
 
-## Phase F — Auth & Multi-Tenancy (deferred until the prototype is compelling)
+## Phase G — Monetization (only after 1–3 manual-invoice pilots)
 
-These are deliberately pushed down the stack. Real users need auth eventually, but nothing about the core redaction experience requires it — and `reviewed_by` can remain a text field while the prototype stabilizes. **#33 (Organizations) was written against the old multi-document shape and needs a rewrite before implementation** (the app is currently single-document; see `CLAUDE.md`).
-
-| # | Todo | Priority | Size | Source |
-|---|------|----------|------|--------|
-| 32 | [Authentication (Better Auth)](32-authentication.md) | P0 | L | Auth & Billing |
-| 33 | [Organizations & data scoping](33-organizations.md) | P0 | L | Auth & Billing |
-| 34 | [Roles & permissions](34-roles-permissions.md) | P1 | M | Auth & Billing |
-| 36 | [Member management & invitations](36-member-management.md) | P2 | M | Auth & Billing |
-
-## Phase G — SaaS Launch (billing, email, deployment, legal, analytics)
-
-Everything a SaaS needs but a prototype does not.
+Don't integrate a payment processor before someone says "take my money." A manual invoice for the first 1–3 team customers is fine, teaches you more than Mollie does about the deal shape, and lets you ship Mollie with real contract knowledge instead of guesses.
 
 | # | Todo | Priority | Size | Source |
 |---|------|----------|------|--------|
-| 37 | [Mollie billing integration](37-mollie-billing.md) | P2 | XL | Auth & Billing |
-| 38 | [Email service](38-email-service.md) | P2 | M | Testing & Polish |
-| 39 | [Deployment setup](39-deployment.md) | P2 | M | Testing & Polish |
-| 40 | [Legal pages & SEO](40-legal-seo.md) | P2 | S | Testing & Polish |
-| 41 | [Analytics (Plausible)](41-analytics.md) | P3 | S | Testing & Polish |
-| 42 | [Microsoft SSO & 2FA](42-sso-2fa.md) | P3 | M | Auth & Billing |
-| 43 | [Open source release & self-host](43-open-source-release.md) | P1 | M | Distribution strategy 2026-04 |
-| 44 | [Sample documents on landing page](44-sample-documents-landing.md) | P1 | S | Distribution strategy 2026-04 |
+| 37 | [Mollie billing integration](37-mollie-billing.md) | P2 (post-pilots) | XL | Auth & Billing |
+| 38 | [Email service (transactional)](38-email-service.md) | P2 | M | Testing & Polish |
+| 42 | [Microsoft SSO & 2FA](42-sso-2fa.md) | P3 (sales-driven) | M | Auth & Billing |
+
+---
+
+## GTM & launch sequencing (2026-04)
+
+The backlog used to be phased "core → polish → draft workflow → export → auth → SaaS launch," which implicitly assumed you'd build auth and multi-tenancy *before* shipping to users. That ordering is wrong for this project for three reasons:
+
+1. **Client-first means there's nothing for an account to persist.** No documents, no saved drafts, no cross-session state. An account in v1 would be a hollow shell. Every hour spent on auth is an hour not spent on detection quality, samples, or marketing.
+2. **Draft workflow is inherently multi-user.** Approve/reopen/comment only make sense when a second person exists. Without auth, those features are theater.
+3. **The cheapest way to validate demand is to ship the individual-reviewer experience and measure.** Email capture gives us the same "who's interested" signal as a login wall, without the engineering cost or the conversion friction.
+
+So the new order is: finish polish + launch infra (Phase C), ship publicly and measure (Phase D), build team features only if the signal is there (Phase E), build draft/export compliance features only for paying pilots (Phase F), integrate billing only after manual invoices have taught us the contract shape (Phase G).
+
+**Conversion without auth.** The lead capture (#45) is how we avoid losing interested users. When someone finishes an export or lingers on the landing page, we offer a "blijf op de hoogte / vraag een teamdemo aan" email form. Those emails become the invite list the day team features exist. No one is lost by deferring auth.
 
 ---
 

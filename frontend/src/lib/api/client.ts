@@ -330,3 +330,32 @@ export async function deleteCustomTerm(
 		method: 'DELETE'
 	});
 }
+
+// ---------------------------------------------------------------------------
+// Leads (#45 — public email capture)
+// ---------------------------------------------------------------------------
+
+export type LeadSource = 'landing' | 'post-export';
+
+export interface LeadPayload {
+	email: string;
+	name?: string;
+	organization?: string;
+	message?: string;
+	source: LeadSource;
+	consent: boolean;
+}
+
+/**
+ * Submit the public lead-capture form.
+ *
+ * Returns normally on both fresh inserts and duplicate submissions — the
+ * backend is deliberately opaque about which of the two happened so the
+ * form cannot be used to probe membership of the list.
+ */
+export async function submitLead(payload: LeadPayload): Promise<void> {
+	await request<{ ok: boolean }>('/api/leads', {
+		method: 'POST',
+		body: JSON.stringify(payload)
+	});
+}

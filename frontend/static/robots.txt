@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Allow: /try
+
+# The review interface holds ephemeral user documents in memory and has no
+# meaningful public content — keep it out of search indexes.
+Disallow: /review
+
+Sitemap: https://woobuddy.nl/sitemap.xml

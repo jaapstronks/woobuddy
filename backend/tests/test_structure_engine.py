@@ -295,7 +295,7 @@ class TestPipelineStructureIntegration:
         )
         extraction = _make_extraction(text)
 
-        result = await run_pipeline(extraction, use_llm_verification=False)
+        result = await run_pipeline(extraction)
 
         # The structure pass must have run and produced spans.
         assert any(s.kind == "signature_block" for s in result.structure_spans)

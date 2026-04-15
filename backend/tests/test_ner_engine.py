@@ -6,8 +6,10 @@ Tier 2 tests use the real Deduce library (loaded once, ~2s startup).
 
 import pytest
 
+from app.services.name_engine import load_name_lists
 from app.services.ner_engine import (
     NERDetection,
+    _detect_persoon_via_title_prefix,
     _is_plausible_birth_date,
     _is_plausible_person_name,
     _parse_birth_date,
@@ -510,11 +512,16 @@ class TestTier2Deduce:
         text = "Mevrouw A. Bakker-Smit is de aanvrager."
         results = detect_tier2(text)
         person_results = [r for r in results if r.entity_type == "persoon"]
+        # "Bakker-Smit" is not in the seed CBS list, so the Deduce +
+        # CBS path drops it and the #48 title-prefix rule catches it
+        # via "Mevrouw" instead. Either detection source is a valid
+        # Tier 2 persoon hit — assert the common invariants.
+        assert len(person_results) >= 1
         for r in person_results:
             assert r.tier == "2"
-            assert r.source == "deduce"
+            assert r.source in ("deduce", "title_rule")
             assert r.woo_article == "5.1.2e"
-            assert r.confidence == 0.80
+            assert r.confidence in (0.75, 0.80, 0.85, 0.90, 0.95)
 
     def test_address_detected(self):
         """Deduce should detect street addresses."""
@@ -573,6 +580,147 @@ class TestTier2Deduce:
         # Sanity check: this span has no tokens in either list.
         score = score_person_candidate("Qwerty Xylofoon", lists)
         assert score.is_plausible is False
+
+
+# ---------------------------------------------------------------------------
+# Tier 2: huisnummer / residence-cued "nummer N" regex (#51)
+# ---------------------------------------------------------------------------
+
+
+class TestHuisnummerRegex:
+    """`huisnummer N` and `bewoner van nummer N` regex fallback.
+
+    Deduce's built-in huisnummer tag only fires when a street token is
+    adjacent; partially-anonymized Woo prose drops the street but keeps
+    the number, so we catch these shapes via regex."""
+
+    def test_huisnummer_always_detected(self):
+        text = "mevrouw T. Bakker (huisnummer 18) en de familie El Khatib (huisnummer 22)."
+        results = detect_tier2(text)
+        huisnummer = [
+            r for r in results if r.entity_type == "adres" and "huisnummer" in r.text.lower()
+        ]
+        assert len(huisnummer) == 2
+        for r in huisnummer:
+            assert r.tier == "2"
+            assert r.source == "regex"
+            assert r.woo_article == "5.1.2e"
+        texts = {r.text.lower() for r in huisnummer}
+        assert "huisnummer 18" in texts
+        assert "huisnummer 22" in texts
+
+    def test_huisnummer_span_covers_full_phrase(self):
+        text = "Het betreft huisnummer 22a in de straat."
+        results = detect_tier2(text)
+        match = next(
+            r for r in results if r.entity_type == "adres" and "huisnummer" in r.text.lower()
+        )
+        assert match.text.lower() == "huisnummer 22a"
+        assert text[match.start_char : match.end_char].lower() == "huisnummer 22a"
+
+    def test_residence_cued_nummer_detected(self):
+        text = "De heer W. de Groot, bewoner van nummer 26, heeft ingediend."
+        results = detect_tier2(text)
+        nummer = [
+            r
+            for r in results
+            if r.entity_type == "adres" and r.text.lower().startswith("nummer")
+        ]
+        assert len(nummer) == 1
+        assert nummer[0].text.lower() == "nummer 26"
+        # Span must cover ONLY "nummer 26", not the "bewoner van" cue.
+        assert text[nummer[0].start_char : nummer[0].end_char].lower() == "nummer 26"
+
+    def test_woont_op_nummer_detected(self):
+        text = "Zij woont op nummer 12 sinds 2019."
+        results = detect_tier2(text)
+        nummer = [
+            r
+            for r in results
+            if r.entity_type == "adres" and r.text.lower().startswith("nummer")
+        ]
+        assert len(nummer) == 1
+        assert nummer[0].text.lower() == "nummer 12"
+
+    def test_bare_nummer_without_residence_cue_ignored(self):
+        """`zaaknummer`, `dossiernummer`, etc. must not fire the rule."""
+        text = (
+            "Zaaknummer 2024 is in behandeling. Zie ook dossiernummer 17 "
+            "en volgnummer 3 op pagina nummer 42."
+        )
+        results = detect_tier2(text)
+        nummer = [
+            r
+            for r in results
+            if r.entity_type == "adres" and r.text.lower().startswith("nummer")
+        ]
+        assert nummer == []
+
+    def test_huisnummer_drops_overlapping_deduce_adres(self):
+        """When Deduce emits a nested `huisnummer`/`adres` annotation
+        inside our new span, the duplicate must be dropped so the
+        reviewer sees exactly one card."""
+        text = "De bewoners van huisnummer 22 hebben geklaagd."
+        results = detect_tier2(text)
+        # Exactly one adres detection for this position, not two.
+        adres_hits = [
+            r
+            for r in results
+            if r.entity_type == "adres" and "22" in r.text
+        ]
+        assert len(adres_hits) == 1
+        assert adres_hits[0].source == "regex"
+
+
+# ---------------------------------------------------------------------------
+# Tier 2: recent-date filter on Deduce `datum` hits
+#
+# Deduce flags every date it finds. In Woo documents plain dates are
+# overwhelmingly meeting/letter/request dates; birth dates for toddlers
+# essentially never appear. Recent dates (year within the last couple of
+# years) are dropped from the Tier 2 `datum` path. Tier 1 `geboortedatum`
+# (anchor-based) is unaffected.
+# ---------------------------------------------------------------------------
+
+
+class TestTier2RecentDateFilter:
+    def test_recent_event_date_dropped(self):
+        """A 2024/2025/2026 date without any birth-date anchor should not
+        appear as a Tier 2 `datum` detection."""
+        import datetime
+
+        text = (
+            "Op 5 januari 2024 is een verzoek ontvangen en de gemeenteraad is "
+            "op 15 februari 2024 geïnformeerd."
+        )
+        results = detect_tier2(text)
+        datum_results = [r for r in results if r.entity_type == "datum"]
+        current_year = datetime.date.today().year
+        for r in datum_results:
+            # No detection should carry a year within the recent window.
+            assert "2024" not in r.text, f"recent date leaked through: {r.text!r}"
+            assert str(current_year) not in r.text
+            assert str(current_year - 1) not in r.text
+
+    def test_old_date_still_flagged(self):
+        """A plausibly-birth-date year (e.g. 1975) should still produce a
+        Tier 2 `datum` hit so reviewers can confirm it."""
+        text = "Betrokkene is geboren in 1975 volgens de registratie."
+        results = detect_tier2(text)
+        datum_results = [r for r in results if r.entity_type == "datum"]
+        # Deduce is allowed to miss this one (date-without-day is fuzzy),
+        # but if it produces any datum hit here it must not be filtered.
+        for r in datum_results:
+            assert "1975" in r.text or "19" in r.text
+
+    def test_recent_date_with_anchor_still_caught_by_tier1(self):
+        """A recent date with a geboortedatum anchor is still a Tier 1
+        hit — the Tier 2 filter must not mask the anchor path."""
+        text = "geboortedatum: 3 maart 2025"
+        results = detect_tier1(text)
+        geb_results = [r for r in results if r.entity_type == "geboortedatum"]
+        assert len(geb_results) == 1
+        assert "2025" in geb_results[0].text
 
 
 # ---------------------------------------------------------------------------
@@ -719,3 +867,155 @@ class TestDetectAll:
         )
         det.confidence = min(det.confidence + 0.10, 1.0)
         assert det.confidence == 1.0
+
+
+# ---------------------------------------------------------------------------
+# Title-prefix rule (#48) — non-Dutch surname coverage
+#
+# Catches person names that Deduce + the CBS achternamenlijst miss
+# because the surname is not Dutch-origin. Confidence is lower (0.75)
+# and the reasoning string is fixed so the frontend can render a
+# distinct attribution.
+# ---------------------------------------------------------------------------
+
+
+class TestTitlePrefixRule:
+    @pytest.fixture(scope="class")
+    def lists(self):
+        return load_name_lists()
+
+    def test_de_familie_non_dutch_surname(self, lists):
+        text = "De familie El Khatib (huisnummer 22) stuurde een zienswijze op het plan."
+        hits = _detect_persoon_via_title_prefix(text, lists)
+        assert len(hits) == 1
+        assert hits[0].text == "El Khatib"
+        assert hits[0].entity_type == "persoon"
+        assert hits[0].tier == "2"
+        assert hits[0].confidence == 0.75
+        assert hits[0].source == "title_rule"
+        assert "niet in CBS-lijst" in hits[0].reasoning
+        # Span must cover only the name, not the "De familie" anchor.
+        assert text[hits[0].start_char : hits[0].end_char] == "El Khatib"
+
+    def test_dhr_turkish_surname(self, lists):
+        text = "dhr. Bekir Yilmaz sprak in tijdens de vergadering."
+        hits = _detect_persoon_via_title_prefix(text, lists)
+        assert len(hits) == 1
+        assert hits[0].text == "Bekir Yilmaz"
+        assert hits[0].confidence == 0.75
+
+    def test_mevr_polish_surname(self, lists):
+        text = "mevr. Agnieszka Kowalski stelde een vraag."
+        hits = _detect_persoon_via_title_prefix(text, lists)
+        assert len(hits) == 1
+        assert hits[0].text == "Agnieszka Kowalski"
+        assert hits[0].source == "title_rule"
+
+    def test_three_non_dutch_names_in_one_text(self, lists):
+        """The canonical fixture from todo #48: all three expected
+        names fire in a single paragraph."""
+        text = (
+            "Tijdens de inspraakavond sprak de familie El Khatib "
+            "(huisnummer 22). Ook dhr. Bekir Yilmaz en mevr. "
+            "Agnieszka Kowalski dienden een zienswijze in."
+        )
+        hits = _detect_persoon_via_title_prefix(text, lists)
+        names = {h.text for h in hits}
+        assert "El Khatib" in names
+        assert "Bekir Yilmaz" in names
+        assert "Agnieszka Kowalski" in names
+
+    def test_de_heer_with_initial_and_tussenvoegsel(self, lists):
+        """'de heer W. de Groot' — the title rule also matches names
+        whose surname is in CBS. The Deduce path normally wins this
+        one, but we test the rule in isolation to make sure the span
+        excludes the 'de heer' anchor and includes the initial +
+        tussenvoegsel."""
+        text = "De heer W. de Groot heeft een verzoek ingediend."
+        hits = _detect_persoon_via_title_prefix(text, lists)
+        assert len(hits) == 1
+        assert hits[0].text == "W. de Groot"
+
+    def test_multi_letter_initial(self, lists):
+        """'A.M. Jansen' — multi-letter initials like 'A.M.' should
+        be walked over as a single initial token."""
+        text = "Mr. A.M. Jansen is gemachtigd."
+        hits = _detect_persoon_via_title_prefix(text, lists)
+        assert len(hits) == 1
+        assert hits[0].text == "A.M. Jansen"
+
+    def test_non_dutch_tussenvoegsel_da(self, lists):
+        """Portuguese 'da' is now in the tussenvoegsel set, so 'da
+        Silva' parses as tussenvoegsel + surname."""
+        text = "dr. Juan da Silva uit Brazilie diende een aanvraag in."
+        hits = _detect_persoon_via_title_prefix(text, lists)
+        assert len(hits) == 1
+        assert hits[0].text == "Juan da Silva"
+
+    def test_non_dutch_tussenvoegsel_al(self, lists):
+        text = "mevrouw Fatima Al Mansouri woont in de wijk."
+        hits = _detect_persoon_via_title_prefix(text, lists)
+        assert len(hits) == 1
+        assert hits[0].text == "Fatima Al Mansouri"
+
+    def test_function_title_does_not_anchor(self, lists):
+        """The title rule only fires on salutations and 'familie'. A
+        public function title on its own must NOT trigger — the
+        publiek-functionaris filter (#13) handles those, and we
+        intentionally stay out of its way."""
+        text = "De burgemeester Rutte sprak de raad toe."
+        hits = _detect_persoon_via_title_prefix(text, lists)
+        assert hits == []
+
+    def test_wethouder_does_not_anchor(self, lists):
+        text = "Wethouder Van Delft is aanwezig bij het overleg."
+        hits = _detect_persoon_via_title_prefix(text, lists)
+        assert hits == []
+
+    def test_stacked_titles_deduped(self, lists):
+        """Stacked salutation anchors ('dhr. dr. Prof.') would
+        otherwise emit overlapping detections. The rule dedupes to
+        the outermost span."""
+        text = "dhr. dr. Prof. Henk de Vries heeft ondertekend."
+        hits = _detect_persoon_via_title_prefix(text, lists)
+        assert len(hits) == 1
+        # The outermost span starts after the FIRST anchor that
+        # successfully parses a name; inner spans are dropped.
+        assert hits[0].text.endswith("Henk de Vries")
+
+    def test_empty_text(self, lists):
+        assert _detect_persoon_via_title_prefix("", lists) == []
+
+    def test_no_title_no_detection(self, lists):
+        """Plain prose without a salutation anchor produces nothing."""
+        text = "De vergadering werd geopend om 19.00 uur."
+        hits = _detect_persoon_via_title_prefix(text, lists)
+        assert hits == []
+
+
+class TestDetectTier2WithTitleRule:
+    """Integration tests: the title rule is wired into detect_tier2,
+    so Deduce's miss on a non-Dutch surname is rescued automatically."""
+
+    def test_non_dutch_surname_rescued_by_title_rule(self):
+        text = "De familie El Khatib woont op Kerkstraat 22."
+        results = detect_tier2(text)
+        persons = [r for r in results if r.entity_type == "persoon"]
+        assert any("Khatib" in p.text for p in persons), (
+            "El Khatib should be rescued by the #48 title-prefix rule"
+        )
+
+    def test_cbs_hit_wins_over_title_rule_for_overlap(self):
+        """When a Deduce + CBS hit and the title rule both cover the
+        same name, the higher-confidence CBS hit is kept and the
+        title rule's 0.75 duplicate is dropped."""
+        text = "De heer Jan Bakker heeft een verzoek ingediend."
+        results = detect_tier2(text)
+        persons = [r for r in results if r.entity_type == "persoon"]
+        # We should see at most one persoon detection covering
+        # "Jan Bakker"; it should come from Deduce (CBS path) with
+        # confidence >= 0.85.
+        bakker_hits = [p for p in persons if "Bakker" in p.text]
+        assert len(bakker_hits) == 1
+        assert bakker_hits[0].source == "deduce"
+        assert bakker_hits[0].confidence >= 0.85

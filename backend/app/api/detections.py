@@ -213,7 +213,7 @@ async def delete_detection(
     if detection.source not in ("manual", "search_redact"):
         # 422 — the request is well-formed but the target is not eligible.
         # Both reviewer-authored sources are deletable; anything produced by
-        # the analyzers (regex/deduce/llm) stays put so the undo stack for
+        # the analyzers (regex/deduce/rule/structure/...) stays put so the undo stack for
         # an accept/reject only flips review_status.
         raise HTTPException(
             status_code=422,

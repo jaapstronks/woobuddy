@@ -7,7 +7,12 @@ current rules (word boundaries, single-line merges, anchored starts)
 all exist to prevent that class of bug.
 """
 
-from app.services.pdf_engine import PageText, TextSpan, find_span_for_text
+from app.services.pdf_engine import (
+    PageText,
+    TextSpan,
+    count_word_boundary_matches,
+    find_span_for_text,
+)
 
 
 def _page(spans: list[TextSpan]) -> PageText:
@@ -156,3 +161,59 @@ class TestMultiItemMerge:
         page = _page([TextSpan(text="Jan", page=0, x0=10, y0=10, x1=30, y1=20)])
         assert find_span_for_text([page], "") == []
         assert find_span_for_text([page], "   ") == []
+
+
+# ---------------------------------------------------------------------------
+# Occurrence index — map a specific NER hit to a single bbox
+# ---------------------------------------------------------------------------
+
+
+class TestOccurrenceIndex:
+    """The regression this fixes: a persoon detection at one char offset
+    was attaching bboxes for every occurrence of that name, because
+    `find_span_for_text` returned all of them. The sidebar card ended
+    up rendering "A.B. Bakker A.B. Bakker" once the frontend bbox→text
+    resolver joined the text across all bboxes."""
+
+    def test_returns_only_nth_match_for_repeated_name(self):
+        page = _page(
+            [
+                TextSpan(text="A.B. Bakker", page=0, x0=10, y0=10, x1=80, y1=20),
+                TextSpan(text="bij", page=0, x0=82, y0=10, x1=100, y1=20),
+                TextSpan(text="afwezigheid", page=0, x0=102, y0=10, x1=180, y1=20),
+                TextSpan(text="A.B. Bakker", page=0, x0=10, y0=40, x1=80, y1=50),
+            ]
+        )
+        first = find_span_for_text([page], "A.B. Bakker", occurrence_index=0)
+        assert len(first) == 1
+        assert first[0]["y0"] == 10
+
+        second = find_span_for_text([page], "A.B. Bakker", occurrence_index=1)
+        assert len(second) == 1
+        assert second[0]["y0"] == 40
+
+    def test_occurrence_index_out_of_range_returns_empty(self):
+        page = _page(
+            [TextSpan(text="A.B. Bakker", page=0, x0=10, y0=10, x1=80, y1=20)]
+        )
+        assert find_span_for_text([page], "A.B. Bakker", occurrence_index=3) == []
+
+    def test_count_word_boundary_matches_respects_limit(self):
+        text = "A.B. Bakker en later nog eens A.B. Bakker in dezelfde zin."
+        # Everything counted → 2.
+        assert count_word_boundary_matches(text, "A.B. Bakker") == 2
+        # Everything up to just before the second occurrence → 1.
+        second_pos = text.rfind("A.B. Bakker")
+        assert (
+            count_word_boundary_matches(text, "A.B. Bakker", limit=second_pos) == 1
+        )
+        # Limit at the start → 0.
+        assert count_word_boundary_matches(text, "A.B. Bakker", limit=0) == 0
+
+    def test_count_word_boundary_matches_skips_substring_hits(self):
+        """Substring-only matches must not bump the count — otherwise
+        the occurrence index picks up a bbox that belongs to a
+        different word and the sidebar card drifts off the name."""
+        text = "Vriesland en Jan de Vries wandelden."
+        # Only the standalone 'Vries' counts.
+        assert count_word_boundary_matches(text, "Vries") == 1

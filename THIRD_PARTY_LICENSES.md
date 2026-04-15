@@ -40,13 +40,13 @@ WOO Buddy is licensed under the MIT License. This file documents the licenses of
 | Nederlandse Voornamenbank (Meertens Instituut KNAW) | Open access with attribution | First-name lookup list (`Top_eerste_voornamen_NL_2017.csv`) used by the Tier 2 detector. Data afkomstig uit de Nederlandse Voornamenbank van het Meertens Instituut KNAW — <https://www.meertens.knaw.nl/nvb>. |
 | CBS Achternamen | Public | Surname frequency list used by the Tier 2 detector. |
 
-## LLM Models (dormant)
+## LLM Models
 
-The LLM layer is not invoked in the live pipeline (see `backend/app/llm/README.md`). The following models are only relevant if an operator revives the dormant code path for experimentation:
-
-| Model | License | Note |
-|-------|---------|------|
-| Gemma 4 | Apache-2.0 | Fully open, no restrictions on use |
+None. There is no LLM in WOO Buddy's codebase — detection is rule-based
+end to end. If a future contributor revives a local LLM verification
+step (see `docs/reference/llm-revival.md`), they are responsible for
+updating this section with the model's license (Gemma is Apache-2.0,
+for reference — fully open).
 
 ## Important notes
 

@@ -1,10 +1,12 @@
 # 28 — Export Versioning & Re-Export
 
-- **Priority:** P2
+- **Priority:** P2 — blocked on team-pilot demand signal (see README Phase F)
 - **Size:** M (1–3 days)
 - **Source:** Draft Workflow briefing, "Re-Export" section
-- **Depends on:** #00 (Client-first architecture — exports are ephemeral), #25 (Document lifecycle)
+- **Depends on:** #00 (Client-first architecture — exports are ephemeral), #25 (Document lifecycle), **and a real team pilot asking for it**
 - **Blocks:** Nothing
+
+> **Do not start this before Phase D's public launch + validation decision gate.** Re-export audit trails are a compliance feature for teams that publish Woo-besluiten — individual reviewers just export the file and save it themselves. See README "GTM & launch sequencing."
 
 ## Why
 

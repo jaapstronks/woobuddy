@@ -93,9 +93,13 @@ export type SubjectRole = 'burger' | 'ambtenaar' | 'publiek_functionaris';
 // Detection source — where did this row come from?
 //
 // Used by the redaction log (#19) to distinguish automatic detections
-// (regex / Deduce NER / legacy LLM path) from reviewer-authored rows
-// (manual selection, search-and-redact). Surfaced in the log table's
-// "Source" column and in the filter bar.
+// (regex / Deduce NER / rule / structure / ...) from reviewer-authored
+// rows (manual selection, search-and-redact). Surfaced in the log
+// table's "Source" column and in the filter bar.
+//
+// The `llm` value is legacy — kept for backwards compatibility with any
+// persisted rows produced before the LLM pass was removed. Nothing in
+// the live pipeline produces it anymore.
 // ---------------------------------------------------------------------------
 
 export type DetectionSource =
@@ -156,9 +160,10 @@ export interface Detection {
 	reasoning: string | null;
 	/**
 	 * #19 — redaction log. Pipeline label for where the row came from:
-	 * `regex`/`deduce`/`llm` for automatic detections, `manual` for
-	 * reviewer-drawn redactions, `search_redact` for bulk search-and-redact
-	 * hits. Used for filtering and for the "Auto vs handmatig" stats tile.
+	 * `regex`/`deduce`/`rule`/`structure`/... for automatic detections,
+	 * `manual` for reviewer-drawn redactions, `search_redact` for bulk
+	 * search-and-redact hits. Used for filtering and for the "Auto vs
+	 * handmatig" stats tile. (`llm` is legacy — see DetectionSource.)
 	 */
 	source?: DetectionSource;
 	propagated_from: string | null;
@@ -183,7 +188,7 @@ export interface Detection {
 	merged_from?: string[] | null;
 	/**
 	 * #20 — character offsets in the server-joined full text. Present on
-	 * automatically-detected rows (`regex`, `deduce`, `llm`, `structure`,
+	 * automatically-detected rows (`regex`, `deduce`, `structure`,
 	 * `rule`, `reference_list`), null on reviewer-authored ones (`manual`,
 	 * `search_redact`) that have no position in the analyzed text. The
 	 * bulk-sweep UI compares these offsets against `StructureSpan` bounds

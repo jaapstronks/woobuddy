@@ -1,8 +1,27 @@
 # WOO Buddy — Architecture
 
+> **Partially stale (2026-04-15).** This document still describes an
+> LLM-based Tier 2/Tier 3 pipeline with Ollama + Gemma, and it still
+> references a client-first MinIO setup. Neither is accurate anymore:
+> - **There is no LLM in the codebase.** The Ollama layer was removed
+>   entirely. All the "LLM Engine", "Ollama", "Gemma 4", and "Tier 3
+>   content analysis" sections below describe the historical design,
+>   not the live system. The current pipeline is regex + Deduce NER +
+>   wordlists + structure heuristics + rule-based public-official
+>   filter. See `backend/app/services/llm_engine.py` for the actual
+>   `run_pipeline` implementation (the filename is legacy) and
+>   `docs/reference/llm-revival.md` for the constraints a future
+>   contributor would need to satisfy to reintroduce a local LLM.
+> - **No MinIO for documents.** Client-first architecture: PDFs live
+>   in the browser's IndexedDB and stream ephemerally to the server
+>   only for redaction. See `docs/todo/done/00-client-first-architecture.md`.
+>
+> The rest of this doc is useful for context on the original design
+> decisions; trust the code, not this file, for current behavior.
+
 ## Overview
 
-WOO Buddy is a monorepo with two applications — a SvelteKit frontend and a FastAPI backend — backed by PostgreSQL for metadata and MinIO for PDF storage. Local LLM inference runs via Ollama with Gemma 4 26B.
+WOO Buddy is a monorepo with two applications — a SvelteKit frontend and a FastAPI backend — backed by PostgreSQL for metadata. Detection is rule-based end to end (regex + Deduce + wordlists + structure heuristics).
 
 ```
 ┌─────────────────────────────────────────────────────────┐

@@ -1,10 +1,12 @@
 # 27 — Draft Comments
 
-- **Priority:** P3
+- **Priority:** P3 — blocked on team-pilot demand signal (see README Phase F)
 - **Size:** M (1–3 days)
 - **Source:** Draft Workflow briefing, "Draft annotations" section
-- **Depends on:** #26 (Draft preview), #32 (Auth)
+- **Depends on:** #26 (Draft preview), #32 (Auth), **and a real team pilot asking for it**
 - **Blocks:** Nothing
+
+> **Do not start this before Phase D's public launch + validation decision gate.** Comments are inherently multi-user: the jurist comments, the reviewer reads. Incoherent without auth AND without a second user. See README "GTM & launch sequencing."
 
 ## Why
 

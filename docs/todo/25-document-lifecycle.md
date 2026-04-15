@@ -1,10 +1,12 @@
 # 25 — Document Lifecycle (Draft / Approve / Reopen)
 
-- **Priority:** P1
+- **Priority:** P2 — blocked on team-pilot demand signal (see README Phase F)
 - **Size:** M (1–3 days)
 - **Source:** Draft Workflow briefing, "The Draft Workflow" + "Document-level approval" sections
-- **Depends on:** #00 (Client-first architecture), #32 (Auth — approval needs to know who approved)
+- **Depends on:** #00 (Client-first architecture), #32 (Auth — approval needs to know who approved), **and a real team pilot asking for it**
 - **Blocks:** #26 (Draft preview), #28 (Export versioning), #29 (Concept export)
+
+> **Do not start this before Phase D's public launch + validation decision gate.** An approval gate is theater without a second user. The entire draft-workflow chain (#25–#28) is deferred until a team lead actually asks for supervisor sign-off. If you're tempted to build this before that signal exists, re-read the README's "GTM & launch sequencing" section.
 
 ## Why
 

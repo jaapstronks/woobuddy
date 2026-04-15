@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { ArrowLeft, RotateCw, Lock } from 'lucide-svelte';
+	import { ArrowLeft, RotateCw, Lock, Mail, Users, FileText as FileTextIcon } from 'lucide-svelte';
 	import FileUpload from '$lib/components/shared/FileUpload.svelte';
 	import Logo from '$lib/components/shared/Logo.svelte';
 	import ProgressSteps, { type Step } from '$lib/components/shared/ProgressSteps.svelte';
@@ -13,6 +13,7 @@
 		PdfError
 	} from '$lib/services/pdf-text-extractor';
 	import type { PageExtraction } from '$lib/types';
+	import { SAMPLES, type SampleDoc } from '$lib/samples';
 
 	// Warn about long extraction time for large PDFs.
 	const LARGE_PDF_BYTES = 20 * 1024 * 1024;
@@ -34,6 +35,15 @@
 	let steps = $state<Step[]>(INITIAL_STEPS.map((s) => ({ ...s })));
 	let error = $state<string | null>(null);
 	let canRetryAnalyze = $state(false);
+	let loadingSampleId = $state<string | null>(null);
+
+	// Icons for the three sample cards. Kept alongside the layout rather than
+	// in $lib/samples.ts so the data file stays framework-free.
+	const SAMPLE_ICONS = {
+		'email-thread': Mail,
+		raadsverslag: Users,
+		klachtbrief: FileTextIcon
+	} as const;
 
 	// When analyze fails we keep the extracted pages + registered doc id in
 	// memory so the retry button can re-run only the analyze step — the PDF
@@ -72,6 +82,32 @@
 		pendingDocId = null;
 		pendingPages = null;
 		resetSteps();
+	}
+
+	/**
+	 * Fetch one of the shipped sample PDFs and feed it into the same
+	 * upload pipeline the user would hit after dragging a file in. The
+	 * sample is wrapped as a `File` so every downstream stage — text
+	 * extraction, IndexedDB storage, analyze — runs unchanged.
+	 */
+	async function loadSample(sample: SampleDoc) {
+		if (uploading || loadingSampleId) return;
+		loadingSampleId = sample.id;
+		error = null;
+		try {
+			const res = await fetch(`/samples/${sample.id}.pdf`);
+			if (!res.ok) {
+				throw new Error(`Voorbeeld kon niet worden geladen (${res.status})`);
+			}
+			const blob = await res.blob();
+			const file = new File([blob], sample.filename, { type: 'application/pdf' });
+			handleFiles([file]);
+			await handleUpload();
+		} catch (e) {
+			error = describeError(e);
+		} finally {
+			loadingSampleId = null;
+		}
 	}
 
 	function describeError(e: unknown): string {
@@ -172,7 +208,22 @@
 </script>
 
 <svelte:head>
-	<title>Probeer WOO Buddy</title>
+	<title>Probeer WOO Buddy — upload je Woo-PDF en lak in je browser</title>
+	<meta
+		name="description"
+		content="Test WOO Buddy met je eigen Woo-document. De PDF blijft in je browser — geen upload naar onze servers, geen AI, geen account nodig."
+	/>
+	<link rel="canonical" href="https://woobuddy.nl/try" />
+	<meta property="og:url" content="https://woobuddy.nl/try" />
+	<meta property="og:type" content="website" />
+	<meta
+		property="og:title"
+		content="Probeer WOO Buddy — upload je Woo-PDF en lak in je browser"
+	/>
+	<meta
+		property="og:description"
+		content="Test WOO Buddy met je eigen Woo-document. De PDF blijft in je browser — geen upload, geen AI, geen account nodig."
+	/>
 </svelte:head>
 
 <div class="flex min-h-screen flex-col bg-bg text-ink">
@@ -234,6 +285,50 @@
 						Detecteer persoonsgegevens
 					</button>
 				{/if}
+
+				<!-- Zero-upload trial: fictional samples the reviewer can click
+				     through instead of having to find a real document first. -->
+				<section class="mt-12">
+					<div class="mb-4 flex items-baseline justify-between gap-4">
+						<h2 class="font-serif text-xl text-ink">
+							Geen document bij de hand?
+						</h2>
+						<span class="text-xs text-ink-mute">100% fictieve data</span>
+					</div>
+					<p class="mb-5 text-sm leading-relaxed text-ink-soft">
+						Probeer WOO Buddy eerst met een voorbeeld. Je ziet meteen hoe de detectie werkt
+						&mdash; zonder iets te uploaden.
+					</p>
+					<ul class="grid gap-3 sm:grid-cols-3">
+						{#each SAMPLES as sample (sample.id)}
+							{@const Icon = SAMPLE_ICONS[sample.id]}
+							{@const isLoading = loadingSampleId === sample.id}
+							<li>
+								<button
+									type="button"
+									onclick={() => loadSample(sample)}
+									disabled={loadingSampleId !== null}
+									class="group flex h-full w-full flex-col items-start gap-2 rounded-md border border-border bg-surface p-4 text-left transition-colors hover:border-primary/60 hover:bg-bg disabled:cursor-not-allowed disabled:opacity-60"
+								>
+									<span
+										class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary"
+									>
+										<Icon size={16} />
+									</span>
+									<span class="font-medium text-ink">{sample.title}</span>
+									<span class="text-xs leading-relaxed text-ink-soft">
+										{sample.description}
+									</span>
+									<span
+										class="mt-auto pt-2 text-xs font-medium text-primary group-hover:underline"
+									>
+										{isLoading ? 'Voorbeeld laden…' : 'Open voorbeeld →'}
+									</span>
+								</button>
+							</li>
+						{/each}
+					</ul>
+				</section>
 			{:else}
 				<div class="rounded-md border border-border bg-surface px-8 py-8">
 					<p class="mb-5 font-serif text-lg text-ink">

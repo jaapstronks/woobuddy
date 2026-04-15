@@ -100,7 +100,7 @@ export async function loadPdfDocument(bytes: ArrayBuffer): Promise<PDFDocumentPr
  * Extract text with bounding boxes from all pages of a PDF document.
  *
  * The returned coordinates use top-left origin to match PyMuPDF conventions,
- * which the backend NER/LLM pipeline expects.
+ * which the backend NER pipeline expects.
  *
  * Throws `PdfError` with kind `"no_text"` when the document yields zero
  * selectable characters (most likely a scanned PDF). Callers should block

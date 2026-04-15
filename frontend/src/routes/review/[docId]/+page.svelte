@@ -49,22 +49,26 @@
 	import KeyboardShortcuts from '$lib/components/review/KeyboardShortcuts.svelte';
 	import ReviewSkeleton from '$lib/components/review/ReviewSkeleton.svelte';
 	import Alert from '$lib/components/ui/Alert.svelte';
+	import LeadCaptureForm from '$lib/components/marketing/LeadCaptureForm.svelte';
 	import { getPdf, storePdf } from '$lib/services/pdf-store';
 	import { extractText, loadPdfDocument } from '$lib/services/pdf-text-extractor';
 	import { exportRedactedPdf, downloadBlob } from '$lib/services/export-service';
+	import { buildDebugExport, downloadDebugExport } from '$lib/services/debug-export';
 	import type { WooArticleCode, EntityType, DetectionTier, SubjectRole } from '$lib/types';
 	import {
 		ArrowLeft,
 		PanelRightClose,
 		PanelRightOpen,
 		Download,
+		FileJson,
 		RotateCw,
 		Undo2,
 		Redo2,
 		Search,
 		ListOrdered,
 		StretchHorizontal,
-		Maximize2
+		Maximize2,
+		X
 	} from 'lucide-svelte';
 
 	const docId = $derived(page.params.docId!);
@@ -73,6 +77,10 @@
 	let needsPdf = $state(false);
 	let exporting = $state(false);
 	let exportError = $state<string | null>(null);
+	// #45 — After a successful export we surface the lead-capture form as a
+	// dismissible card. The flag is reviewer-session-scoped; dismissing (or
+	// successfully submitting) hides it until the next export completes.
+	let showPostExportLead = $state(false);
 	// Exposed by PdfViewer via `bind:stageEl` — the manual selection bar/form
 	// use this element's bounding rect to project page-space anchors to
 	// viewport pixels, so they follow the PDF through scroll and zoom.
@@ -220,6 +228,16 @@
 		input.click();
 	}
 
+	function handleDebugExport() {
+		// Diagnostic dump of the analyzer's output for the current document.
+		// Runs entirely client-side: pulls from the in-memory detection
+		// store, no server round-trip. Intended for comparing the sidebar
+		// against a fixture PDF when triaging false positives/negatives.
+		const payload = buildDebugExport(reviewStore.document, detectionStore.all);
+		const base = reviewStore.document?.filename ?? `document-${docId}`;
+		downloadDebugExport(payload, base);
+	}
+
 	async function handleExport() {
 		if (!pdfData) {
 			exportError = 'Geen PDF beschikbaar om te exporteren.';
@@ -231,6 +249,7 @@
 			const filename = reviewStore.document?.filename ?? 'document.pdf';
 			const redacted = await exportRedactedPdf(docId, pdfData);
 			downloadBlob(redacted, `gelakt_${filename}`);
+			showPostExportLead = true;
 		} catch (e) {
 			exportError = e instanceof Error ? e.message : 'Export mislukt';
 		} finally {
@@ -973,7 +992,17 @@
 					if (searchStore.open && !reviewStore.sidebarOpen) reviewStore.toggleSidebar();
 				}}
 			>
-				<Search size={14} />
+				<span style="display: inline-flex; align-items: center;"><Search size={14} /></span>
+			</sl-button>
+		</sl-tooltip>
+		<sl-tooltip content="Exporteer detecties als JSON (diagnostiek)">
+			<sl-button
+				size="small"
+				variant="text"
+				onclick={handleDebugExport}
+				disabled={detectionStore.all.length === 0}
+			>
+				<FileJson size={14} />
 			</sl-button>
 		</sl-tooltip>
 		<sl-button size="small" variant="primary" onclick={handleExport} disabled={exporting || !pdfData}>
@@ -1034,6 +1063,34 @@
 					<RotateCw size={14} />
 					Opnieuw proberen
 				</button>
+			</div>
+		{/if}
+		{#if showPostExportLead}
+			<!-- #45 — post-export lead capture. Appears once per successful
+			     export and is dismissible so a repeat exporter isn't nagged. -->
+			<div class="mx-4 mt-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
+				<div class="flex items-start justify-between gap-3">
+					<div>
+						<p class="text-sm font-medium text-ink">
+							Fijn dat je WOO Buddy hebt geprobeerd.
+						</p>
+						<p class="mt-1 text-sm text-ink-soft">
+							Wil je gemaild worden zodra er teamfuncties zijn? Geen nieuwsbrief,
+							geen spam.
+						</p>
+					</div>
+					<button
+						type="button"
+						onclick={() => (showPostExportLead = false)}
+						class="shrink-0 rounded-md p-1 text-ink-mute hover:bg-primary/10 hover:text-ink"
+						aria-label="Sluiten"
+					>
+						<X size={16} />
+					</button>
+				</div>
+				<div class="mt-3">
+					<LeadCaptureForm source="post-export" compact />
+				</div>
 			</div>
 		{/if}
 		<!-- Five-year rule warning (Art. 5.3 Woo) -->
