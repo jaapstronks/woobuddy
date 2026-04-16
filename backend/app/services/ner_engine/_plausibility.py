@@ -115,7 +115,7 @@ def _is_plausible_person_name(text: str) -> bool:
     Runs before the detection is emitted, so organization names,
     fragments, and generic phrases never enter the review list in the
     first place. The goal is to drop the obvious garbage — marginal
-    cases should still be kept and fall through to the LLM verifier.
+    cases should still be kept for the reviewer to decide.
     Returns True to keep the detection, False to drop it.
     """
     stripped = text.strip()

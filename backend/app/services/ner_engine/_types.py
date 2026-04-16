@@ -27,7 +27,7 @@ NEREntityType = Literal[
 
 NERTier = Literal["1", "2"]
 
-NERSource = Literal["regex", "deduce", "rule"]
+NERSource = Literal["regex", "deduce", "rule", "initials_rule", "title_rule"]
 
 
 @dataclass
@@ -87,10 +87,7 @@ def _merge_without_overlap(
     logger = get_logger(__name__)
     ranges = [(d.start_char, d.end_char) for d in detections if d.entity_type == entity_type]
     for hit in new_hits:
-        overlaps = any(
-            hit.start_char < end and hit.end_char > start
-            for start, end in ranges
-        )
+        overlaps = any(hit.start_char < end and hit.end_char > start for start, end in ranges)
         if overlaps:
             logger.debug(log_tag, start=hit.start_char, end=hit.end_char)
             continue

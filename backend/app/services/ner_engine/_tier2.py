@@ -110,9 +110,7 @@ def _is_plausible_home_address(span_text: str, full_text: str, start_char: int) 
 _TRIM_CHARS = " \t\n\r,.;:!?\"'()[]"
 
 
-def _trim_span(
-    annotation_text: str, start_char: int, end_char: int
-) -> tuple[str, int, int]:
+def _trim_span(annotation_text: str, start_char: int, end_char: int) -> tuple[str, int, int]:
     """Strip punctuation/whitespace from both ends of an entity span.
 
     Returns the (text, start, end) triple ready to be stored on the
@@ -215,9 +213,7 @@ def detect_tier2(text: str) -> list[NERDetection]:
                 else:
                     reasoning = "Achternaam herkend op CBS-achternamenlijst."
         elif entity_type == "adres":
-            if not _is_plausible_home_address(
-                annotation.text, text, annotation.start_char
-            ):
+            if not _is_plausible_home_address(annotation.text, text, annotation.start_char):
                 logger.debug(
                     "ner.adres_dropped_by_org_filter",
                     start=annotation.start_char,
@@ -278,32 +274,31 @@ def detect_tier2(text: str) -> list[NERDetection]:
             )
         )
 
-    # Straatnaam + huisnummer rule — catches full `Xxxstraat 194`
-    # spans that Deduce silently drops on ordinary Dutch letter /
-    # invoice prose. Run after the Deduce pass so we can overlap-dedupe
-    # against any Deduce `adres` hit that did fire at the same
-    # position (Deduce wins — its confidence is already higher on the
-    # cases where it trips, and its span boundary is slightly more
-    # conservative than our suffix-anchored regex).
-    straatnaam_hits = _detect_adres_by_straatnaam(text)
-    if straatnaam_hits:
-        # Apply the same institutional-address filter that gates Deduce
-        # `adres` hits — a street at a gemeentehuis / bezoekadres is
-        # public and should not be redacted.
-        straatnaam_hits = [
-            h
-            for h in straatnaam_hits
-            if _is_plausible_home_address(h.text, text, h.start_char)
-        ]
-        _merge_without_overlap(
-            detections, straatnaam_hits, "adres", "ner.straatnaam_dropped_overlap"
-        )
+    # ---- Post-Deduce sub-rules ----
+    #
+    # Each sub-rule runs a regex-based detector on the full text, then
+    # merges hits into the accumulation list with overlap dedup. Order
+    # matters: earlier rules take priority at the same char span. The
+    # numbers below are the execution order.
+    #
+    # 1. straatnaam   — "Havenstraat 194" (Deduce misses plain prose)
+    # 2. huisnummer   — "huisnummer 22" / "bewoner van nummer 26"
+    # 3. initials     — "G.J. Stronks" (CBS surname miss)
+    # 4. label-id     — "Klantnummer: 123" / "Kenmerk: OT-…"
+    # 5. title-prefix — "de heer El Khatib" (non-CBS after salutation)
 
-    # Huisnummer rule (#51) — catches `huisnummer N` and residence-cued
-    # `nummer N` fragments that Deduce does not emit when the street
-    # token is absent. Run after the Deduce pass so we can drop any
-    # Deduce adres hit that falls fully inside a new huisnummer span
-    # (prevents double cards on the same passage).
+    # 1. Straatnaam: full Dutch street+number spans. Institutional-
+    # address filter applied so gemeentehuis addresses are dropped.
+    straatnaam_hits = [
+        h
+        for h in _detect_adres_by_straatnaam(text)
+        if _is_plausible_home_address(h.text, text, h.start_char)
+    ]
+    _merge_without_overlap(detections, straatnaam_hits, "adres", "ner.straatnaam_dropped_overlap")
+
+    # 2. Huisnummer: partially-anonymized "huisnummer N" / "bewoner
+    # van nummer N". Special semantics: replaces existing adres hits
+    # fully contained within a huisnummer span (prevents double cards).
     huisnummer_hits = _detect_adres_by_huisnummer(text)
     if huisnummer_hits:
         hn_ranges = [(h.start_char, h.end_char) for h in huisnummer_hits]
@@ -312,44 +307,31 @@ def detect_tier2(text: str) -> list[NERDetection]:
             for d in detections
             if not (
                 d.entity_type == "adres"
-                and any(
-                    start <= d.start_char and end >= d.end_char
-                    for start, end in hn_ranges
-                )
+                and any(s <= d.start_char and e >= d.end_char for s, e in hn_ranges)
             )
         ]
         detections.extend(huisnummer_hits)
 
-    # Initials rule — catches `G.J. Stronks`-style persoon spans that
-    # Deduce emits but the CBS name-list filter drops because the
-    # surname is not in the top-N list. The structural pattern
-    # (`[A-Z]\.` + capitalized surname) is the evidence; no wordlist
-    # lookup required. Dedupe against existing `persoon` hits so a
-    # Deduce + CBS win is never demoted.
-    initials_hits = _detect_persoon_via_initials(text)
-    if initials_hits:
-        _merge_without_overlap(
-            detections, initials_hits, "persoon", "ner.initials_rule_dropped_overlap"
-        )
+    # 3. Initials: "G.J. Stronks"-style structural pattern (no
+    # wordlist required). Deduped against existing persoon hits.
+    _merge_without_overlap(
+        detections,
+        _detect_persoon_via_initials(text),
+        "persoon",
+        "ner.initials_rule_dropped_overlap",
+    )
 
-    # Label-anchored identifier rule — catches `Klantnummer: 123`,
-    # `Factuurnummer: 456`, `Kenmerk: OT-…` spans that neither Tier 1
-    # regex nor Deduce emits today. Each label carries its own
-    # confidence (klantnummer > dossiernummer > factuurnummer) because
-    # the identification strength differs; see `_label_anchored_id.py`
-    # for the tiered table. The emitted spans cover only the number
-    # so the redacted output reads "Klantnummer: ███".
+    # 4. Label-anchored IDs: "Klantnummer: 123", "Kenmerk: OT-…".
+    # No dedup — these reference numbers don't overlap NER entities.
     detections.extend(_detect_label_anchored_ids(text))
 
-    # Title-prefix rule (#48) — catches non-Dutch surnames that Deduce
-    # produces but the CBS name-list filter drops (e.g. "El Khatib",
-    # "Yılmaz", "Kowalski"). Runs on the same text and is filtered
-    # against existing `persoon` hits so a Deduce + CBS win is never
-    # demoted to the title rule's lower 0.75 confidence.
-    title_hits = _detect_persoon_via_title_prefix(text, name_lists)
-    if title_hits:
-        _merge_without_overlap(
-            detections, title_hits, "persoon", "ner.title_rule_dropped_overlap"
-        )
+    # 5. Title-prefix: salutation + capitalized non-CBS surnames.
+    # Deduped against existing persoon hits so CBS wins aren't demoted.
+    _merge_without_overlap(
+        detections,
+        _detect_persoon_via_title_prefix(text, name_lists),
+        "persoon",
+        "ner.title_rule_dropped_overlap",
+    )
 
     return _deduplicate(detections)

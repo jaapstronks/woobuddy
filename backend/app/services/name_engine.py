@@ -41,8 +41,21 @@ _ACHTERNAMEN_FILE = _DATA_DIR / "cbs_achternamen.csv"
 # lookup while still accepting the span as a potential name. Kept as
 # space-joined strings so multi-word tussenvoegsels like "van den" or
 # "de la" match too.
-_TUSSENVOEGSELS_RAW: tuple[str, ...] = (
-    # Dutch
+# ---- Tussenvoegsel constants (single source of truth) --------------------
+#
+# Three subsets used by different consumers:
+#
+# - DUTCH_TUSSENVOEGSELS: particles that appear in Dutch names AND
+#   street names. Used by the straatnaam rule and as the default
+#   set for NameLists.
+# - INTL_TUSSENVOEGSELS: Arabic, Italian, Portuguese, German, Spanish
+#   particles that appear in personal names on Woo documents but NOT in
+#   Dutch street names. Used together with DUTCH for person detection.
+# - _TUSSENVOEGSELS_RAW: the full set (Dutch + international). Used by
+#   load_name_lists() for NameLists construction. Kept as a backward-compat
+#   alias.
+#
+DUTCH_TUSSENVOEGSELS: tuple[str, ...] = (
     "van",
     "van den",
     "van der",
@@ -50,6 +63,9 @@ _TUSSENVOEGSELS_RAW: tuple[str, ...] = (
     "van 't",
     "van het",
     "de",
+    "de la",
+    "de los",
+    "de las",
     "der",
     "den",
     "ter",
@@ -67,9 +83,10 @@ _TUSSENVOEGSELS_RAW: tuple[str, ...] = (
     "in 't",
     "in de",
     "in den",
-    # Arabic / Maghrebi (todo #48). "El" / "Al" before a capitalized
-    # surname ("El Khatib", "Al Hassan") needs to be skipped or the CBS
-    # lookup lands on the particle instead of the real surname.
+)
+
+INTL_TUSSENVOEGSELS: tuple[str, ...] = (
+    # Arabic / Maghrebi
     "el",
     "al",
     "abu",
@@ -88,10 +105,6 @@ _TUSSENVOEGSELS_RAW: tuple[str, ...] = (
     "dal",
     "lo",
     "la",
-    # Spanish — "de" already covered, add the multi-word forms.
-    "de la",
-    "de los",
-    "de las",
     # German — "von der" mirrors "van der".
     "von",
     "von der",
@@ -99,6 +112,86 @@ _TUSSENVOEGSELS_RAW: tuple[str, ...] = (
     "zu",
     "vom",
 )
+
+_TUSSENVOEGSELS_RAW: tuple[str, ...] = DUTCH_TUSSENVOEGSELS + INTL_TUSSENVOEGSELS
+
+
+# ---- Regex builder for tussenvoegsel patterns ----------------------------
+
+
+def _ci_first(token: str) -> str:
+    """Case-insensitive first character: ``"van"`` → ``"[Vv]an"``."""
+    if not token or not token[0].isalpha():
+        return re.escape(token)
+    return f"[{token[0].upper()}{token[0].lower()}]{re.escape(token[1:])}"
+
+
+def build_tussenvoegsel_regex(
+    particles: tuple[str, ...],
+    separator: str = r"\s+",
+) -> str:
+    """Build a non-capturing regex group matching any tussenvoegsel sequence.
+
+    Groups particles into a one-level prefix tree for efficient matching.
+    For example, ``("van", "van den", "van der")`` with ``separator=r"\\s+"``
+    produces::
+
+        (?:[Vv]an\\s+(?:[Dd]en\\s+|[Dd]er\\s+)?|...)
+
+    Each token is case-insensitive on its first letter. The trailing
+    *separator* is included so the result can be concatenated directly
+    with a surname or street-name pattern.
+
+    Parameters
+    ----------
+    particles:
+        Tussenvoegsel strings (e.g. ``"van"``, ``"van den"``, ``"de la"``).
+    separator:
+        Regex fragment for the whitespace between tokens. Use ``r"\\s+"``
+        for general matching or ``r"[^\\S\\n]+"`` to stay on one line.
+    """
+    # Parse into (first_token, suffix_tokens) pairs.
+    parsed: list[tuple[str, tuple[str, ...]]] = []
+    for p in particles:
+        tokens = p.split()
+        if tokens:
+            parsed.append((tokens[0], tuple(tokens[1:])))
+
+    # Group by lowercased first token, preserving insertion order.
+    groups: dict[str, tuple[str, list[tuple[str, ...]]]] = {}
+    for first, rest in parsed:
+        key = first.lower()
+        if key not in groups:
+            groups[key] = (first, [])
+        groups[key][1].append(rest)
+
+    alternatives: list[str] = []
+    for _key, (first_token, rest_list) in groups.items():
+        first_re = _ci_first(first_token)
+        has_standalone = () in rest_list
+        suffixes = [r for r in rest_list if r]
+
+        if not suffixes:
+            # Standalone only: [Vv]an{sep}
+            alternatives.append(f"{first_re}{separator}")
+        else:
+            # Build suffix alternation, longest first.
+            suffix_alts = []
+            for suffix_tokens in sorted(suffixes, key=len, reverse=True):
+                parts = separator.join(_ci_first(t) for t in suffix_tokens)
+                suffix_alts.append(f"{parts}{separator}")
+
+            inner = "|".join(suffix_alts)
+            inner_group = suffix_alts[0] if len(suffix_alts) == 1 else f"(?:{inner})"
+
+            if has_standalone:
+                # Optional suffix: [Vv]an{sep}(?:[Dd]en{sep}|[Dd]er{sep})?
+                alternatives.append(f"{first_re}{separator}{inner_group}?")
+            else:
+                # Required suffix: [Aa]an{sep}(?:[Dd]e{sep}|[Dd]en{sep})
+                alternatives.append(f"{first_re}{separator}{inner_group}")
+
+    return f"(?:{'|'.join(alternatives)})"
 
 
 @dataclass(frozen=True)

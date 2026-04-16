@@ -34,6 +34,8 @@ from __future__ import annotations
 
 import re
 
+from app.services.name_engine import DUTCH_TUSSENVOEGSELS, build_tussenvoegsel_regex
+
 from ._tier1 import _POSTCODE_PATTERN
 from ._types import NERDetection
 
@@ -88,22 +90,11 @@ _CAP_WORD = r"[A-ZÄËÏÖÜÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛ][A-Za-zëéèïüöä
 # because the cap-word prefix would greedily absorb the preceding line.
 _HSP = r"[^\S\n]+"
 
-# Optional leading tussenvoegsel run. Written explicitly so multi-token
-# sequences ("Van der", "Van den", "De la") match in one go. Matched
-# case-insensitively (tussen may appear capitalized at the start of a
-# street name: "Van der Helstplein" in letterheads, "van der helstplein"
-# in free-form body text).
-_TUSSEN_PREFIX = (
-    r"(?:"
-    rf"[Vv]an{_HSP}(?:den{_HSP}|der{_HSP}|de{_HSP}|'t{_HSP}|het{_HSP})?|"
-    rf"[Dd]e{_HSP}(?:la{_HSP}|los{_HSP}|las{_HSP})?|"
-    rf"[Dd]er{_HSP}|[Dd]en{_HSP}|[Hh]et{_HSP}|'t{_HSP}|"
-    rf"[Tt]en{_HSP}|[Tt]er{_HSP}|[Tt]e{_HSP}|"
-    rf"[Oo]p{_HSP}(?:den{_HSP}|de{_HSP})?|"
-    rf"[Aa]an{_HSP}(?:den{_HSP}|de{_HSP})?|"
-    rf"[Ii]n{_HSP}(?:den{_HSP}|de{_HSP}|'t{_HSP})?"
-    r")"
-)
+# Optional leading tussenvoegsel run. Generated from the canonical
+# Dutch particle list in `name_engine` so additions propagate
+# automatically. Uses same-line whitespace (`_HSP`) so the match
+# doesn't bleed across line breaks.
+_TUSSEN_PREFIX = build_tussenvoegsel_regex(DUTCH_TUSSENVOEGSELS, separator=_HSP)
 
 # Full street + number pattern:
 #

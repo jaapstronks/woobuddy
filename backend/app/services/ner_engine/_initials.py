@@ -28,6 +28,12 @@ from __future__ import annotations
 
 import re
 
+from app.services.name_engine import (
+    DUTCH_TUSSENVOEGSELS,
+    INTL_TUSSENVOEGSELS,
+    build_tussenvoegsel_regex,
+)
+
 from ._plausibility import _is_plausible_person_name
 from ._types import NERDetection
 
@@ -39,30 +45,9 @@ _INITIALS = r"(?:[A-Z]\.\s*){1,4}"
 # Optional tussenvoegsel run between initials and surname. Allows
 # both lowercase ("M. de Vries") and capitalized ("M. De Vries",
 # "M. El Khatib") since Dutch convention capitalizes the tussen when
-# the given name is omitted. Multi-token sequences are written
-# explicitly so "van der" / "de la" match as one unit. Non-Dutch
-# particles ("el", "al", "da", "di", "von") are included because the
-# rule has to handle Dutch-government correspondence with international
-# residents (mirrors `name_engine._TUSSENVOEGSELS_RAW`).
-_TUSSEN = (
-    r"(?:"
-    # Dutch multi-token sequences first so the longest match wins.
-    r"[Vv]an\s+(?:[Dd]en\s+|[Dd]er\s+|[Dd]e\s+|'t\s+|[Hh]et\s+)?|"
-    r"[Dd]e\s+(?:[Ll]a\s+|[Ll]os\s+|[Ll]as\s+)?|"
-    r"[Vv]on\s+(?:[Dd]er\s+|[Dd]en\s+)?|"
-    r"[Oo]p\s+(?:[Dd]en\s+|[Dd]e\s+)?|"
-    r"[Aa]an\s+(?:[Dd]en\s+|[Dd]e\s+)?|"
-    r"[Ii]n\s+(?:[Dd]en\s+|[Dd]e\s+|'t\s+)?|"
-    r"[Uu]it\s+(?:[Dd]en\s+|[Dd]e\s+)?|"
-    # Single-token Dutch particles.
-    r"[Dd]er\s+|[Dd]en\s+|[Hh]et\s+|'t\s+|"
-    r"[Tt]en\s+|[Tt]er\s+|[Tt]e\s+|"
-    # Non-Dutch particles routinely seen in Woo correspondence.
-    r"[Ee]l\s+|[Aa]l\s+|[Aa]bu\s+|[Aa]bd\s+|[Bb]en\s+|[Bb]in\s+|[Ii]bn\s+|"
-    r"[Dd]a\s+|[Dd]o\s+|[Dd]os\s+|[Dd]as\s+|[Dd]i\s+|[Dd]el\s+|[Dd]ella\s+|[Dd]al\s+|[Ll]o\s+|[Ll]a\s+|"
-    r"[Vv]om\s+|[Zz]u\s+"
-    r")"
-)
+# the given name is omitted. Generated from the canonical particle
+# list in `name_engine` so additions propagate automatically.
+_TUSSEN = build_tussenvoegsel_regex(DUTCH_TUSSENVOEGSELS + INTL_TUSSENVOEGSELS, separator=r"\s+")
 
 # Legal-form and title abbreviations that look like initials but are
 # not personal names. If the initials portion normalizes to any of

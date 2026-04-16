@@ -7,19 +7,16 @@ Tier 2 tests use the real Deduce library (loaded once, ~2s startup).
 import pytest
 
 from app.services.name_engine import load_name_lists
-from app.services.ner_engine import (
-    NERDetection,
-    _detect_persoon_via_title_prefix,
+from app.services.ner_engine import NERDetection, detect_all, detect_tier1, detect_tier2
+from app.services.ner_engine._plausibility import _is_plausible_person_name
+from app.services.ner_engine._tier1 import (
     _is_plausible_birth_date,
-    _is_plausible_person_name,
     _parse_birth_date,
     _validate_bsn,
     _validate_btw,
     _validate_luhn,
-    detect_all,
-    detect_tier1,
-    detect_tier2,
 )
+from app.services.ner_engine._title_prefix import _detect_persoon_via_title_prefix
 
 # ---------------------------------------------------------------------------
 # Tier 1: BSN (Burgerservicenummer) — 9 digits with 11-proef
@@ -574,7 +571,7 @@ class TestTier2Deduce:
         the name lists is dropped by the name engine — regression test
         for the post-LLM false-positive gap."""
         from app.services.name_engine import score_person_candidate
-        from app.services.ner_engine import _get_name_lists
+        from app.services.ner_engine._deduce import _get_name_lists
 
         lists = _get_name_lists()
         # Sanity check: this span has no tokens in either list.

@@ -60,6 +60,7 @@ def _is_cap_name_token(tok: str) -> bool:
         return False
     return tok[:1].isupper()
 
+
 # A "name token" in general: either an initial ("W.", "A.M."), a
 # lowercase-led tussenvoegsel candidate, or a capitalized token.
 # Tokenization is whitespace-delimited; the caller strips trailing
