@@ -11,10 +11,8 @@ tested and grown in isolation. The two public helpers are:
   rejected, ambtenaar → pending with pre-filled role).
 """
 
-from typing import Any
-
 from app.services.ner_engine import DEFAULT_WOO_ARTICLE, NERDetection
-from app.services.pipeline_types import PipelineDetection
+from app.services.pipeline_types import Bbox, PipelineDetection
 from app.services.role_engine import (
     FunctionTitleMatch,
     find_function_title_near,
@@ -73,7 +71,7 @@ def match_function_title(
 
 def title_match_to_detection(
     det: NERDetection,
-    bboxes: list[dict[str, Any]],
+    bboxes: list[Bbox],
     match: FunctionTitleMatch,
 ) -> PipelineDetection | None:
     """Map a rule-engine hit onto a PipelineDetection.

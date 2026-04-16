@@ -5,9 +5,7 @@
  * so they survive page reloads within a session.
  */
 
-const DB_NAME = 'woobuddy-pdfs';
-const DB_VERSION = 2;
-const STORE_NAME = 'documents';
+import { openWoobuddyDb, DOCUMENTS_STORE as STORE_NAME } from './idb';
 
 export interface StoredPdf {
 	id: string;
@@ -26,22 +24,12 @@ export class PdfStoreError extends Error {
 	}
 }
 
-function openDb(): Promise<IDBDatabase> {
-	return new Promise((resolve, reject) => {
-		const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-		request.onupgradeneeded = () => {
-			const db = request.result;
-			// Drop and recreate: old schema had a dossierId index we no longer use.
-			if (db.objectStoreNames.contains(STORE_NAME)) {
-				db.deleteObjectStore(STORE_NAME);
-			}
-			db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-		};
-
-		request.onsuccess = () => resolve(request.result);
-		request.onerror = () => reject(new PdfStoreError('Failed to open IndexedDB', request.error));
-	});
+async function openDb(): Promise<IDBDatabase> {
+	try {
+		return await openWoobuddyDb();
+	} catch (cause) {
+		throw new PdfStoreError('Failed to open IndexedDB', cause);
+	}
 }
 
 /**

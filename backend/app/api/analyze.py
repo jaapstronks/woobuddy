@@ -12,7 +12,7 @@ counts, page counts) — never the extracted text itself.
 from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from sqlalchemy import select
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.documents import get_document_or_404
@@ -118,12 +118,9 @@ async def analyze_document(
             custom_terms=cast("list[CustomTermLike]", data.custom_terms),
         )
 
-        # Clear existing detections
-        existing = await db.execute(
-            select(Detection).where(Detection.document_id == data.document_id)
+        await db.execute(
+            delete(Detection).where(Detection.document_id == data.document_id)
         )
-        for det in existing.scalars().all():
-            await db.delete(det)
 
         # Store detections WITHOUT entity_text — the Detection model actively
         # rejects the kwarg (client-first architecture: no PII at rest).

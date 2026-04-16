@@ -9,17 +9,17 @@
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import type { Detection, BoundingBox } from '$lib/types';
 	import type { ReviewMode } from '$lib/stores/review.svelte';
-	import {
-		computeSelectionAnchor,
-		rangeToBoundingBoxes,
-		snapRangeToWordBoundaries,
-		type ManualSelection
-	} from '$lib/services/selection-bbox';
+	import { type ManualSelection } from '$lib/services/selection-bbox';
+	import { readTextLayerSelection } from '$lib/services/pdf-text-selection';
 	import {
 		drawDetectionOverlays,
 		drawSearchHighlights,
 		type SearchHighlight
 	} from '$lib/services/pdf-overlay-draw';
+	import {
+		flashOverlays,
+		scrollDetectionIntoView
+	} from '$lib/services/pdf-overlay-effects';
 	import { loadPdfDocument, renderPdfPage } from '$lib/services/pdf-page-render';
 	import PdfViewerToolbar from './PdfViewerToolbar.svelte';
 	import PageStrip from './PageStrip.svelte';
@@ -181,22 +181,36 @@
 		onManualSelection: (selection) => onManualSelection?.(selection)
 	});
 
-	onMount(async () => {
+	onMount(() => {
 		// Area-selection listeners live on the window so a drag that leaves
 		// the stage mid-gesture still finishes cleanly.
 		window.addEventListener('mousemove', handleWindowMouseMove);
 		window.addEventListener('mouseup', handleWindowMouseUp);
 		window.addEventListener('keydown', handleWindowKeyDown);
-
-		// Client-first: PDF comes from the in-memory ArrayBuffer only.
-		if (!pdfData) return;
-		pdfDoc = await loadPdfDocument(pdfData);
 	});
 
 	onDestroy(() => {
 		window.removeEventListener('mousemove', handleWindowMouseMove);
 		window.removeEventListener('mouseup', handleWindowMouseUp);
 		window.removeEventListener('keydown', handleWindowKeyDown);
+	});
+
+	// Load the pdf.js document whenever `pdfData` becomes available. Using
+	// `$effect` instead of `onMount` matters: the review page sets `pdfData`
+	// *after* `detectionStore.load` resolves, which can land after PdfViewer
+	// has already mounted. An onMount-only load would see `pdfData === null`
+	// and leave the viewer stuck at "PDF laden…".
+	$effect(() => {
+		if (!pdfData) return;
+		const bytes = pdfData;
+		let cancelled = false;
+		(async () => {
+			const doc = await loadPdfDocument(bytes);
+			if (!cancelled) pdfDoc = doc;
+		})();
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	async function renderPdf(pageNum: number) {
@@ -303,50 +317,12 @@
 
 	function emitSelection(altKey: boolean) {
 		if (!textLayerEl || !onManualSelection) return;
-		const sel = window.getSelection();
-		if (!sel || sel.rangeCount === 0) {
+		const payload = readTextLayerSelection({ textLayerEl, scale, currentPage, altKey });
+		if (payload === null) {
 			onManualSelectionCleared?.();
 			return;
 		}
-		const range = sel.getRangeAt(0);
-		if (range.collapsed) {
-			onManualSelectionCleared?.();
-			return;
-		}
-		// Only accept selections that are inside the current page's text layer.
-		// Invariant: we render one page at a time, so the browser cannot extend
-		// a native selection across pages — there is nothing else in the
-		// scroller for it to reach into. If we ever move to a virtual/paginated
-		// scroller that keeps multiple pages in the DOM, this guard becomes
-		// necessary-but-insufficient: the commonAncestorContainer could sit in
-		// a shared parent and still span pages. Revisit this check before that
-		// change lands.
-		if (!textLayerEl.contains(range.commonAncestorContainer)) {
-			onManualSelectionCleared?.();
-			return;
-		}
-
-		if (!altKey) snapRangeToWordBoundaries(range);
-
-		const text = range.toString().trim();
-		if (!text) {
-			onManualSelectionCleared?.();
-			return;
-		}
-
-		const bboxes = rangeToBoundingBoxes(range, textLayerEl, scale, currentPage);
-		if (bboxes.length === 0) {
-			onManualSelectionCleared?.();
-			return;
-		}
-
-		const anchor = computeSelectionAnchor(range, textLayerEl, scale, currentPage);
-		if (!anchor) {
-			onManualSelectionCleared?.();
-			return;
-		}
-
-		onManualSelection({ page: currentPage, text, bboxes, anchor });
+		onManualSelection(payload);
 	}
 
 	// Render PDF when page, doc, or scale changes — untrack internal state reads
@@ -423,19 +399,7 @@
 		// its own effect and we need the appendChild calls to have flushed.
 		requestAnimationFrame(() => {
 			if (!overlayEl) return;
-			const el = overlayEl.querySelector<HTMLElement>(
-				`[data-detection-id="${CSS.escape(id)}"]`
-			);
-			if (!el) return;
-			el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-			el.classList.remove('overlay-selected-pulse');
-			void el.offsetWidth;
-			el.classList.add('overlay-selected-pulse');
-			el.addEventListener(
-				'animationend',
-				() => el.classList.remove('overlay-selected-pulse'),
-				{ once: true }
-			);
+			scrollDetectionIntoView(overlayEl, id, 'overlay-selected-pulse');
 		});
 	});
 
@@ -511,22 +475,7 @@
 	 */
 	export function flashDetections(ids: string[]) {
 		if (!overlayEl || ids.length === 0) return;
-		for (const id of ids) {
-			const els = overlayEl.querySelectorAll<HTMLElement>(
-				`[data-detection-id="${CSS.escape(id)}"]`
-			);
-			for (const el of els) {
-				// Restart the animation if the class is already on — removing
-				// and re-adding inside a rAF cycle forces the keyframe to
-				// play again.
-				el.classList.remove('overlay-flash');
-				void el.offsetWidth;
-				el.classList.add('overlay-flash');
-				el.addEventListener('animationend', () => el.classList.remove('overlay-flash'), {
-					once: true
-				});
-			}
-		}
+		flashOverlays(overlayEl, ids, 'overlay-flash');
 	}
 </script>
 

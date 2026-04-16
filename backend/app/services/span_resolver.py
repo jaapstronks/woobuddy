@@ -7,9 +7,9 @@ functions have no dependency on PyMuPDF and are independently testable.
 """
 
 import re
-from typing import Any
 
 from app.services.pdf_engine import PageText, TextSpan
+from app.services.pipeline_types import Bbox
 
 # y0 tolerance for considering two text items to be on the same visual
 # line. 3 PDF points is ~1 line-height of baseline jitter — wider than
@@ -56,7 +56,7 @@ def _word_boundary_match_index(haystack: str, needle: str) -> int:
 
 
 def _is_word_boundary_match(haystack: str, needle: str) -> bool:
-    """Back-compat wrapper around `_word_boundary_match_index`."""
+    """True iff `needle` appears in `haystack` as a whole word."""
     return _word_boundary_match_index(haystack, needle) != -1
 
 
@@ -93,7 +93,7 @@ def count_word_boundary_matches(
     return count
 
 
-def _narrow_bbox_to_substring(span: "TextSpan", match_idx: int, match_len: int) -> dict[str, Any]:
+def _narrow_bbox_to_substring(span: "TextSpan", match_idx: int, match_len: int) -> Bbox:
     """Proportionally narrow a text span's bbox to the substring range
     `[match_idx, match_idx + match_len)`.
 
@@ -113,23 +113,11 @@ def _narrow_bbox_to_substring(span: "TextSpan", match_idx: int, match_len: int) 
     # Degenerate case — no characters to scale against. Return the span's
     # own bbox so the caller gets a non-empty (if approximate) box.
     if total == 0:
-        return {
-            "page": span.page,
-            "x0": span.x0,
-            "y0": span.y0,
-            "x1": span.x1,
-            "y1": span.y1,
-        }
+        return Bbox(page=span.page, x0=span.x0, y0=span.y0, x1=span.x1, y1=span.y1)
     width = span.x1 - span.x0
     x0 = span.x0 + width * (match_idx / total)
     x1 = span.x0 + width * ((match_idx + match_len) / total)
-    return {
-        "page": span.page,
-        "x0": x0,
-        "y0": span.y0,
-        "x1": x1,
-        "y1": span.y1,
-    }
+    return Bbox(page=span.page, x0=x0, y0=span.y0, x1=x1, y1=span.y1)
 
 
 def _try_merge_match_from_anchor(
@@ -138,7 +126,7 @@ def _try_merge_match_from_anchor(
     search_lower: str,
     first_word: str,
     search_stripped: str,
-) -> dict[str, Any] | None:
+) -> Bbox | None:
     """Try to assemble ``search_lower`` by walking same-line spans starting
     at ``spans[i]``. Returns a single bbox dict on success or ``None``.
 
@@ -204,13 +192,7 @@ def _try_merge_match_from_anchor(
             or _is_word_boundary_match(without_space, search_lower)
             or stripped == search_stripped
         ):
-            return {
-                "page": start.page,
-                "x0": x0,
-                "y0": y0,
-                "x1": x1,
-                "y1": y1,
-            }
+            return Bbox(page=start.page, x0=x0, y0=y0, x1=x1, y1=y1)
 
         if len(stripped) > len(search_stripped) + 4:
             return None
@@ -224,7 +206,7 @@ def _find_nth_occurrence(
     search_lower: str,
     first_word: str,
     occurrence_index: int,
-) -> list[dict[str, Any]]:
+) -> list[Bbox]:
     """Return a single-bbox list for the Nth word-boundary match of
     `search_lower` across `pages_to_check`, in reading order.
 
@@ -277,7 +259,7 @@ def find_span_for_text(
     search_text: str,
     page_hint: int | None = None,
     occurrence_index: int | None = None,
-) -> list[dict[str, Any]]:
+) -> list[Bbox]:
     """Find bounding boxes for a text string in the extracted text items.
 
     Matching rules (deliberately strict to avoid paragraph-sized bboxes
@@ -321,7 +303,7 @@ def find_span_for_text(
             pages_to_check, search_lower, first_word, occurrence_index
         )
 
-    results: list[dict[str, Any]] = []
+    results: list[Bbox] = []
 
     for page_text in pages_to_check:
         # 1) Single-item match — the common case. When the match is a

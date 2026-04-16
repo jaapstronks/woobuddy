@@ -10,9 +10,27 @@ tests that import them from the old location.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Literal, TypedDict
 
 from app.services.structure_engine import StructureSpan
+
+
+class Bbox(TypedDict):
+    """Single redaction bounding box in PDF coordinates.
+
+    Used throughout the detection pipeline and persisted to the
+    `Detection.bounding_boxes` JSONB column as-is. A TypedDict (rather
+    than a Pydantic model) keeps the runtime shape a plain dict, so
+    SQLAlchemy/JSON serialization needs no adapters, while still giving
+    mypy key-name checking and catching typos like "X0" vs "x0".
+    """
+
+    page: int
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
 
 PipelineReviewStatus = Literal[
     "auto_accepted",
@@ -35,7 +53,7 @@ class PipelineDetection:
     confidence: float
     woo_article: str | None
     review_status: PipelineReviewStatus
-    bounding_boxes: list[dict[str, Any]]
+    bounding_boxes: list[Bbox]
     reasoning: str
     source: str
     is_environmental: bool = False

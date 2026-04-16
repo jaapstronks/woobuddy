@@ -48,6 +48,12 @@
 		 * occurrence of the same (normalized) name in the document.
 		 */
 		onSameNameSweep?: (detectionId: string) => void;
+		/**
+		 * Sidebar scroll container. When provided, the selection effect
+		 * centers the newly-selected card inside it. Fallback to
+		 * `scrollIntoView` when omitted (tests, storybook).
+		 */
+		scrollContainer?: HTMLElement | null;
 	}
 
 	let {
@@ -66,7 +72,8 @@
 		onSetSubjectRole,
 		onSaveMotivation,
 		onSweepBlock,
-		onSameNameSweep
+		onSameNameSweep,
+		scrollContainer = null
 	}: Props = $props();
 
 	// Ctrl/Cmd-click on a card queues the detection for merging (#18);
@@ -154,9 +161,9 @@
 	//    chain mixes `overflow: hidden` and `overflow: auto`, and the
 	//    cross-container cascade is unreliable — it sometimes scrolls
 	//    the `overflow: hidden` parent and moves children out of view.
-	//    We resolve the known sidebar scroller via `[data-sidebar-scroll]`
-	//    (marked in review/+page.svelte) and compute the target scrollTop
-	//    ourselves so the card lands centered.
+	//    The parent passes its own scroller via the `scrollContainer`
+	//    prop, and we compute the target scrollTop ourselves so the card
+	//    lands centered.
 	//
 	// `requestAnimationFrame` defers the measurement until after the
 	// selection-highlight DOM mutation has been painted, so
@@ -167,14 +174,15 @@
 		if (!selectedId || !rootEl) return;
 		const id = selectedId;
 		const root = rootEl;
+		const scroller = scrollContainer;
 		requestAnimationFrame(() => {
 			const el = root.querySelector<HTMLElement>(
 				`[data-detection-id="${id}"]`
 			);
 			if (!el) return;
-			const scroller = el.closest<HTMLElement>('[data-sidebar-scroll]');
 			if (!scroller) {
-				// Fallback for tests / storybook where the marker is absent.
+				// Fallback for tests / storybook where the parent does not
+				// pass a scroll container.
 				el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 				return;
 			}

@@ -112,7 +112,7 @@ Once the core loop works, make it feel great **and** get it in front of real use
 | 23 | ~~[Landing page animations](done/23-animations.md)~~ | P3 | S | Testing & Polish |
 | 24 | ~~[Mobile responsive polish](done/24-mobile-responsive.md)~~ | P3 | S | Testing & Polish |
 | 39 | [Deployment setup](39-deployment.md) | P1 | M | Testing & Polish |
-| 40 | [Legal pages & SEO](40-legal-seo.md) | P1 | S | Testing & Polish |
+| 40 | ~~[Legal pages & SEO](done/40-legal-seo.md)~~ | P1 | S | Testing & Polish |
 | 41 | [Analytics (Plausible)](41-analytics.md) | P1 | S | Testing & Polish |
 | 43 | [Open source release & self-host](43-open-source-release.md) | P1 | M | Distribution strategy 2026-04 |
 | 44 | ~~[Sample documents on landing page](done/44-sample-documents-landing.md)~~ | P1 | S | Distribution strategy 2026-04 |
@@ -120,7 +120,8 @@ Once the core loop works, make it feel great **and** get it in front of real use
 | 46 | [Client-side conversion pipeline (images, .txt, .docx, .zip)](46-convert-to-pdf-ingestion.md) | P1 | L | Multi-format support 2026-04 |
 | 47 | [Client-side email / .msg thread ingestion](47-email-msg-ingestion.md) | P1 | M | Multi-format support 2026-04 |
 | 48 | [Accessible PDF export (lang tag, XMP, alt text, PDF/A-2b)](48-accessible-pdf-export.md) | P1 | M | Accessibility plan 2026-04 |
-| 49 | [In-browser OCR for scanned PDFs (tesseract.js)](49-in-browser-ocr.md) | P2 | M | Multi-format support 2026-04 |
+| 49 | ~~[In-browser OCR for scanned PDFs (tesseract.js)](done/49-in-browser-ocr.md)~~ | P2 | M | Multi-format support 2026-04 |
+| 50 | [Anonymous analyze: no server persistence](50-anonymous-no-persist.md) | P1 | L | Trust story vs current persistence |
 
 Launch when all P1s in this phase are green. That is the "Phase D milestone" below.
 

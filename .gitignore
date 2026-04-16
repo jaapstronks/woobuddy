@@ -67,3 +67,7 @@ deploy/.deploy_key
 deploy/.deploy_key.pub
 deploy/.vps-ip
 deploy/.known_hosts
+
+# Self-hosted tesseract.js assets for #49 in-browser OCR.
+# Populated by `npm run setup:tesseract` — binary, large, derivable.
+frontend/static/tesseract/

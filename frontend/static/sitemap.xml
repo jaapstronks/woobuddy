@@ -10,4 +10,24 @@
 		<changefreq>weekly</changefreq>
 		<priority>0.8</priority>
 	</url>
+	<url>
+		<loc>https://woobuddy.nl/privacy</loc>
+		<changefreq>yearly</changefreq>
+		<priority>0.5</priority>
+	</url>
+	<url>
+		<loc>https://woobuddy.nl/terms</loc>
+		<changefreq>yearly</changefreq>
+		<priority>0.4</priority>
+	</url>
+	<url>
+		<loc>https://woobuddy.nl/cookies</loc>
+		<changefreq>yearly</changefreq>
+		<priority>0.3</priority>
+	</url>
+	<url>
+		<loc>https://woobuddy.nl/verwerkersovereenkomst</loc>
+		<changefreq>yearly</changefreq>
+		<priority>0.4</priority>
+	</url>
 </urlset>
