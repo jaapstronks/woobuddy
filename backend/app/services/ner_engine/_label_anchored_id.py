@@ -201,16 +201,14 @@ def _detect_label_anchored_ids(text: str) -> list[NERDetection]:
             continue
 
         detections.append(
-            NERDetection(
+            NERDetection.tier2(
                 text=number_text,
                 entity_type="referentie",
-                tier="2",
                 confidence=confidence,
-                woo_article="5.1.2e",
-                source="regex",
                 start_char=number_start,
                 end_char=number_end,
                 reasoning=reasoning,
+                source="regex",
             )
         )
 

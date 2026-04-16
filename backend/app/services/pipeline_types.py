@@ -15,8 +15,14 @@ from typing import Any, Literal
 from app.services.structure_engine import StructureSpan
 
 PipelineReviewStatus = Literal[
-    "auto_accepted", "pending", "accepted", "rejected", "edited",
+    "auto_accepted",
+    "pending",
+    "accepted",
+    "rejected",
+    "edited",
 ]
+
+PipelineTier = Literal["1", "2", "3"]
 
 
 @dataclass
@@ -25,7 +31,7 @@ class PipelineDetection:
 
     entity_text: str
     entity_type: str
-    tier: str
+    tier: PipelineTier
     confidence: float
     woo_article: str | None
     review_status: PipelineReviewStatus

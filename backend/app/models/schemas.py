@@ -128,7 +128,7 @@ class Detection(Base):
         JSONB, nullable=True
     )
     reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
-    source: Mapped[str] = mapped_column(String(50), default="regex")  # regex, deduce, llm
+    source: Mapped[str] = mapped_column(String(50), default="regex")  # regex, deduce, rule, …
     propagated_from: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("detections.id", ondelete="SET NULL"), nullable=True
     )

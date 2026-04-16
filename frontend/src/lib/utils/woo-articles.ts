@@ -101,7 +101,6 @@ export const WOO_ARTICLES: Record<WooArticleCode, WooArticle> = {
 /** Default entity-type nudge when the reviewer picks an article. */
 export const ARTICLE_TO_ENTITY: Partial<Record<WooArticleCode, EntityType>> = {
 	'5.1.1e': 'bsn',
-	'5.1.1d': 'gezondheid',
 	'5.1.2e': 'persoon'
 };
 

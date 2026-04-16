@@ -186,16 +186,14 @@ def _detect_persoon_via_title_prefix(
             continue
 
         detections.append(
-            NERDetection(
+            NERDetection.tier2(
                 text=name_text,
                 entity_type="persoon",
-                tier="2",
                 confidence=0.75,
-                woo_article="5.1.2e",
-                source="title_rule",
                 start_char=span_start,
                 end_char=span_end,
-                reasoning=("Naam herkend via titel + hoofdlettersequentie (niet in CBS-lijst)."),
+                reasoning="Naam herkend via titel + hoofdlettersequentie (niet in CBS-lijst).",
+                source="title_rule",
             )
         )
 

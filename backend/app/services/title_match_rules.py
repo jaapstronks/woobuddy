@@ -13,7 +13,7 @@ tested and grown in isolation. The two public helpers are:
 
 from typing import Any
 
-from app.services.ner_engine import NERDetection
+from app.services.ner_engine import DEFAULT_WOO_ARTICLE, NERDetection
 from app.services.pipeline_types import PipelineDetection
 from app.services.role_engine import (
     FunctionTitleMatch,
@@ -108,7 +108,7 @@ def title_match_to_detection(
         entity_type="persoon",
         tier="2",
         confidence=det.confidence,
-        woo_article="5.1.2e",
+        woo_article=DEFAULT_WOO_ARTICLE,
         review_status="pending",
         bounding_boxes=bboxes,
         reasoning=(

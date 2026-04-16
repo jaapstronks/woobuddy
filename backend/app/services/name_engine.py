@@ -427,11 +427,20 @@ def score_person_candidate(text: str, lists: NameLists) -> NameScore:
     first_non_tv = _skip_leading_tussenvoegsels(tokens, 0, lists)
     for idx in range(first_non_tv, len(tokens)):
         candidate = tokens[idx]
-        if _normalize(candidate) in lists.first_names:
+        normalized_candidate = _normalize(candidate)
+        if normalized_candidate in lists.first_names:
             score.has_known_first_name = True
             score.first_name_index = idx
             score.matched_tokens.append(candidate)
             break
+        # Hyphenated first names: "Pieter-Willem" → check "Pieter", "Willem"
+        if "-" in candidate:
+            parts = candidate.split("-")
+            if any(_normalize(p) in lists.first_names for p in parts if p):
+                score.has_known_first_name = True
+                score.first_name_index = idx
+                score.matched_tokens.append(candidate)
+                break
 
     # ---- Last name: scan remaining tokens, allowing interior tussenvoegsels. ----
     # Typical Dutch names put the surname last: "Jan de Vries", "A.M.

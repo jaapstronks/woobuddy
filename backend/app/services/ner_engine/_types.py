@@ -29,6 +29,80 @@ NERTier = Literal["1", "2"]
 
 NERSource = Literal["regex", "deduce", "rule", "initials_rule", "title_rule"]
 
+# Default Woo article for personal-data detections (Art. 5.1.2e —
+# "bijzondere persoonsgegevens"). Used by both tiers unless overridden
+# (e.g. BSN uses Art. 5.1.1e).
+DEFAULT_WOO_ARTICLE = "5.1.2e"
+
+# Institutions and generic-noun keywords that indicate a Deduce `persoon`
+# hit is actually an organization, place, or common noun — not a person.
+# Shared between the plausibility filter and the adres institutional filter.
+ORGANIZATION_KEYWORDS: frozenset[str] = frozenset(
+    {
+        # Education
+        "hogeschool",
+        "universiteit",
+        "school",
+        "academie",
+        "faculteit",
+        "college",
+        "lyceum",
+        "gymnasium",
+        "mbo",
+        "hbo",
+        # Research / cultural institutions
+        "instituut",
+        "museum",
+        "kunsthal",
+        "bibliotheek",
+        "archief",
+        "theater",
+        "concertgebouw",
+        "orkest",
+        # Government bodies
+        "gemeente",
+        "provincie",
+        "ministerie",
+        "raad",
+        "commissie",
+        "directie",
+        "afdeling",
+        "departement",
+        "bureau",
+        "dienst",
+        "kamer",
+        "tweedekamer",
+        "eerstekamer",
+        "kabinet",
+        "rechtbank",
+        "hof",
+        # Companies / legal forms
+        "stichting",
+        "vereniging",
+        "fonds",
+        "platform",
+        "federatie",
+        "unie",
+        "coöperatie",
+        "cooperatie",
+        "maatschappij",
+        "holding",
+        "groep",
+        # Health
+        "ziekenhuis",
+        "kliniek",
+        "zorgcentrum",
+        "ggd",
+        "ggz",
+        # Religious / misc
+        "kerk",
+        "moskee",
+        "synagoge",
+        "tempel",
+        "parochie",
+    }
+)
+
 
 @dataclass
 class NERDetection:
@@ -43,6 +117,57 @@ class NERDetection:
     start_char: int  # character offset in the full text
     end_char: int
     reasoning: str = ""
+
+    @classmethod
+    def tier1(
+        cls,
+        text: str,
+        entity_type: NEREntityType,
+        confidence: float,
+        start_char: int,
+        end_char: int,
+        reasoning: str,
+        *,
+        woo_article: str = DEFAULT_WOO_ARTICLE,
+    ) -> NERDetection:
+        """Create a Tier 1 (regex) detection with common defaults."""
+        return cls(
+            text=text,
+            entity_type=entity_type,
+            tier="1",
+            confidence=confidence,
+            woo_article=woo_article,
+            source="regex",
+            start_char=start_char,
+            end_char=end_char,
+            reasoning=reasoning,
+        )
+
+    @classmethod
+    def tier2(
+        cls,
+        text: str,
+        entity_type: NEREntityType,
+        confidence: float,
+        start_char: int,
+        end_char: int,
+        reasoning: str,
+        *,
+        source: NERSource = "deduce",
+        woo_article: str = DEFAULT_WOO_ARTICLE,
+    ) -> NERDetection:
+        """Create a Tier 2 (contextual) detection with common defaults."""
+        return cls(
+            text=text,
+            entity_type=entity_type,
+            tier="2",
+            confidence=confidence,
+            woo_article=woo_article,
+            source=source,
+            start_char=start_char,
+            end_char=end_char,
+            reasoning=reasoning,
+        )
 
 
 def _deduplicate(detections: list[NERDetection]) -> list[NERDetection]:

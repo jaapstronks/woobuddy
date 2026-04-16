@@ -44,20 +44,19 @@ export type WooArticleCode =
 export type EntityType =
 	| 'persoon'
 	| 'bsn'
-	| 'telefoonnummer'
+	| 'telefoon'
 	| 'email'
 	| 'adres'
 	| 'iban'
-	| 'gezondheid'
 	| 'datum'
 	| 'geboortedatum'
 	| 'postcode'
 	| 'kenteken'
 	| 'creditcard'
-	| 'paspoort'
-	| 'rijbewijs'
 	| 'kvk'
 	| 'btw'
+	| 'url'
+	| 'organisatie'
 	// Label-anchored reference numbers — klantnummer, factuurnummer,
 	// dossiernummer, kenmerk, … Tiered confidence per label. Span
 	// covers the number only so the redacted output still shows the

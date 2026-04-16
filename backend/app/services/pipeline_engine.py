@@ -23,7 +23,7 @@ from app.logging_config import get_logger
 from app.services.custom_term_matcher import CustomTermLike
 from app.services.environmental_classifier import check_environmental_content
 from app.services.name_engine import normalize_reference_name
-from app.services.ner_engine import NERDetection, detect_all
+from app.services.ner_engine import DEFAULT_WOO_ARTICLE, NERDetection, detect_all
 from app.services.pdf_engine import ExtractionResult
 
 # Re-export PipelineDetection/PipelineResult at the old import path so
@@ -84,7 +84,7 @@ def _persoon_pending(
         entity_type="persoon",
         tier="2",
         confidence=confidence if confidence is not None else det.confidence,
-        woo_article="5.1.2e",
+        woo_article=DEFAULT_WOO_ARTICLE,
         review_status="pending",
         bounding_boxes=bboxes,
         reasoning=reasoning,
@@ -215,7 +215,7 @@ def _structure_to_pipeline_detection(
             entity_type="persoon",
             tier="2",
             confidence=min(det.confidence + 0.15, 0.95),
-            woo_article="5.1.2e",
+            woo_article=DEFAULT_WOO_ARTICLE,
             review_status="auto_accepted",
             bounding_boxes=bboxes,
             reasoning=f"{reason_stem} — automatisch geaccepteerd op basis van context.",
@@ -470,7 +470,7 @@ def _classify_other_tier2(
         bboxes,
         tier="2",
         review_status="pending",
-        woo_article_fallback="5.1.2e",
+        woo_article_fallback=DEFAULT_WOO_ARTICLE,
     )
 
 

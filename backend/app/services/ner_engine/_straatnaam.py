@@ -172,16 +172,14 @@ def _detect_adres_by_straatnaam(text: str) -> list[NERDetection]:
         )
 
         detections.append(
-            NERDetection(
+            NERDetection.tier2(
                 text=span_text,
                 entity_type="adres",
-                tier="2",
                 confidence=confidence,
-                woo_article="5.1.2e",
-                source="regex",
                 start_char=span_start,
                 end_char=span_end,
                 reasoning=reasoning,
+                source="regex",
             )
         )
 

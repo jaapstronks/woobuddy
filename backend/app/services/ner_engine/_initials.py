@@ -138,19 +138,17 @@ def _detect_persoon_via_initials(text: str) -> list[NERDetection]:
             continue
 
         detections.append(
-            NERDetection(
+            NERDetection.tier2(
                 text=span_text,
                 entity_type="persoon",
-                tier="2",
                 confidence=0.85,
-                woo_article="5.1.2e",
-                source="initials_rule",
                 start_char=start,
                 end_char=start + len(span_text),
                 reasoning=(
                     "Naam herkend via initialen + achternaampatroon "
                     "(niet in CBS-lijst, maar structuur is eenduidig)."
                 ),
+                source="initials_rule",
             )
         )
 

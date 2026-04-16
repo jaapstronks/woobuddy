@@ -28,10 +28,12 @@ def _validate_bsn(digits: str) -> bool:
 
 # IBAN: NL + 2 check digits + 4 letter bank code + 10 digits.
 # Banks print IBANs in two forms: compact (NL91ABNA0417164300) or grouped
-# with spaces for readability (NL68 RABO 0338 1615 89). We accept both —
-# a single optional space between each group.
+# with spaces for readability (NL68 RABO 0338 1615 89). We accept both,
+# and tolerate up to 3 whitespace chars between groups so IBANs that
+# wrap across a line (extractor inserts " " + "\n") or a page boundary
+# ("\n\n") still match. Mod-97 validation below keeps precision high.
 _IBAN_PATTERN = re.compile(
-    r"\b(NL\d{2}\s?[A-Z]{4}(?:\s?\d{4}){2}\s?\d{2})\b",
+    r"\b(NL\d{2}\s{0,3}[A-Z]{4}(?:\s{0,3}\d{4}){2}\s{0,3}\d{2})\b",
     re.IGNORECASE,
 )
 
@@ -41,21 +43,32 @@ _IBAN_PATTERN = re.compile(
 # space and a `+`, because both are non-word characters. So `\b\+31...`
 # fails to match "op +31...". International patterns use explicit
 # `(?<!\w)` / `(?!\w)` lookarounds instead.
+# Separator shorthand used in phone patterns below. Dutch phone numbers
+# appear with dashes, spaces, dots, and combinations thereof:
+#   06-12345678  /  06 12 34 56 78  /  06.12.34.56.78  /  0512 - 893 472
+# `_P` matches one or more separator characters (dash, dot, space in any
+# mix), which handles "06 12", "06-12", "06.12", and "06 - 12" alike.
+# Digit-count constraints in each pattern keep the match tight.
+_P = r"[\s.\-]+"  # phone separator: one or more of space/dot/dash
+
 _PHONE_PATTERNS = [
-    re.compile(r"\b(0[1-9]\d{1,2}[-\s]?\d{6,7})\b"),  # landline: 020-1234567 / 020 1234567
+    re.compile(r"\b(0[1-9]\d{1,2}[\s.\-]?\d{6,7})\b"),  # landline: 020-1234567 / 020 1234567
     # Grouped landline layouts that briefings, letterheads, and municipal
     # sites tend to use. Each alternation enforces a specific digit layout
     # so the total always sums to exactly 10 digits — keeps the regex tight
     # enough to avoid matching random numeric runs.
-    re.compile(r"\b(0[1-9]\d[-\s]\d{3}[-\s]\d{2}[-\s]\d{2})\b"),  # 071 516 50 00 (3+3+2+2)
-    re.compile(r"\b(0[1-9]\d[-\s]\d{3}[-\s]\d{4})\b"),  # 071 516 5000 (3+3+4)
-    re.compile(r"\b(0[1-9]\d{2}[-\s]\d{2}[-\s]\d{2}[-\s]\d{2})\b"),  # 0412 12 34 56 (4+2+2+2)
-    re.compile(r"\b(0[1-9]\d{2}[-\s]\d{3}[-\s]\d{3})\b"),  # 0412 123 456 (4+3+3)
-    re.compile(r"\b(06[-\s]?\d{8})\b"),  # mobile: 06-12345678 / 06 12345678
-    re.compile(r"\b(06[-\s]\d{4}[-\s]\d{4})\b"),  # 06 1234 5678 (mobile grouped)
-    re.compile(r"\b(06[-\s]\d{2}[-\s]\d{2}[-\s]\d{2}[-\s]\d{2})\b"),  # 06 12 34 56 78
+    re.compile(r"\b(0[1-9]\d" + _P + r"\d{3}" + _P + r"\d{2}" + _P + r"\d{2})\b"),  # 071 516 50 00 (3+3+2+2)
+    re.compile(r"\b(0[1-9]\d" + _P + r"\d{3}" + _P + r"\d{4})\b"),  # 071 516 5000 / 010 - 267 4839 (3+3+4)
+    re.compile(r"\b(0[1-9]\d{2}" + _P + r"\d{2}" + _P + r"\d{2}" + _P + r"\d{2})\b"),  # 0412 12 34 56 (4+2+2+2)
+    re.compile(r"\b(0[1-9]\d{2}" + _P + r"\d{3}" + _P + r"\d{3})\b"),  # 0412 123 456 / 0512 - 893 472 (4+3+3)
+    re.compile(r"\b(06[\s.\-]?\d{8})\b"),  # mobile: 06-12345678 / 06 12345678
+    re.compile(r"\b(06" + _P + r"\d{4}" + _P + r"\d{4})\b"),  # 06 1234 5678 / 06 - 4471 8923 (mobile grouped)
+    re.compile(r"\b(06" + _P + r"\d{2}" + _P + r"\d{2}" + _P + r"\d{2}" + _P + r"\d{2})\b"),  # 06 12 34 56 78 / 06.12.34.56.78
     # International mobile: +31 6 12345678, +316-12345678, +31612345678
     re.compile(r"(?<!\w)(\+31[-\s]?6[-\s]?\d{8})(?!\w)"),
+    # International mobile with (0): +31(0)6 12345678, +31(0)6 33 92 14 78
+    re.compile(r"(?<!\w)(\+31\(0\)6[\s.\-]?(?:[\s.\-]?\d{2}){4})(?!\w)"),
+    re.compile(r"(?<!\w)(\+31\(0\)6[\s.\-]?\d{8})(?!\w)"),
     # International landline with any grouping of spaces/dashes:
     # +3120 1234567, +31-20-1234567, +31 40 792 00 35, +31 20 123 4567
     re.compile(r"(?<!\w)(\+31[-\s]?\d{1,3}(?:[-\s]?\d{2,4}){2,4})(?!\w)"),
@@ -95,6 +108,7 @@ _LICENSE_PLATE_PATTERNS = [
     re.compile(r"\b([A-Z]-\d{2}-[A-Z]{3})\b"),  # 12: X-99-XXX
     re.compile(r"\b(\d{3}-[A-Z]-[A-Z]{2})\b"),  # 13: 999-X-XX
     re.compile(r"\b(\d-[A-Z]{2}-\d{3})\b"),  # 14: 9-XX-999
+    re.compile(r"\b([A-Z]{2}-\d{3}-[A-Z]{2})\b"),  # 15: XX-999-XX (diplomatic / special)
 ]
 
 # Credit card: 13-19 digits with optional spaces/dashes, Luhn check
@@ -227,119 +241,109 @@ def _validate_luhn(number: str) -> bool:
     return checksum % 10 == 0
 
 
-def detect_tier1(text: str) -> list[NERDetection]:
-    """Detect Tier 1 hard identifiers using regex + validation."""
-    detections: list[NERDetection] = []
-
-    # BSN
-    for m in _BSN_PATTERN.finditer(text):
-        if _validate_bsn(m.group(1)):
-            detections.append(
-                NERDetection(
-                    text=m.group(1),
-                    entity_type="bsn",
-                    tier="1",
-                    confidence=0.98,
-                    woo_article="5.1.1e",
-                    source="regex",
-                    start_char=m.start(),
-                    end_char=m.end(),
-                    reasoning="BSN-nummer gedetecteerd (voldoet aan 11-proef).",
-                )
-            )
-
-    # IBAN
-    for m in _IBAN_PATTERN.finditer(text):
-        detections.append(
-            NERDetection(
-                text=m.group(1),
-                entity_type="iban",
-                tier="1",
-                confidence=0.97,
-                woo_article="5.1.2e",
-                source="regex",
-                start_char=m.start(),
-                end_char=m.end(),
-                reasoning="IBAN-nummer gedetecteerd.",
-            )
+def _detect_bsn(text: str) -> list[NERDetection]:
+    """Detect BSN numbers (9 digits, 11-proef validated)."""
+    return [
+        NERDetection.tier1(
+            text=m.group(1), entity_type="bsn", confidence=0.98,
+            start_char=m.start(), end_char=m.end(),
+            reasoning="BSN-nummer gedetecteerd (voldoet aan 11-proef).",
+            woo_article="5.1.1e",
         )
+        for m in _BSN_PATTERN.finditer(text)
+        if _validate_bsn(m.group(1))
+    ]
 
-    # Phone numbers
+
+def _validate_iban_mod97(iban: str) -> bool:
+    """ISO 13616 mod-97 checksum. Strips whitespace before checking."""
+    compact = "".join(iban.split()).upper()
+    rearranged = compact[4:] + compact[:4]
+    try:
+        numeric = "".join(
+            str(ord(c) - 55) if "A" <= c <= "Z" else c for c in rearranged
+        )
+        return int(numeric) % 97 == 1
+    except ValueError:
+        return False
+
+
+def _detect_iban(text: str) -> list[NERDetection]:
+    """Detect IBAN numbers (regex + mod-97 checksum)."""
+    return [
+        NERDetection.tier1(
+            text=m.group(1), entity_type="iban", confidence=0.97,
+            start_char=m.start(), end_char=m.end(),
+            reasoning="IBAN-nummer gedetecteerd.",
+        )
+        for m in _IBAN_PATTERN.finditer(text)
+        if _validate_iban_mod97(m.group(1))
+    ]
+
+
+def _detect_telefoon(text: str) -> list[NERDetection]:
+    """Detect Dutch phone numbers (mobile + landline, national + international)."""
+    detections: list[NERDetection] = []
     for pattern in _PHONE_PATTERNS:
         for m in pattern.finditer(text):
-            # Avoid matching things that are clearly not phone numbers
             matched = m.group(1)
-            digits_only = re.sub(r"[\s\-+]", "", matched)
+            digits_only = re.sub(r"[\s\-+.()/]", "", matched)
             if len(digits_only) < 10:
                 continue
             detections.append(
-                NERDetection(
-                    text=matched,
-                    entity_type="telefoon",
-                    tier="1",
-                    confidence=0.95,
-                    woo_article="5.1.2e",
-                    source="regex",
-                    start_char=m.start(),
-                    end_char=m.end(),
+                NERDetection.tier1(
+                    text=matched, entity_type="telefoon", confidence=0.95,
+                    start_char=m.start(), end_char=m.end(),
                     reasoning="Telefoonnummer gedetecteerd.",
                 )
             )
+    return detections
 
-    # Email
-    for m in _EMAIL_PATTERN.finditer(text):
-        detections.append(
-            NERDetection(
-                text=m.group(1),
-                entity_type="email",
-                tier="1",
-                confidence=0.97,
-                woo_article="5.1.2e",
-                source="regex",
-                start_char=m.start(),
-                end_char=m.end(),
-                reasoning="E-mailadres gedetecteerd.",
-            )
+
+def _detect_email(text: str) -> list[NERDetection]:
+    """Detect email addresses."""
+    return [
+        NERDetection.tier1(
+            text=m.group(1), entity_type="email", confidence=0.97,
+            start_char=m.start(), end_char=m.end(),
+            reasoning="E-mailadres gedetecteerd.",
         )
+        for m in _EMAIL_PATTERN.finditer(text)
+    ]
 
-    # Postcode
-    for m in _POSTCODE_PATTERN.finditer(text):
-        detections.append(
-            NERDetection(
-                text=m.group(1),
-                entity_type="postcode",
-                tier="1",
-                confidence=0.90,
-                woo_article="5.1.2e",
-                source="regex",
-                start_char=m.start(),
-                end_char=m.end(),
-                reasoning="Postcode gedetecteerd.",
-            )
+
+def _detect_postcode(text: str) -> list[NERDetection]:
+    """Detect Dutch postcodes (4 digits + 2 uppercase letters)."""
+    return [
+        NERDetection.tier1(
+            text=m.group(1), entity_type="postcode", confidence=0.90,
+            start_char=m.start(), end_char=m.end(),
+            reasoning="Postcode gedetecteerd.",
         )
+        for m in _POSTCODE_PATTERN.finditer(text)
+    ]
 
-    # License plates
+
+def _detect_kenteken(text: str) -> list[NERDetection]:
+    """Detect Dutch license plates (sidecodes 1–15)."""
+    detections: list[NERDetection] = []
     for pattern in _LICENSE_PLATE_PATTERNS:
         for m in pattern.finditer(text):
             detections.append(
-                NERDetection(
-                    text=m.group(1),
-                    entity_type="kenteken",
-                    tier="1",
-                    confidence=0.93,
-                    woo_article="5.1.2e",
-                    source="regex",
-                    start_char=m.start(),
-                    end_char=m.end(),
+                NERDetection.tier1(
+                    text=m.group(1), entity_type="kenteken", confidence=0.93,
+                    start_char=m.start(), end_char=m.end(),
                     reasoning="Kenteken gedetecteerd.",
                 )
             )
+    return detections
 
-    # URL (http/https)
+
+def _detect_url(text: str) -> list[NERDetection]:
+    """Detect http/https URLs."""
+    detections: list[NERDetection] = []
     for m in _URL_PATTERN.finditer(text):
         url = m.group(1)
-        # Strip trailing sentence punctuation so "see https://example.com."
-        # doesn't include the period. Do this in a loop to handle multiple.
         end_offset = 0
         while url and url[-1] in _URL_TRAILING_PUNCT:
             url = url[:-1]
@@ -347,74 +351,93 @@ def detect_tier1(text: str) -> list[NERDetection]:
         if not url:
             continue
         detections.append(
-            NERDetection(
-                text=url,
-                entity_type="url",
-                tier="1",
-                confidence=0.95,
-                woo_article="5.1.2e",
-                source="regex",
-                start_char=m.start(1),
-                end_char=m.end(1) - end_offset,
+            NERDetection.tier1(
+                text=url, entity_type="url", confidence=0.95,
+                start_char=m.start(1), end_char=m.end(1) - end_offset,
                 reasoning="URL gedetecteerd.",
             )
         )
+    return detections
 
-    # KvK: 8-digit number anchored by `KvK` / `Kamer van Koophandel` within
-    # 20 chars of the digits. Scanning from the anchor forward keeps the
-    # algorithm bounded and avoids flagging random invoice numbers.
-    for anchor in _KVK_ANCHOR_PATTERN.finditer(text):
+
+_KVK_REASONING = "KvK-nummer gedetecteerd — openbaar handelsregistergegeven, standaard niet lakken."
+
+
+def _detect_kvk(text: str) -> list[NERDetection]:
+    """Detect KvK numbers (8-digit, context-anchored)."""
+    kvk_anchors = list(_KVK_ANCHOR_PATTERN.finditer(text))
+    if not kvk_anchors:
+        return []
+
+    detections: list[NERDetection] = []
+    kvk_found: set[int] = set()
+
+    # Pass 1: tight forward window (20 chars after anchor)
+    for anchor in kvk_anchors:
         window_end = min(len(text), anchor.end() + _KVK_WINDOW_CHARS + 8)
         window = text[anchor.end() : window_end]
         num = _KVK_NUMBER_PATTERN.search(window)
-        if not num:
-            continue
-        # Require the digits to start within the 20-char anchor window.
-        if num.start() > _KVK_WINDOW_CHARS:
+        if not num or num.start() > _KVK_WINDOW_CHARS:
             continue
         start = anchor.end() + num.start(1)
         end = anchor.end() + num.end(1)
+        kvk_found.add(start)
         detections.append(
-            NERDetection(
-                text=num.group(1),
-                entity_type="kvk",
-                tier="1",
-                confidence=0.90,
-                woo_article="5.1.2e",
-                source="regex",
-                start_char=start,
-                end_char=end,
-                reasoning="KvK-nummer gedetecteerd (contextanker binnen 20 tekens).",
+            NERDetection.tier1(
+                text=num.group(1), entity_type="kvk", confidence=0.90,
+                start_char=start, end_char=end, reasoning=_KVK_REASONING,
             )
         )
 
-    # BTW-nummer
-    for m in _BTW_PATTERN.finditer(text):
-        if not _validate_btw(m.group(2)):
+    # Pass 2: table-context (200 chars, tabular data heuristic)
+    for num in _KVK_NUMBER_PATTERN.finditer(text):
+        num_start = num.start(1)
+        if num_start in kvk_found:
             continue
-        detections.append(
-            NERDetection(
-                text=m.group(1),
-                entity_type="btw",
-                tier="1",
-                confidence=0.95,
-                woo_article="5.1.2e",
-                source="regex",
-                start_char=m.start(1),
-                end_char=m.end(1),
-                reasoning="BTW-nummer gedetecteerd (format + 11-proef).",
+        for anchor in kvk_anchors:
+            dist = num_start - anchor.end()
+            if dist < 0 or dist > 200:
+                continue
+            between = text[anchor.end() : num_start]
+            if not re.search(r"[A-Za-z]{2,}", between):
+                continue
+            if re.search(r"\.\s+[A-Z]", between):
+                continue
+            kvk_found.add(num_start)
+            detections.append(
+                NERDetection.tier1(
+                    text=num.group(1), entity_type="kvk", confidence=0.85,
+                    start_char=num_start, end_char=num.end(1),
+                    reasoning=_KVK_REASONING,
+                )
             )
-        )
+            break
 
-    # Geboortedatum (context-anchored only)
+    return detections
+
+
+def _detect_btw(text: str) -> list[NERDetection]:
+    """Detect BTW-nummers (Dutch VAT, BSN-style 11-proef on the body)."""
+    return [
+        NERDetection.tier1(
+            text=m.group(1), entity_type="btw", confidence=0.95,
+            start_char=m.start(1), end_char=m.end(1),
+            reasoning="BTW-nummer gedetecteerd (format + 11-proef).",
+        )
+        for m in _BTW_PATTERN.finditer(text)
+        if _validate_btw(m.group(2))
+    ]
+
+
+def _detect_geboortedatum(text: str) -> list[NERDetection]:
+    """Detect context-anchored birth dates."""
+    detections: list[NERDetection] = []
     for anchor in _GEBOORTEDATUM_ANCHOR_PATTERN.finditer(text):
         window_start = anchor.end()
         window_end = min(len(text), window_start + _GEBOORTEDATUM_WINDOW_CHARS + 20)
         window = text[window_start:window_end]
         date_match = _DATE_PATTERN.search(window)
-        if not date_match:
-            continue
-        if date_match.start() > _GEBOORTEDATUM_WINDOW_CHARS:
+        if not date_match or date_match.start() > _GEBOORTEDATUM_WINDOW_CHARS:
             continue
         raw = date_match.group(0)
         parsed = _parse_birth_date(raw)
@@ -423,35 +446,40 @@ def detect_tier1(text: str) -> list[NERDetection]:
         start = window_start + date_match.start()
         end = window_start + date_match.end()
         detections.append(
-            NERDetection(
-                text=raw,
-                entity_type="geboortedatum",
-                tier="1",
-                confidence=0.95,
-                woo_article="5.1.2e",
-                source="regex",
-                start_char=start,
-                end_char=end,
+            NERDetection.tier1(
+                text=raw, entity_type="geboortedatum", confidence=0.95,
+                start_char=start, end_char=end,
                 reasoning="Geboortedatum gedetecteerd (contextanker + geldige datum).",
             )
         )
+    return detections
 
-    # Credit card
-    for m in _CREDIT_CARD_PATTERN.finditer(text):
-        digits_only = re.sub(r"[\s\-]", "", m.group(1))
-        if _validate_luhn(digits_only):
-            detections.append(
-                NERDetection(
-                    text=m.group(1),
-                    entity_type="creditcard",
-                    tier="1",
-                    confidence=0.95,
-                    woo_article="5.1.2e",
-                    source="regex",
-                    start_char=m.start(),
-                    end_char=m.end(),
-                    reasoning="Creditcardnummer gedetecteerd (voldoet aan Luhn-check).",
-                )
-            )
 
+def _detect_creditcard(text: str) -> list[NERDetection]:
+    """Detect credit card numbers (Luhn-validated)."""
+    return [
+        NERDetection.tier1(
+            text=m.group(1), entity_type="creditcard", confidence=0.95,
+            start_char=m.start(), end_char=m.end(),
+            reasoning="Creditcardnummer gedetecteerd (voldoet aan Luhn-check).",
+        )
+        for m in _CREDIT_CARD_PATTERN.finditer(text)
+        if _validate_luhn(re.sub(r"[\s\-]", "", m.group(1)))
+    ]
+
+
+def detect_tier1(text: str) -> list[NERDetection]:
+    """Detect Tier 1 hard identifiers using regex + validation."""
+    detections: list[NERDetection] = []
+    detections.extend(_detect_bsn(text))
+    detections.extend(_detect_iban(text))
+    detections.extend(_detect_telefoon(text))
+    detections.extend(_detect_email(text))
+    detections.extend(_detect_postcode(text))
+    detections.extend(_detect_kenteken(text))
+    detections.extend(_detect_url(text))
+    detections.extend(_detect_kvk(text))
+    detections.extend(_detect_btw(text))
+    detections.extend(_detect_geboortedatum(text))
+    detections.extend(_detect_creditcard(text))
     return _deduplicate(detections)

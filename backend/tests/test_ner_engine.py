@@ -105,6 +105,29 @@ class TestIBAN:
         assert len(iban_results) == 1
         assert iban_results[0].text.replace(" ", "") == "NL68RABO0338161589"
 
+    def test_line_wrapped_iban_detected(self):
+        """IBANs that wrap across a line (space + newline between groups)
+        must still be detected — real-world case from Moneybird invoices."""
+        text = "van je bankrekening of creditcard (NL92 ABNA \n0410 5561 57)."
+        results = detect_tier1(text)
+        iban_results = [r for r in results if r.entity_type == "iban"]
+        assert len(iban_results) == 1
+        assert iban_results[0].text.replace(" ", "").replace("\n", "") == "NL92ABNA0410556157"
+
+    def test_page_break_iban_detected(self):
+        """Cross-page IBAN joined by '\\n\\n' must still match."""
+        text = "NL68 RABO 0338\n\n1615 89"
+        results = detect_tier1(text)
+        iban_results = [r for r in results if r.entity_type == "iban"]
+        assert len(iban_results) == 1
+
+    def test_invalid_checksum_iban_rejected(self):
+        """Mod-97 guards against random NL + 16-char strings that match the format."""
+        text = "Referentie: NL00ABNA0000000000"
+        results = detect_tier1(text)
+        iban_results = [r for r in results if r.entity_type == "iban"]
+        assert len(iban_results) == 0
+
 
 # ---------------------------------------------------------------------------
 # Tier 1: Phone numbers

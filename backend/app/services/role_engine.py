@@ -67,12 +67,18 @@ _LIST_CONTEXT_WINDOW_CHARS = 240
 # "zei", a whole sentence — breaks the list and the scan stops.
 _LIST_INTERIOR_PATTERN = re.compile(
     r"^(?:"
-    r"\s*,\s*|\s*;\s*|\s*/\s*|\s+en\s+|"  # separators
+    r"\s+|"  # plain whitespace between tokens
+    r",\s*|;\s*|/\s*|en\s+|"  # separators
+    r"[○•▪▸–—\-]\s*|"  # bullet / list markers from PDF rendering
     r"dhr\.?|mw\.?|mr\.?|drs\.?|prof\.?|dr\.?|"  # honorifics
     r"mevr\.?|mevrouw|meneer|familie|de\s+heer|"
     r"[A-Z]\.(?:\s*[A-Z]\.)*|"  # initials "A." / "A.B." / "F.A."
-    r"(?:van|ter|ten|der|den|de|da|du|del|la|le|bin|al|el|in\s+'t|op\s+den)|"
-    r"[A-ZÄÖÜÁÀÉÈÍÎÏÓÔÚÛÇŞİĞ][\wÄÖÜäöüáàéèíîïóôúûçşığ'’-]{1,30}"  # proper-noun token
+    r"(?:van|ter|ten|der|den|de|da|du|del|la|le|bin|al|el|in\s+’t|op\s+den)|"
+    r"\([^)]{0,23}\)|"  # parenthesized content: party affiliations like (VVD), (D66)
+    # Proper-noun token: case-sensitive initial uppercase required even
+    # though the overall pattern is IGNORECASE. Without (?-i:...) the
+    # initial [A-Z] matches lowercase too, letting any prose through.
+    r"(?-i:[A-ZÄÖÜÁÀÉÈÍÎÏÓÔÚÛÇŞİĞ])[\wÄÖÜäöüáàéèíîïóôúûçşığ’’-]{1,30}"
     r")+\s*$",
     re.IGNORECASE | re.UNICODE,
 )
@@ -299,16 +305,32 @@ def find_function_title_near(
         list_before_hit: re.Match[str] | None = None
         for m in pattern.finditer(list_before_text):
             list_before_hit = m
-        # Skip if the wider scan hit the same match as the narrow one —
-        # the narrow path already produced (or rejected) that candidate.
+        # Skip if the wider scan hit the same match as the narrow one
+        # AND the narrow path actually accepted it (produced a candidate
+        # within the token limit). If the narrow path found the title
+        # but rejected it (too many tokens between), the list-context
+        # path should still try — its interior-pattern check is more
+        # permissive and handles bullet-separated lists.
         narrow_offset = len(list_before_text) - len(before_text)
+        narrow_tokens_between = (
+            _count_tokens(before_text[last_before.end() :])
+            if last_before is not None
+            else _MAX_TOKENS_BETWEEN + 1
+        )
+        narrow_accepted = last_before is not None and narrow_tokens_between <= _MAX_TOKENS_BETWEEN
         same_as_narrow = (
-            last_before is not None
+            narrow_accepted
             and list_before_hit is not None
             and list_before_hit.start() == last_before.start() + narrow_offset
         )
         if list_before_hit is not None and not same_as_narrow:
             interior = list_before_text[list_before_hit.end() :]
+            # Strip a leading colon + whitespace: titles like
+            # "Fractievoorzitters:" are followed by a colon before the
+            # name list. We strip it here rather than accepting colons
+            # anywhere in the interior (which would let the list bleed
+            # through section boundaries like "Inspreker: mevrouw ...").
+            interior = interior.lstrip(": ")
             if interior and _LIST_INTERIOR_PATTERN.match(interior):
                 candidate = FunctionTitleMatch(
                     title=title,

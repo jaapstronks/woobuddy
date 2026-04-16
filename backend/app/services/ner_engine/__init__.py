@@ -31,7 +31,7 @@ from app.logging_config import get_logger
 from ._deduce import init_deduce, init_name_lists
 from ._tier1 import detect_tier1
 from ._tier2 import detect_tier2
-from ._types import NERDetection, NEREntityType, NERSource, NERTier
+from ._types import DEFAULT_WOO_ARTICLE, NERDetection, NEREntityType, NERSource, NERTier
 
 logger = get_logger(__name__)
 
@@ -78,6 +78,7 @@ def detect_all(text: str) -> list[NERDetection]:
 
 
 __all__ = [
+    "DEFAULT_WOO_ARTICLE",
     "NERDetection",
     "NEREntityType",
     "NERSource",
