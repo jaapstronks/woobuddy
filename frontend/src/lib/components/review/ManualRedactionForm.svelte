@@ -1,15 +1,12 @@
 <script lang="ts">
-	import '@shoelace-style/shoelace/dist/components/select/select.js';
-	import '@shoelace-style/shoelace/dist/components/option/option.js';
-	import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
-	import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 	import '@shoelace-style/shoelace/dist/components/button/button.js';
 
 	import { onMount, onDestroy } from 'svelte';
 	import type { EntityType, WooArticleCode, DetectionTier } from '$lib/types';
 	import type { SelectionAnchor } from '$lib/services/selection-bbox';
-	import { WOO_ARTICLES } from '$lib/utils/woo-articles';
+	import { WOO_ARTICLES, ARTICLE_TO_ENTITY } from '$lib/utils/woo-articles';
 	import { getRecentArticles, recordRecentArticle } from '$lib/services/recent-articles';
+	import ArticlePicker from './ArticlePicker.svelte';
 
 	interface Props {
 		anchor: SelectionAnchor;
@@ -61,45 +58,6 @@
 		recompute();
 	});
 
-	// Article implies a sensible default entity type. The reviewer can still
-	// override in the entity type selector.
-	const ARTICLE_TO_ENTITY: Partial<Record<WooArticleCode, EntityType>> = {
-		'5.1.1e': 'bsn',
-		'5.1.1d': 'gezondheid',
-		'5.1.2e': 'persoon'
-	};
-
-	const ENTITY_LABELS: Record<EntityType, string> = {
-		persoon: 'Persoon (naam)',
-		bsn: 'BSN',
-		telefoonnummer: 'Telefoonnummer',
-		email: 'E-mailadres',
-		adres: 'Adres',
-		iban: 'IBAN',
-		gezondheid: 'Gezondheidsgegeven',
-		datum: 'Datum',
-		geboortedatum: 'Geboortedatum',
-		postcode: 'Postcode',
-		kenteken: 'Kenteken',
-		creditcard: 'Creditcard',
-		paspoort: 'Paspoort',
-		rijbewijs: 'Rijbewijs',
-		kvk: 'KvK-nummer',
-		btw: 'BTW-nummer',
-		area: 'Handmatig gebied',
-		custom: 'Zoekterm (eigen lijst)'
-	};
-
-	// Group articles by tier; within a tier, sort by code. Recent articles
-	// appear as a separate group pinned to the top.
-	const recentCodes = $state(getRecentArticles());
-	const allArticles = Object.values(WOO_ARTICLES);
-	const byTier = {
-		'1': allArticles.filter((a) => a.tier === '1').sort((a, b) => a.code.localeCompare(b.code)),
-		'2': allArticles.filter((a) => a.tier === '2').sort((a, b) => a.code.localeCompare(b.code)),
-		'3': allArticles.filter((a) => a.tier === '3').sort((a, b) => a.code.localeCompare(b.code))
-	};
-
 	// Capture the seed prop in a local const. The form is only mounted
 	// per-selection, so once-off capture is exactly what we want — a later
 	// prop change would not reinitialize the state, and we wouldn't want it
@@ -108,31 +66,13 @@
 	const seedEntityType = initialEntityType;
 	const startedAsArea = seedEntityType === 'area';
 
+	const recentCodes = getRecentArticles();
 	const initialArticle: WooArticleCode = recentCodes[0] ?? '5.1.2e';
 	let article = $state<WooArticleCode | ''>(initialArticle);
 	let entityType = $state<EntityType>(
 		seedEntityType ?? ARTICLE_TO_ENTITY[initialArticle] ?? 'persoon'
 	);
 	let motivation = $state('');
-
-	// Pre-fill the motivation template whenever the article changes.
-	$effect(() => {
-		if (!article) return;
-		const info = WOO_ARTICLES[article as WooArticleCode];
-		motivation = `Informatie valt onder Art. ${info.code} Woo — ${info.ground}.`;
-	});
-
-	// When article changes, also nudge the entity type if the new article
-	// implies a different one — but only if the reviewer hasn't manually
-	// overridden it since the last change (tracked via `userTouchedType`).
-	// Area flows start with `userTouchedType = true` so the nudge is inert
-	// until the reviewer explicitly picks a different type.
-	let userTouchedType = $state(startedAsArea);
-	$effect(() => {
-		if (!article || userTouchedType) return;
-		const implied = ARTICLE_TO_ENTITY[article as WooArticleCode];
-		if (implied) entityType = implied;
-	});
 
 	const tierOfArticle = $derived(
 		article ? WOO_ARTICLES[article as WooArticleCode].tier : ('2' as DetectionTier)
@@ -197,68 +137,12 @@
 		{/if}
 	</div>
 
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_label_has_associated_control -->
-	<sl-select
-		label="Woo-grond"
-		size="small"
-		value={article}
-		onsl-change={(e: Event) => {
-			article = ((e.target as HTMLSelectElement).value || '') as WooArticleCode | '';
-			userTouchedType = false;
-		}}
-	>
-		{#if recentCodes.length > 0}
-			<small slot="label-suffix">&nbsp;</small>
-			<sl-option disabled>— Recent gebruikt —</sl-option>
-			{#each recentCodes as code}
-				{#if WOO_ARTICLES[code]}
-					<sl-option value={code}>
-						Tier {WOO_ARTICLES[code].tier} · {code} — {WOO_ARTICLES[code].ground}
-					</sl-option>
-				{/if}
-			{/each}
-			<sl-divider></sl-divider>
-		{/if}
-		<sl-option disabled>— Tier 1 (harde identifiers) —</sl-option>
-		{#each byTier['1'] as art}
-			<sl-option value={art.code}>{art.code} — {art.ground}</sl-option>
-		{/each}
-		<sl-option disabled>— Tier 2 (persoonsgegevens) —</sl-option>
-		{#each byTier['2'] as art}
-			<sl-option value={art.code}>{art.code} — {art.ground}</sl-option>
-		{/each}
-		<sl-option disabled>— Tier 3 (inhoudelijk) —</sl-option>
-		{#each byTier['3'] as art}
-			<sl-option value={art.code}>{art.code} — {art.ground}</sl-option>
-		{/each}
-	</sl-select>
-
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_label_has_associated_control -->
-	<sl-select
-		label="Type"
-		size="small"
-		value={entityType}
-		onsl-change={(e: Event) => {
-			entityType = (e.target as HTMLSelectElement).value as EntityType;
-			userTouchedType = true;
-		}}
-	>
-		{#each Object.entries(ENTITY_LABELS) as [value, label]}
-			<sl-option value={value}>{label}</sl-option>
-		{/each}
-	</sl-select>
-
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_label_has_associated_control -->
-	<sl-textarea
-		label="Motivering"
-		size="small"
-		rows="2"
-		value={motivation}
-		onsl-input={(e: Event) => { motivation = (e.target as HTMLTextAreaElement).value; }}
-	></sl-textarea>
+	<ArticlePicker
+		bind:article
+		bind:entityType
+		bind:motivation
+		suppressInitialNudge={startedAsArea}
+	/>
 
 	<div class="actions">
 		<sl-button size="small" variant="text" onclick={onCancel}>Annuleren</sl-button>

@@ -98,6 +98,11 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
 		description: 'BTW-identificatienummer',
 		badgeClass: 'bg-violet-100 text-violet-900'
 	},
+	referentie: {
+		label: 'Referentie',
+		description: 'Kenmerk- of referentienummer (klantnummer, factuurnummer, dossiernummer, …)',
+		badgeClass: 'bg-amber-100 text-amber-900'
+	},
 	area: {
 		label: 'Gebied',
 		description: 'Handmatig getekend gebied (handtekening, stempel, scan)',
@@ -108,6 +113,29 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
 		description: 'Documentspecifieke zoekterm (eigen wordlist)',
 		badgeClass: 'bg-teal-100 text-teal-900'
 	}
+};
+
+/** Form-facing labels used in manual-redaction and search-redact pickers. */
+export const ENTITY_FORM_LABELS: Record<EntityType, string> = {
+	persoon: 'Persoon (naam)',
+	bsn: 'BSN',
+	telefoonnummer: 'Telefoonnummer',
+	email: 'E-mailadres',
+	adres: 'Adres',
+	iban: 'IBAN',
+	gezondheid: 'Gezondheidsgegeven',
+	datum: 'Datum',
+	geboortedatum: 'Geboortedatum',
+	postcode: 'Postcode',
+	kenteken: 'Kenteken',
+	creditcard: 'Creditcard',
+	paspoort: 'Paspoort',
+	rijbewijs: 'Rijbewijs',
+	kvk: 'KvK-nummer',
+	btw: 'BTW-nummer',
+	referentie: 'Referentienummer',
+	area: 'Handmatig gebied',
+	custom: 'Zoekterm (eigen lijst)'
 };
 
 /** Entity types in the order they should appear in filter dropdowns. */
@@ -127,6 +155,7 @@ export const ENTITY_TYPE_ORDER: EntityType[] = [
 	'rijbewijs',
 	'kvk',
 	'btw',
+	'referentie',
 	'gezondheid',
 	'area',
 	'custom'

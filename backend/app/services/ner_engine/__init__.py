@@ -47,7 +47,13 @@ from ._tier1 import (
 )
 from ._tier2 import detect_tier2
 from ._title_prefix import _detect_persoon_via_title_prefix
-from ._types import NERDetection, _deduplicate
+from ._types import (
+    NERDetection,
+    NEREntityType,
+    NERSource,
+    NERTier,
+    _deduplicate,
+)
 
 logger = get_logger(__name__)
 
@@ -95,6 +101,9 @@ def detect_all(text: str) -> list[NERDetection]:
 
 __all__ = [
     "NERDetection",
+    "NEREntityType",
+    "NERSource",
+    "NERTier",
     "detect_all",
     "detect_tier1",
     "detect_tier2",

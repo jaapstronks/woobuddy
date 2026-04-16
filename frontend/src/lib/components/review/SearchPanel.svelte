@@ -2,18 +2,15 @@
 	import '@shoelace-style/shoelace/dist/components/input/input.js';
 	import '@shoelace-style/shoelace/dist/components/button/button.js';
 	import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
-	import '@shoelace-style/shoelace/dist/components/select/select.js';
-	import '@shoelace-style/shoelace/dist/components/option/option.js';
-	import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
-	import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount } from 'svelte';
 	import { Search, X, CheckSquare, Square } from 'lucide-svelte';
 	import { searchStore } from '$lib/stores/search.svelte';
-	import { WOO_ARTICLES } from '$lib/utils/woo-articles';
+	import { WOO_ARTICLES, ARTICLE_TO_ENTITY } from '$lib/utils/woo-articles';
 	import { getRecentArticles, recordRecentArticle } from '$lib/services/recent-articles';
 	import type { EntityType, WooArticleCode, DetectionTier } from '$lib/types';
 	import type { SearchOccurrence } from '$lib/services/search-redact';
+	import ArticlePicker from './ArticlePicker.svelte';
 
 	interface Props {
 		onClose: () => void;
@@ -37,56 +34,13 @@
 	let pickerTargets = $state<SearchOccurrence[]>([]);
 	let submitting = $state(false);
 
-	// Picker form state — mirrors ManualRedactionForm but lives inside a
-	// Shoelace dialog so we don't need viewport-space anchor projection.
-	const recentCodes = $state(getRecentArticles());
-	const allArticles = Object.values(WOO_ARTICLES);
-	const byTier = {
-		'1': allArticles.filter((a) => a.tier === '1').sort((a, b) => a.code.localeCompare(b.code)),
-		'2': allArticles.filter((a) => a.tier === '2').sort((a, b) => a.code.localeCompare(b.code)),
-		'3': allArticles.filter((a) => a.tier === '3').sort((a, b) => a.code.localeCompare(b.code))
-	};
-	const ARTICLE_TO_ENTITY: Partial<Record<WooArticleCode, EntityType>> = {
-		'5.1.1e': 'bsn',
-		'5.1.1d': 'gezondheid',
-		'5.1.2e': 'persoon'
-	};
-	const ENTITY_LABELS: Record<EntityType, string> = {
-		persoon: 'Persoon (naam)',
-		bsn: 'BSN',
-		telefoonnummer: 'Telefoonnummer',
-		email: 'E-mailadres',
-		adres: 'Adres',
-		iban: 'IBAN',
-		gezondheid: 'Gezondheidsgegeven',
-		datum: 'Datum',
-		geboortedatum: 'Geboortedatum',
-		postcode: 'Postcode',
-		kenteken: 'Kenteken',
-		creditcard: 'Creditcard',
-		paspoort: 'Paspoort',
-		rijbewijs: 'Rijbewijs',
-		kvk: 'KvK-nummer',
-		btw: 'BTW-nummer',
-		area: 'Handmatig gebied',
-		custom: 'Zoekterm (eigen lijst)'
-	};
+	// Picker form state — managed by the ArticlePicker child, bound here
+	// so confirmPicker() can read them at submit time.
+	const recentCodes = getRecentArticles();
 	const initialArticle: WooArticleCode = recentCodes[0] ?? '5.1.2e';
 	let article = $state<WooArticleCode>(initialArticle);
 	let entityType = $state<EntityType>(ARTICLE_TO_ENTITY[initialArticle] ?? 'persoon');
 	let motivation = $state('');
-	let userTouchedType = $state(false);
-
-	$effect(() => {
-		if (!article) return;
-		const info = WOO_ARTICLES[article];
-		motivation = `Informatie valt onder Art. ${info.code} Woo — ${info.ground}.`;
-	});
-	$effect(() => {
-		if (!article || userTouchedType) return;
-		const implied = ARTICLE_TO_ENTITY[article];
-		if (implied) entityType = implied;
-	});
 
 	const tierOfArticle = $derived<DetectionTier>(
 		WOO_ARTICLES[article].tier as DetectionTier
@@ -99,7 +53,6 @@
 			inputEl?.focus?.();
 		});
 	});
-	onDestroy(() => {});
 
 	function handleKeyDown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
@@ -334,64 +287,7 @@
 	}}
 >
 	<div class="space-y-3">
-		<!-- svelte-ignore a11y_label_has_associated_control -->
-		<sl-select
-			label="Woo-grond"
-			size="small"
-			value={article}
-			onsl-change={(e: Event) => {
-				article = ((e.target as HTMLSelectElement).value || initialArticle) as WooArticleCode;
-				userTouchedType = false;
-			}}
-		>
-			{#if recentCodes.length > 0}
-				<sl-option disabled>— Recent gebruikt —</sl-option>
-				{#each recentCodes as code}
-					{#if WOO_ARTICLES[code]}
-						<sl-option value={code}>
-							Tier {WOO_ARTICLES[code].tier} · {code} — {WOO_ARTICLES[code].ground}
-						</sl-option>
-					{/if}
-				{/each}
-				<sl-divider></sl-divider>
-			{/if}
-			<sl-option disabled>— Tier 1 (harde identifiers) —</sl-option>
-			{#each byTier['1'] as art}
-				<sl-option value={art.code}>{art.code} — {art.ground}</sl-option>
-			{/each}
-			<sl-option disabled>— Tier 2 (persoonsgegevens) —</sl-option>
-			{#each byTier['2'] as art}
-				<sl-option value={art.code}>{art.code} — {art.ground}</sl-option>
-			{/each}
-			<sl-option disabled>— Tier 3 (inhoudelijk) —</sl-option>
-			{#each byTier['3'] as art}
-				<sl-option value={art.code}>{art.code} — {art.ground}</sl-option>
-			{/each}
-		</sl-select>
-
-		<!-- svelte-ignore a11y_label_has_associated_control -->
-		<sl-select
-			label="Type"
-			size="small"
-			value={entityType}
-			onsl-change={(e: Event) => {
-				entityType = (e.target as HTMLSelectElement).value as EntityType;
-				userTouchedType = true;
-			}}
-		>
-			{#each Object.entries(ENTITY_LABELS) as [value, label]}
-				<sl-option value={value}>{label}</sl-option>
-			{/each}
-		</sl-select>
-
-		<!-- svelte-ignore a11y_label_has_associated_control -->
-		<sl-textarea
-			label="Motivering"
-			size="small"
-			rows="2"
-			value={motivation}
-			onsl-input={(e: Event) => { motivation = (e.target as HTMLTextAreaElement).value; }}
-		></sl-textarea>
+		<ArticlePicker bind:article bind:entityType bind:motivation />
 	</div>
 	<sl-button slot="footer" variant="text" onclick={() => (pickerOpen = false)} disabled={submitting}>
 		Annuleren

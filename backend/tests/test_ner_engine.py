@@ -519,7 +519,7 @@ class TestTier2Deduce:
         assert len(person_results) >= 1
         for r in person_results:
             assert r.tier == "2"
-            assert r.source in ("deduce", "title_rule")
+            assert r.source in ("deduce", "title_rule", "initials_rule")
             assert r.woo_article == "5.1.2e"
             assert r.confidence in (0.75, 0.80, 0.85, 0.90, 0.95)
 
@@ -622,9 +622,7 @@ class TestHuisnummerRegex:
         text = "De heer W. de Groot, bewoner van nummer 26, heeft ingediend."
         results = detect_tier2(text)
         nummer = [
-            r
-            for r in results
-            if r.entity_type == "adres" and r.text.lower().startswith("nummer")
+            r for r in results if r.entity_type == "adres" and r.text.lower().startswith("nummer")
         ]
         assert len(nummer) == 1
         assert nummer[0].text.lower() == "nummer 26"
@@ -635,9 +633,7 @@ class TestHuisnummerRegex:
         text = "Zij woont op nummer 12 sinds 2019."
         results = detect_tier2(text)
         nummer = [
-            r
-            for r in results
-            if r.entity_type == "adres" and r.text.lower().startswith("nummer")
+            r for r in results if r.entity_type == "adres" and r.text.lower().startswith("nummer")
         ]
         assert len(nummer) == 1
         assert nummer[0].text.lower() == "nummer 12"
@@ -650,9 +646,7 @@ class TestHuisnummerRegex:
         )
         results = detect_tier2(text)
         nummer = [
-            r
-            for r in results
-            if r.entity_type == "adres" and r.text.lower().startswith("nummer")
+            r for r in results if r.entity_type == "adres" and r.text.lower().startswith("nummer")
         ]
         assert nummer == []
 
@@ -663,13 +657,236 @@ class TestHuisnummerRegex:
         text = "De bewoners van huisnummer 22 hebben geklaagd."
         results = detect_tier2(text)
         # Exactly one adres detection for this position, not two.
-        adres_hits = [
-            r
-            for r in results
-            if r.entity_type == "adres" and "22" in r.text
-        ]
+        adres_hits = [r for r in results if r.entity_type == "adres" and "22" in r.text]
         assert len(adres_hits) == 1
         assert adres_hits[0].source == "regex"
+
+
+# ---------------------------------------------------------------------------
+# Tier 2: straatnaam + huisnummer regex rule
+#
+# Deduce silently drops plain `Havenstraat 194`-style spans on
+# ordinary Dutch letter / invoice prose. The straatnaam rule catches
+# these via the closed set of Dutch street suffixes, with a
+# confidence boost when a postcode sits within 80 chars.
+# ---------------------------------------------------------------------------
+
+
+class TestStraatnaamRegex:
+    """Unit tests for the rule itself. Integration with Deduce is
+    covered by `test_postcode_proximity_boosts_confidence` below —
+    the other cases exercise the regex directly because Deduce
+    sometimes also catches the same span (making the integration
+    output depend on Deduce's version rather than our rule)."""
+
+    def test_plain_street_and_number_detected(self):
+        from app.services.ner_engine._straatnaam import _detect_adres_by_straatnaam
+
+        hits = _detect_adres_by_straatnaam("Havenstraat 194 is het bezoekadres.")
+        assert len(hits) == 1
+        assert hits[0].text == "Havenstraat 194"
+        assert hits[0].entity_type == "adres"
+        assert hits[0].tier == "2"
+        assert hits[0].woo_article == "5.1.2e"
+        assert hits[0].confidence == 0.85
+
+    def test_multiword_street_with_tussen(self):
+        from app.services.ner_engine._straatnaam import _detect_adres_by_straatnaam
+
+        hits = _detect_adres_by_straatnaam("Zie Van der Helstplein 3-5 op de kaart.")
+        assert any("Helstplein" in h.text for h in hits)
+
+    def test_prinses_beatrixlaan_multiword_prefix(self):
+        from app.services.ner_engine._straatnaam import _detect_adres_by_straatnaam
+
+        hits = _detect_adres_by_straatnaam("Afzender: Prinses Beatrixlaan 12a.")
+        assert len(hits) == 1
+        assert hits[0].text == "Prinses Beatrixlaan 12a"
+
+    def test_postcode_proximity_boosts_confidence(self):
+        from app.services.ner_engine._straatnaam import _detect_adres_by_straatnaam
+
+        text = "Factuuradres:\nHavenstraat 194\n3024 TM ROTTERDAM"
+        hits = _detect_adres_by_straatnaam(text)
+        assert len(hits) == 1
+        assert hits[0].text == "Havenstraat 194"
+        # Postcode "3024 TM" sits within 80 chars → proximity boost.
+        assert hits[0].confidence == 0.92
+
+    def test_postcode_far_away_no_boost(self):
+        from app.services.ner_engine._straatnaam import _detect_adres_by_straatnaam
+
+        # Pad the text so the postcode sits well beyond the 80-char
+        # proximity window.
+        text = "Havenstraat 194 " + ("x " * 100) + "3024 TM"
+        hits = _detect_adres_by_straatnaam(text)
+        assert len(hits) == 1
+        assert hits[0].confidence == 0.85
+
+    def test_lowercase_winkelstraat_not_confused(self):
+        from app.services.ner_engine._straatnaam import _detect_adres_by_straatnaam
+
+        hits = _detect_adres_by_straatnaam("In deze winkelstraat staan 10 winkels naast elkaar.")
+        assert hits == []
+
+    def test_bare_park_without_prefix_not_detected(self):
+        from app.services.ner_engine._straatnaam import _detect_adres_by_straatnaam
+
+        hits = _detect_adres_by_straatnaam("Het park 3 is gesloten voor bezoekers.")
+        assert hits == []
+
+    def test_line_break_between_name_and_street_not_absorbed(self):
+        """The prefix-word run must not cross a newline — otherwise
+        `Jaap Stronks\\nHavenstraat 194` would match as one span
+        starting at 'Jaap' rather than the actual street."""
+        from app.services.ner_engine._straatnaam import _detect_adres_by_straatnaam
+
+        hits = _detect_adres_by_straatnaam("Jaap Stronks\nHavenstraat 194")
+        assert len(hits) == 1
+        assert hits[0].text == "Havenstraat 194"
+
+    def test_institutional_filter_in_full_pipeline(self):
+        """Full-pipeline integration: bezoekadres context drops the
+        straatnaam hit via `_is_plausible_home_address`."""
+        text = "Bezoekadres: Stadhuisplein 1 te Rotterdam."
+        results = detect_tier2(text)
+        regex_hits = [
+            r
+            for r in results
+            if r.entity_type == "adres" and r.source == "regex" and "Stadhuis" in r.text
+        ]
+        assert regex_hits == []
+
+
+# ---------------------------------------------------------------------------
+# Tier 2: initials-rule for `[Initials] [Surname]` spans
+#
+# Deduce emits the span but the CBS name-list filter drops it when
+# the surname is not in the top-N list. The initials rule rescues
+# structurally-evident names like "G.J. Stronks".
+# ---------------------------------------------------------------------------
+
+
+class TestInitialsRule:
+    def test_initials_plus_surname_detected(self):
+        text = "Betreft: de factuur van G.J. Stronks aan Odido."
+        results = detect_tier2(text)
+        hits = [r for r in results if r.entity_type == "persoon" and "Stronks" in r.text]
+        assert len(hits) >= 1
+        hit = hits[0]
+        assert hit.tier == "2"
+        assert hit.confidence == 0.85
+        # Either the initials rule or a Deduce+CBS hit is acceptable
+        # depending on whether Stronks has been added to CBS — the
+        # point is the detection exists at all.
+        assert hit.source in ("initials_rule", "deduce", "title_rule")
+
+    def test_legal_form_abbreviation_not_matched(self):
+        text = "N.V. Nederlandse Spoorwegen heeft bericht."
+        results = detect_tier2(text)
+        # No `persoon` hit sourced from the initials rule — the NV.
+        # abbreviation guard must drop it.
+        initials_hits = [
+            r for r in results if r.entity_type == "persoon" and r.source == "initials_rule"
+        ]
+        assert initials_hits == []
+
+    def test_msc_academic_abbreviation_not_matched(self):
+        text = "Contactpersoon: M.Sc. Johnson namens de werkgroep."
+        results = detect_tier2(text)
+        initials_hits = [
+            r
+            for r in results
+            if r.entity_type == "persoon" and r.source == "initials_rule" and "Sc" in r.text
+        ]
+        assert initials_hits == []
+
+    def test_initials_with_tussenvoegsel(self):
+        text = "De afzender is A.M. van der Berg uit Amsterdam."
+        results = detect_tier2(text)
+        hits = [r for r in results if r.entity_type == "persoon" and "van der Berg" in r.text]
+        assert len(hits) >= 1
+
+    def test_initials_rule_deduped_against_deduce(self):
+        """If Deduce + CBS already produced a persoon hit for a
+        span, the initials rule must not emit a second card at the
+        same position."""
+        text = "Jan Jansen heeft het formulier ondertekend."
+        results = detect_tier2(text)
+        person_hits = [r for r in results if r.entity_type == "persoon"]
+        # Expect exactly one hit for this span, not two.
+        jansen_hits = [r for r in person_hits if "Jansen" in r.text]
+        assert len(jansen_hits) == 1
+
+
+# ---------------------------------------------------------------------------
+# Tier 2: label-anchored identifier rule (klantnummer / factuurnummer / …)
+#
+# Dutch invoices / Woo correspondence identify citizens via labelled
+# reference numbers. The rule emits a new `referentie` type, tiered by
+# label. The span covers the number only so the redacted output reads
+# "Klantnummer: ███".
+# ---------------------------------------------------------------------------
+
+
+class TestLabelAnchoredIdRule:
+    def test_klantnummer_detected(self):
+        text = "Klantnummer: 1.11368173"
+        results = detect_tier2(text)
+        hits = [r for r in results if r.entity_type == "referentie"]
+        assert len(hits) == 1
+        assert hits[0].text == "1.11368173"
+        assert hits[0].confidence == 0.85
+        assert hits[0].tier == "2"
+        assert hits[0].source == "regex"
+        # Span covers number only, NOT the label.
+        assert text[hits[0].start_char : hits[0].end_char] == "1.11368173"
+
+    def test_factuurnummer_low_confidence(self):
+        text = "Factuurnummer: 901583844500"
+        results = detect_tier2(text)
+        hit = next(r for r in results if r.entity_type == "referentie")
+        assert hit.text == "901583844500"
+        assert hit.confidence == 0.60
+
+    def test_alphanumeric_kenmerk(self):
+        text = "Ons kenmerk: OT-ID1382702-2025"
+        results = detect_tier2(text)
+        hit = next(r for r in results if r.entity_type == "referentie")
+        assert hit.text == "OT-ID1382702-2025"
+        assert hit.confidence == 0.70
+
+    def test_zaaknummer_detected(self):
+        text = "Zaaknummer Z/24/0001 is in behandeling."
+        results = detect_tier2(text)
+        hit = next(r for r in results if r.entity_type == "referentie")
+        assert hit.text == "Z/24/0001"
+        assert hit.confidence == 0.60
+
+    def test_label_without_value_ignored(self):
+        text = "Zie ons kenmerk bovenaan deze brief."
+        results = detect_tier2(text)
+        hits = [r for r in results if r.entity_type == "referentie"]
+        assert hits == []
+
+    def test_klantnummer_without_colon(self):
+        text = "Relatienummer 987654 is toegekend."
+        results = detect_tier2(text)
+        hit = next(r for r in results if r.entity_type == "referentie")
+        assert hit.text == "987654"
+        assert hit.confidence == 0.85
+
+    def test_multiple_labels_in_one_document(self):
+        text = (
+            "Klantnummer: 1.11368173\nFactuurnummer: 901583844500\nOns kenmerk: OT-ID1382702-2025\n"
+        )
+        results = detect_tier2(text)
+        hits = {r.text: r.confidence for r in results if r.entity_type == "referentie"}
+        assert hits == {
+            "1.11368173": 0.85,
+            "901583844500": 0.60,
+            "OT-ID1382702-2025": 0.70,
+        }
 
 
 # ---------------------------------------------------------------------------

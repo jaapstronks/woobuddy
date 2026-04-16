@@ -12,9 +12,12 @@ from app.services.name_engine import score_person_candidate
 
 from ._deduce import _DEDUCE_TAG_MAP, _get_deduce, _get_name_lists
 from ._huisnummer import _detect_adres_by_huisnummer
+from ._initials import _detect_persoon_via_initials
+from ._label_anchored_id import _detect_label_anchored_ids
 from ._plausibility import _ORGANIZATION_KEYWORDS, _is_plausible_person_name
+from ._straatnaam import _detect_adres_by_straatnaam
 from ._title_prefix import _detect_persoon_via_title_prefix
-from ._types import NERDetection, _deduplicate
+from ._types import NERDetection, _deduplicate, _merge_without_overlap
 
 logger = get_logger(__name__)
 
@@ -275,6 +278,27 @@ def detect_tier2(text: str) -> list[NERDetection]:
             )
         )
 
+    # Straatnaam + huisnummer rule — catches full `Xxxstraat 194`
+    # spans that Deduce silently drops on ordinary Dutch letter /
+    # invoice prose. Run after the Deduce pass so we can overlap-dedupe
+    # against any Deduce `adres` hit that did fire at the same
+    # position (Deduce wins — its confidence is already higher on the
+    # cases where it trips, and its span boundary is slightly more
+    # conservative than our suffix-anchored regex).
+    straatnaam_hits = _detect_adres_by_straatnaam(text)
+    if straatnaam_hits:
+        # Apply the same institutional-address filter that gates Deduce
+        # `adres` hits — a street at a gemeentehuis / bezoekadres is
+        # public and should not be redacted.
+        straatnaam_hits = [
+            h
+            for h in straatnaam_hits
+            if _is_plausible_home_address(h.text, text, h.start_char)
+        ]
+        _merge_without_overlap(
+            detections, straatnaam_hits, "adres", "ner.straatnaam_dropped_overlap"
+        )
+
     # Huisnummer rule (#51) — catches `huisnummer N` and residence-cued
     # `nummer N` fragments that Deduce does not emit when the street
     # token is absent. Run after the Deduce pass so we can drop any
@@ -296,6 +320,27 @@ def detect_tier2(text: str) -> list[NERDetection]:
         ]
         detections.extend(huisnummer_hits)
 
+    # Initials rule — catches `G.J. Stronks`-style persoon spans that
+    # Deduce emits but the CBS name-list filter drops because the
+    # surname is not in the top-N list. The structural pattern
+    # (`[A-Z]\.` + capitalized surname) is the evidence; no wordlist
+    # lookup required. Dedupe against existing `persoon` hits so a
+    # Deduce + CBS win is never demoted.
+    initials_hits = _detect_persoon_via_initials(text)
+    if initials_hits:
+        _merge_without_overlap(
+            detections, initials_hits, "persoon", "ner.initials_rule_dropped_overlap"
+        )
+
+    # Label-anchored identifier rule — catches `Klantnummer: 123`,
+    # `Factuurnummer: 456`, `Kenmerk: OT-…` spans that neither Tier 1
+    # regex nor Deduce emits today. Each label carries its own
+    # confidence (klantnummer > dossiernummer > factuurnummer) because
+    # the identification strength differs; see `_label_anchored_id.py`
+    # for the tiered table. The emitted spans cover only the number
+    # so the redacted output reads "Klantnummer: ███".
+    detections.extend(_detect_label_anchored_ids(text))
+
     # Title-prefix rule (#48) — catches non-Dutch surnames that Deduce
     # produces but the CBS name-list filter drops (e.g. "El Khatib",
     # "Yılmaz", "Kowalski"). Runs on the same text and is filtered
@@ -303,20 +348,8 @@ def detect_tier2(text: str) -> list[NERDetection]:
     # demoted to the title rule's lower 0.75 confidence.
     title_hits = _detect_persoon_via_title_prefix(text, name_lists)
     if title_hits:
-        existing_person_ranges = [
-            (d.start_char, d.end_char) for d in detections if d.entity_type == "persoon"
-        ]
-        for th in title_hits:
-            overlaps = any(
-                th.start_char < end and th.end_char > start for start, end in existing_person_ranges
-            )
-            if overlaps:
-                logger.debug(
-                    "ner.title_rule_dropped_overlap",
-                    start=th.start_char,
-                    end=th.end_char,
-                )
-                continue
-            detections.append(th)
+        _merge_without_overlap(
+            detections, title_hits, "persoon", "ner.title_rule_dropped_overlap"
+        )
 
     return _deduplicate(detections)

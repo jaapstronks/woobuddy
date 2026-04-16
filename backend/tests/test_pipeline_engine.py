@@ -7,11 +7,8 @@ LLM verification pass in the future.
 
 import pytest
 
-from app.services.pipeline_engine import (
-    _check_environmental_content,
-    run_pipeline,
-)
-from app.services.ner_engine import NERDetection
+from app.services.environmental_classifier import check_environmental_content
+from app.services.pipeline_engine import run_pipeline
 from app.services.pdf_engine import ExtractionResult, PageText, TextSpan
 
 # ---------------------------------------------------------------------------
@@ -30,25 +27,6 @@ def _make_extraction(text: str, page_count: int = 1) -> ExtractionResult:
     )
 
 
-def _make_ner_detection(
-    text: str,
-    entity_type: str = "bsn",
-    tier: str = "1",
-    confidence: float = 0.98,
-    woo_article: str = "5.1.1e",
-    source: str = "regex",
-) -> NERDetection:
-    return NERDetection(
-        text=text,
-        entity_type=entity_type,
-        tier=tier,
-        confidence=confidence,
-        woo_article=woo_article,
-        source=source,
-        start_char=0,
-        end_char=len(text),
-    )
-
 
 # ---------------------------------------------------------------------------
 # Environmental content detection
@@ -57,16 +35,16 @@ def _make_ner_detection(
 
 class TestEnvironmentalDetection:
     def test_environmental_keywords_detected(self):
-        assert _check_environmental_content("De luchtkwaliteit is verslechterd.") is True
-        assert _check_environmental_content("PFAS-verontreiniging in de bodem.") is True
-        assert _check_environmental_content("CO2-uitstoot boven de norm.") is True
+        assert check_environmental_content("De luchtkwaliteit is verslechterd.") is True
+        assert check_environmental_content("PFAS-verontreiniging in de bodem.") is True
+        assert check_environmental_content("CO2-uitstoot boven de norm.") is True
 
     def test_no_environmental_content(self):
-        assert _check_environmental_content("De vergadering is verdaagd.") is False
-        assert _check_environmental_content("Budget voor 2025 is goedgekeurd.") is False
+        assert check_environmental_content("De vergadering is verdaagd.") is False
+        assert check_environmental_content("Budget voor 2025 is goedgekeurd.") is False
 
     def test_case_insensitive(self):
-        assert _check_environmental_content("MILIEU impact assessment") is True
+        assert check_environmental_content("MILIEU impact assessment") is True
 
 
 # ---------------------------------------------------------------------------

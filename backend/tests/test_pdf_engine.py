@@ -7,12 +7,8 @@ current rules (word boundaries, single-line merges, anchored starts)
 all exist to prevent that class of bug.
 """
 
-from app.services.pdf_engine import (
-    PageText,
-    TextSpan,
-    count_word_boundary_matches,
-    find_span_for_text,
-)
+from app.services.pdf_engine import PageText, TextSpan
+from app.services.span_resolver import count_word_boundary_matches, find_span_for_text
 
 
 def _page(spans: list[TextSpan]) -> PageText:
@@ -138,6 +134,58 @@ class TestMultiItemMerge:
         assert bbox["x0"] == 72
         assert bbox["x1"] == 140
 
+    def test_per_glyph_merge_assembles_long_iban(self):
+        """Regression: pdf.js returns each glyph as its own text item for
+        monospace fonts (Menlo / Courier). An 18-character IBAN can never
+        satisfy the space-joined match test because the search contains
+        no spaces and the stream has none either — we fall back to
+        comparing the whitespace-stripped forms. Before this fix the
+        merge loop bailed out at 12 items and the detection came back
+        with zero bboxes, so the frontend silently dropped it."""
+        iban = "NL83INGB0004752861"
+        char_w = 7.22
+        spans = [
+            TextSpan(
+                text=c,
+                page=0,
+                x0=10 + i * char_w,
+                y0=10,
+                x1=10 + (i + 1) * char_w,
+                y1=20,
+            )
+            for i, c in enumerate(iban)
+        ]
+        page = _page(spans)
+        results = find_span_for_text([page], iban)
+        assert len(results) == 1
+        bbox = results[0]
+        assert bbox["x0"] == 10
+        assert abs(bbox["x1"] - (10 + len(iban) * char_w)) < 0.01
+
+    def test_per_glyph_merge_assembles_multiword_address(self):
+        """"Kerkstraat 14" in a per-glyph text stream. The space item is
+        dropped by the extractor (pdf.js emits space-only items that get
+        trimmed), so the joined glyph stream is "Kerkstraat14" but the
+        search is "Kerkstraat 14". The whitespace-stripped equality path
+        is what makes this resolvable."""
+        glyphs = list("Kerkstraat14")  # space dropped by the extractor
+        char_w = 7.22
+        spans = [
+            TextSpan(
+                text=c,
+                page=0,
+                x0=10 + i * char_w,
+                y0=10,
+                x1=10 + (i + 1) * char_w,
+                y1=20,
+            )
+            for i, c in enumerate(glyphs)
+        ]
+        page = _page(spans)
+        results = find_span_for_text([page], "Kerkstraat 14")
+        assert len(results) == 1
+        assert results[0]["x0"] == 10
+
     def test_no_space_merge_for_split_url(self):
         """URLs get split without spaces by the PDF renderer. The
         merge must accept no-space concatenation for this case."""
@@ -197,6 +245,43 @@ class TestOccurrenceIndex:
             [TextSpan(text="A.B. Bakker", page=0, x0=10, y0=10, x1=80, y1=20)]
         )
         assert find_span_for_text([page], "A.B. Bakker", occurrence_index=3) == []
+
+    def test_mixed_split_and_unsplit_occurrences_on_same_page(self):
+        """Regression: a name appearing twice on one page where pdf.js
+        splits the first occurrence across two text items ("Jaap" +
+        "Stronks") but keeps the second as a single item. The earlier
+        implementation skipped the multi-item merge pass whenever any
+        single-item match existed on the page, so occurrence 0 got the
+        second name's bbox and occurrence 1 got the same bbox via
+        fallback. Both copies of the name then stacked onto the second
+        position, leaving the first name un-highlighted.
+        """
+        page = _page(
+            [
+                TextSpan(text="Factuuradres", page=0, x0=50, y0=10, x1=120, y1=22),
+                TextSpan(text="Jaap", page=0, x0=50, y0=30, x1=75, y1=42),
+                TextSpan(text="Stronks", page=0, x0=78, y0=30, x1=122, y1=42),
+                TextSpan(
+                    text="Verzendadres 200233",
+                    page=0,
+                    x0=50,
+                    y0=60,
+                    x1=180,
+                    y1=72,
+                ),
+                TextSpan(text="Jaap Stronks", page=0, x0=50, y0=80, x1=122, y1=92),
+            ]
+        )
+
+        first = find_span_for_text([page], "Jaap Stronks", occurrence_index=0)
+        assert len(first) == 1
+        assert first[0]["y0"] == 30  # the split-span occurrence
+        assert first[0]["x0"] == 50
+        assert first[0]["x1"] == 122
+
+        second = find_span_for_text([page], "Jaap Stronks", occurrence_index=1)
+        assert len(second) == 1
+        assert second[0]["y0"] == 80  # the single-span occurrence
 
     def test_count_word_boundary_matches_respects_limit(self):
         text = "A.B. Bakker en later nog eens A.B. Bakker in dezelfde zin."

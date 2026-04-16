@@ -15,9 +15,7 @@ as `review_status="pending"` and the reviewer decides.
 """
 
 import asyncio
-import re
 from collections.abc import Sequence
-from dataclasses import dataclass, field
 from typing import Any
 
 from app.logging_config import get_logger
@@ -26,22 +24,24 @@ from app.services.custom_term_matcher import (
     TermMatch,
     match_custom_terms,
 )
+from app.services.environmental_classifier import check_environmental_content
 from app.services.name_engine import normalize_reference_name
 from app.services.ner_engine import NERDetection, detect_all
-from app.services.pdf_engine import (
-    ExtractionResult,
-    count_word_boundary_matches,
-    find_span_for_text,
-)
-from app.services.role_engine import (
-    FunctionTitleMatch,
-    find_function_title_near,
-    get_function_title_lists,
-)
+from app.services.pdf_engine import ExtractionResult
+
+# Re-export PipelineDetection/PipelineResult at the old import path so
+# existing callers (tests, analyze.py) keep working after the types
+# moved to pipeline_types.py.
+from app.services.pipeline_types import PipelineDetection, PipelineResult
+from app.services.span_resolver import count_word_boundary_matches, find_span_for_text
 from app.services.structure_engine import (
     StructureSpan,
     detect_structures,
     find_enclosing_structure,
+)
+from app.services.title_match_rules import (
+    match_function_title,
+    title_match_to_detection,
 )
 from app.services.whitelist_engine import (
     PersonWhitelistHit,
@@ -54,192 +54,16 @@ from app.services.whitelist_engine import (
 
 logger = get_logger(__name__)
 
-# Environmental information keywords (Art. 5.1 lid 6-7 Woo)
-# Environmental info has restricted redaction possibilities
-_ENVIRONMENTAL_SIGNALS = [
-    r"milieu",
-    r"luchtkwaliteit",
-    r"bodemverontreiniging",
-    r"waterkwaliteit",
-    r"geluidshinder",
-    r"geluidsoverlast",
-    r"emissie",
-    r"uitstoot",
-    r"fijnstof",
-    r"stikstof",
-    r"PFAS",
-    r"asbest",
-    r"afvalstoffen",
-    r"afvalwater",
-    r"grondwater",
-    r"oppervlaktewater",
-    r"lozingen",
-    r"milieuvergunning",
-    r"omgevingsvergunning",
-    r"bestrijdingsmiddelen",
-    r"biodiversiteit",
-    r"natuurbescherming",
-    r"Natura\s*2000",
-    r"gezondheidsrisico",
-    r"volksgezondheid",
-    r"energieverbruik",
-    r"CO2",
-    r"klimaat",
-    r"stralingsbescherming",
+
+# `PipelineDetection` and `PipelineResult` live in pipeline_types.py —
+# re-exported above so `from app.services.pipeline_engine import
+# PipelineResult` keeps working.
+
+__all__ = [
+    "PipelineDetection",
+    "PipelineResult",
+    "run_pipeline",
 ]
-
-_ENVIRONMENTAL_PATTERN = re.compile("|".join(_ENVIRONMENTAL_SIGNALS), re.IGNORECASE)
-
-
-def _check_environmental_content(text: str) -> bool:
-    """Check if text contains environmental information (Art. 5.1 lid 6-7 Woo)."""
-    return bool(_ENVIRONMENTAL_PATTERN.search(text))
-
-
-@dataclass
-class PipelineDetection:
-    """A detection ready to be stored in the database."""
-
-    entity_text: str
-    entity_type: str
-    tier: str
-    confidence: float
-    woo_article: str | None
-    review_status: str  # auto_accepted, pending
-    bounding_boxes: list[dict[str, Any]]
-    reasoning: str
-    source: str
-    is_environmental: bool = False
-    # Role classification produced by the rule engine (#13), if any.
-    # Not persisted to the Detection table today — reserved for the Tier 2
-    # card UX in #15 — but callers (and tests) can read it to verify that
-    # the rule engine fired on a given detection.
-    subject_role: str | None = None
-    # Character offsets in the server-joined full text. Carried through
-    # from the originating NERDetection so `analyze.py` can persist them
-    # on the Detection row (#20 — bulk sweeps match detections against
-    # structure spans on the frontend by comparing these offsets with
-    # the spans' own `start_char`/`end_char`).
-    start_char: int | None = None
-    end_char: int | None = None
-
-
-@dataclass
-class PipelineResult:
-    """Result of the full detection pipeline."""
-
-    detections: list[PipelineDetection] = field(default_factory=list)
-    page_count: int = 0
-    has_environmental_content: bool = False
-    # Structural regions (email headers, signature blocks, salutations)
-    # found by `structure_engine.detect_structures`. Attached for #20
-    # bulk sweeps and returned via AnalyzeResponse so the frontend can
-    # render "lak dit blok" affordances on top of the PDF.
-    structure_spans: list[StructureSpan] = field(default_factory=list)
-
-
-def _match_function_title(
-    full_text: str,
-    span_text: str,
-    start_char: int,
-    end_char: int,
-) -> FunctionTitleMatch | None:
-    """Look for a function title near — or inside — a Tier 2 persoon span.
-
-    The normal case is a title in the surrounding text ("Wethouder Jan
-    de Vries"), which `role_engine.find_function_title_near` handles
-    via the character window. But Deduce's person span sometimes
-    swallows the title itself (annotation covers "Wethouder Jan de
-    Vries" as one "persoon"), in which case the character window before
-    the span is empty and the normal path finds nothing. As a fallback
-    we scan the span text for a leading title — that's the apposition
-    case but folded into the detection.
-
-    Kept as a local helper so tests can monkey-patch it without
-    reaching into the role_engine module.
-    """
-    lists = get_function_title_lists()
-    match = find_function_title_near(full_text, start_char, end_char, lists)
-    if match is not None:
-        return match
-
-    # Fallback: leading-title-in-span. We only accept a match at the
-    # start of the span (so "Jan de Vries Wethouder" doesn't fire here —
-    # that's an after-context case that already goes through the
-    # character-window path). Same tie-breaking as before: publiek beats
-    # ambtenaar if both happen to fit the prefix (extremely rare).
-    stripped = (span_text or "").lstrip()
-    best: FunctionTitleMatch | None = None
-    for list_name, title, pattern in lists.iter_all():
-        m = pattern.match(stripped)
-        if m is None:
-            continue
-        # Require at least one token after the title inside the span,
-        # otherwise the span is just the title with no name attached.
-        remainder = stripped[m.end() :].strip()
-        if not remainder:
-            continue
-        candidate = FunctionTitleMatch(
-            title=title,
-            list_name=list_name,
-            position="before",
-            tokens_between=0,
-        )
-        if best is None or (candidate.list_name == "publiek" and best.list_name == "ambtenaar"):
-            best = candidate
-    return best
-
-
-def _title_match_to_detection(
-    det: NERDetection,
-    bboxes: list[dict[str, float]],
-    match: FunctionTitleMatch,
-) -> PipelineDetection | None:
-    """Map a rule-engine hit onto a PipelineDetection.
-
-    Publiek titles default to `review_status="rejected"` (the
-    public-officials-do-not-redact rule). Ambtenaar titles stay
-    `pending` but with a pre-filled role so the reviewer only confirms.
-    """
-    if match.list_name == "publiek":
-        return PipelineDetection(
-            entity_text=det.text,
-            entity_type="persoon",
-            tier="2",
-            confidence=min(det.confidence + 0.05, 0.95),
-            woo_article=None,
-            review_status="rejected",
-            bounding_boxes=bboxes,
-            reasoning=(
-                f"Publiek functionaris: voorafgegaan door '{match.title}' in de brontekst."
-                if match.position == "before"
-                else f"Publiek functionaris: gevolgd door '{match.title}' in de brontekst."
-            ),
-            source="rule",
-            subject_role="publiek_functionaris",
-            start_char=det.start_char,
-            end_char=det.end_char,
-        )
-
-    # Ambtenaar — keep pending, pre-fill the role, reviewer confirms.
-    return PipelineDetection(
-        entity_text=det.text,
-        entity_type="persoon",
-        tier="2",
-        confidence=det.confidence,
-        woo_article="5.1.2e",
-        review_status="pending",
-        bounding_boxes=bboxes,
-        reasoning=(
-            f"Vermoedelijk ambtenaar in functie: voorafgegaan door '{match.title}'."
-            if match.position == "before"
-            else f"Vermoedelijk ambtenaar in functie: gevolgd door '{match.title}'."
-        ),
-        source="rule",
-        subject_role="ambtenaar",
-        start_char=det.start_char,
-        end_char=det.end_char,
-    )
 
 
 def _persoon_pending(
@@ -497,7 +321,7 @@ def _run_pipeline_sync(
     )
 
     # Check for environmental content (Art. 5.1 lid 6-7 Woo)
-    result.has_environmental_content = _check_environmental_content(extraction.full_text)
+    result.has_environmental_content = check_environmental_content(extraction.full_text)
 
     # Whitelist — pre-compute once per document. The address whitelist is
     # global (postcodes and municipal contact details are public
@@ -650,7 +474,7 @@ def _run_pipeline_sync(
             # pre-fills the role but keeps the detection pending so the
             # reviewer confirms. This is the main reason the pipeline no
             # longer needs an LLM for the common case.
-            title_match = _match_function_title(
+            title_match = match_function_title(
                 extraction.full_text, det.text, det.start_char, det.end_char
             )
 
@@ -659,7 +483,7 @@ def _run_pipeline_sync(
             # pass below). "Burgemeester X" inside a signature block
             # must still be marked as not-to-redact.
             if title_match is not None and title_match.list_name == "publiek":
-                rule_det = _title_match_to_detection(det, bboxes, title_match)
+                rule_det = title_match_to_detection(det, bboxes, title_match)
                 if rule_det is not None:
                     result.detections.append(rule_det)
                     continue
@@ -675,7 +499,7 @@ def _run_pipeline_sync(
             # Ambtenaar title — still worth emitting (pre-filled role,
             # pending status) even though no structure matched.
             if title_match is not None:
-                rule_det = _title_match_to_detection(det, bboxes, title_match)
+                rule_det = title_match_to_detection(det, bboxes, title_match)
                 if rule_det is not None:
                     result.detections.append(rule_det)
                     continue
