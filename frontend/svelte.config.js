@@ -34,7 +34,12 @@ const config = {
 			mode: 'auto',
 			directives: {
 				'default-src': ['self'],
-				'script-src': ['self', 'https://cdn.jsdelivr.net'],
+				// `wasm-unsafe-eval` is required for the in-browser OCR path
+				// (#49): tesseract.js calls `WebAssembly.instantiate()` from
+				// its worker, which a strict `script-src` blocks by default.
+				// This directive keeps arbitrary `eval()` blocked — it only
+				// whitelists WebAssembly compilation.
+				'script-src': ['self', 'wasm-unsafe-eval', 'https://cdn.jsdelivr.net'],
 				'style-src': ['self', 'unsafe-inline', 'https://fonts.googleapis.com', 'https://cdn.jsdelivr.net'],
 				'font-src': ['self', 'https://fonts.gstatic.com', 'https://cdn.jsdelivr.net', 'data:'],
 				'img-src': ['self', 'data:', 'blob:'],

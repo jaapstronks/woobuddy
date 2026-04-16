@@ -7,7 +7,6 @@ hits with existing NER detections (#21).
 """
 
 from collections.abc import Sequence
-from typing import Any
 
 from app.logging_config import get_logger
 from app.services.custom_term_matcher import (
@@ -16,7 +15,7 @@ from app.services.custom_term_matcher import (
     match_custom_terms,
 )
 from app.services.pdf_engine import ExtractionResult
-from app.services.pipeline_types import PipelineDetection, PipelineResult
+from app.services.pipeline_types import Bbox, PipelineDetection, PipelineResult
 from app.services.span_resolver import find_span_for_text
 
 logger = get_logger(__name__)
@@ -24,7 +23,7 @@ logger = get_logger(__name__)
 
 def _custom_term_match_to_detection(
     match: TermMatch,
-    bboxes: list[dict[str, Any]],
+    bboxes: list[Bbox],
 ) -> PipelineDetection:
     """Map a custom-term occurrence onto a PipelineDetection."""
     return PipelineDetection(
@@ -59,16 +58,16 @@ def _find_overlapping_detection(
 def _merge_custom_into_existing(
     existing: PipelineDetection,
     match: TermMatch,
-    term_bboxes: list[dict[str, Any]],
+    term_bboxes: list[Bbox],
 ) -> None:
     """Mutate an existing detection: the custom term's article wins."""
     existing.woo_article = match.woo_article
     seen = {
-        (b.get("page"), b.get("x0"), b.get("y0"), b.get("x1"), b.get("y1"))
+        (b["page"], b["x0"], b["y0"], b["x1"], b["y1"])
         for b in existing.bounding_boxes
     }
     for bb in term_bboxes:
-        key = (bb.get("page"), bb.get("x0"), bb.get("y0"), bb.get("x1"), bb.get("y1"))
+        key = (bb["page"], bb["x0"], bb["y0"], bb["x1"], bb["y1"])
         if key not in seen:
             existing.bounding_boxes.append(bb)
             seen.add(key)
@@ -86,7 +85,7 @@ def apply_custom_terms(
 ) -> None:
     """Apply custom-term matches (#21), merging overlaps with NER hits."""
     term_matches = match_custom_terms(extraction.full_text, custom_terms)
-    bbox_cache: dict[str, list[dict[str, Any]]] = {}
+    bbox_cache: dict[str, list[Bbox]] = {}
     custom_added = 0
     custom_merged = 0
 

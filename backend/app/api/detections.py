@@ -38,6 +38,11 @@ async def _get_detection_or_404(detection_id: uuid.UUID, db: AsyncSession) -> De
     return detection
 
 
+def _stamp_reviewed(detection: Detection) -> None:
+    """Record `now` as the reviewer-action timestamp on ``detection``."""
+    detection.reviewed_at = datetime.now(UTC)
+
+
 @router.get(
     "/api/documents/{document_id}/detections",
     response_model=list[DetectionResponse],
@@ -95,7 +100,7 @@ async def create_manual_detection(
         # deletable via `DELETE /api/detections/:id`.
         source=data.source,
     )
-    detection.reviewed_at = datetime.now(UTC)
+    _stamp_reviewed(detection)
     db.add(detection)
     await db.commit()
     await db.refresh(detection)
@@ -145,11 +150,11 @@ async def update_detection(
         bbox_adjusted = True
         if data.review_status is None:
             detection.review_status = "edited"
-            detection.reviewed_at = datetime.now(UTC)
+            _stamp_reviewed(detection)
 
     if data.review_status:
         detection.review_status = data.review_status
-        detection.reviewed_at = datetime.now(UTC)
+        _stamp_reviewed(detection)
 
     if data.woo_article is not None:
         detection.woo_article = data.woo_article
@@ -276,7 +281,7 @@ def _detection_from_original(
         split_from=split_from,
         merged_from=merged_from,
     )
-    clone.reviewed_at = datetime.now(UTC)
+    _stamp_reviewed(clone)
     return clone
 
 

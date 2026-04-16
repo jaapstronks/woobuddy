@@ -67,18 +67,24 @@ async function requestOnce<T>(path: string, options?: RequestInit): Promise<T> {
 	return res.json();
 }
 
+const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE']);
+
 /**
  * Perform a JSON API request with a single retry for transient failures.
  *
- * Retries are attempted once after a 2 s delay if the first attempt raises a
- * network error or a 5xx response. 4xx responses are never retried — they
- * indicate the client needs to change the request, not try again.
+ * Retries only fire on idempotent methods (GET/HEAD/OPTIONS/PUT/DELETE). Non-
+ * idempotent POSTs (create-detection, split, merge) would double-execute on a
+ * transient gateway error if retried, so they surface the first failure to
+ * the caller instead.
  */
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
 	try {
 		return await requestOnce<T>(path, options);
 	} catch (error) {
-		if (error instanceof ApiError && error.isRetryable) {
+		const method = (options?.method ?? 'GET').toUpperCase();
+		const canRetry =
+			error instanceof ApiError && error.isRetryable && IDEMPOTENT_METHODS.has(method);
+		if (canRetry) {
 			await sleep(RETRY_DELAY_MS);
 			return await requestOnce<T>(path, options);
 		}

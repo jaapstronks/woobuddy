@@ -17,7 +17,6 @@ as `review_status="pending"` and the reviewer decides.
 import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
 
 from app.logging_config import get_logger
 from app.services.custom_term_matcher import CustomTermLike
@@ -30,7 +29,13 @@ from app.services.pdf_engine import ExtractionResult
 # existing callers (tests, analyze.py) keep working after the types
 # moved to pipeline_types.py.
 from app.services.pipeline_custom_terms import apply_custom_terms
-from app.services.pipeline_types import PipelineDetection, PipelineResult, PipelineReviewStatus
+from app.services.pipeline_types import (
+    Bbox,
+    PipelineDetection,
+    PipelineResult,
+    PipelineReviewStatus,
+    PipelineTier,
+)
 from app.services.span_resolver import count_word_boundary_matches, find_span_for_text
 from app.services.structure_engine import (
     StructureSpan,
@@ -64,28 +69,34 @@ __all__ = [
 ]
 
 
-def _persoon_pending(
+def _pipeline_detection_from_ner(
     det: NERDetection,
-    bboxes: list[dict[str, Any]],
+    bboxes: list[Bbox],
     *,
-    reasoning: str,
+    review_status: PipelineReviewStatus,
     source: str,
+    reasoning: str,
+    woo_article: str | None,
+    entity_type: str | None = None,
+    tier: PipelineTier | None = None,
     confidence: float | None = None,
     subject_role: str | None = None,
 ) -> PipelineDetection:
-    """Build a Tier 2 persoon detection in `pending` review state.
+    """Build a PipelineDetection from a NERDetection with targeted overrides.
 
-    All "queue this name for manual confirmation" code paths converge
-    here so that adding a field (e.g. start_char) does not require
-    touching three call sites that each repeat the same kwargs.
+    All PipelineDetection construction in this module goes through here so
+    that adding a field to the dataclass (e.g. the start_char/end_char
+    backfill in #20) does not require touching every call site. Callers
+    override only what differs from the originating NER hit — defaults for
+    entity_type / tier / confidence come straight from ``det``.
     """
     return PipelineDetection(
         entity_text=det.text,
-        entity_type="persoon",
-        tier="2",
+        entity_type=entity_type if entity_type is not None else det.entity_type,
+        tier=tier if tier is not None else det.tier,
         confidence=confidence if confidence is not None else det.confidence,
-        woo_article=DEFAULT_WOO_ARTICLE,
-        review_status="pending",
+        woo_article=woo_article,
+        review_status=review_status,
         bounding_boxes=bboxes,
         reasoning=reasoning,
         source=source,
@@ -95,9 +106,33 @@ def _persoon_pending(
     )
 
 
+def _persoon_pending(
+    det: NERDetection,
+    bboxes: list[Bbox],
+    *,
+    reasoning: str,
+    source: str,
+    confidence: float | None = None,
+    subject_role: str | None = None,
+) -> PipelineDetection:
+    """Build a Tier 2 persoon detection in `pending` review state."""
+    return _pipeline_detection_from_ner(
+        det,
+        bboxes,
+        entity_type="persoon",
+        tier="2",
+        confidence=confidence,
+        woo_article=DEFAULT_WOO_ARTICLE,
+        review_status="pending",
+        reasoning=reasoning,
+        source=source,
+        subject_role=subject_role,
+    )
+
+
 def _person_whitelist_to_detection(
     det: NERDetection,
-    bboxes: list[dict[str, float]],
+    bboxes: list[Bbox],
     hit: PersonWhitelistHit,
 ) -> PipelineDetection:
     """Map a gemeente-official whitelist hit onto a PipelineDetection.
@@ -113,25 +148,23 @@ def _person_whitelist_to_detection(
         f"({hit.official.display_name}){initials_note} — "
         "gemeente wordt genoemd in het document."
     )
-    return PipelineDetection(
-        entity_text=det.text,
+    return _pipeline_detection_from_ner(
+        det,
+        bboxes,
         entity_type="persoon",
         tier="2",
         confidence=min(det.confidence + 0.05, 0.95),
         woo_article=None,
         review_status="rejected",
-        bounding_boxes=bboxes,
         reasoning=reasoning,
         source="whitelist_gemeente",
         subject_role="publiek_functionaris",
-        start_char=det.start_char,
-        end_char=det.end_char,
     )
 
 
 def _ner_passthrough(
     det: NERDetection,
-    bboxes: list[dict[str, Any]],
+    bboxes: list[Bbox],
     *,
     tier: str,
     review_status: PipelineReviewStatus,
@@ -141,28 +174,22 @@ def _ner_passthrough(
 
     Used for Tier 1 regex hits (auto_accepted, no fallback article) and for
     the generic Tier 2 "no rule matched" tail (pending, fallback article
-    5.1.2e). Both code paths used to inline a 10-field constructor that
-    drifted every time a new field was added — see the start_char /
-    end_char backfill in #20.
+    5.1.2e).
     """
-    return PipelineDetection(
-        entity_text=det.text,
-        entity_type=det.entity_type,
-        tier=tier,
-        confidence=det.confidence,
+    return _pipeline_detection_from_ner(
+        det,
+        bboxes,
+        tier=tier,  # type: ignore[arg-type]
         woo_article=det.woo_article or woo_article_fallback,
         review_status=review_status,
-        bounding_boxes=bboxes,
         reasoning=det.reasoning,
         source=det.source,
-        start_char=det.start_char,
-        end_char=det.end_char,
     )
 
 
 def _address_whitelist_to_detection(
     det: NERDetection,
-    bboxes: list[dict[str, float]],
+    bboxes: list[Bbox],
     reason: str,
 ) -> PipelineDetection:
     """Map an address-whitelist hit onto a PipelineDetection.
@@ -170,21 +197,15 @@ def _address_whitelist_to_detection(
     The original Tier 1 regex (postcode, email, phone, url) or Tier 2
     Deduce ``adres`` would have auto-accepted this detection; the
     whitelist flips it to ``rejected`` so the reviewer sees it in the
-    list but the default is to leave it visible. Reviewers can still
-    flip it back in one click if they disagree.
+    list but the default is to leave it visible.
     """
-    return PipelineDetection(
-        entity_text=det.text,
-        entity_type=det.entity_type,
-        tier=det.tier,
-        confidence=det.confidence,
+    return _pipeline_detection_from_ner(
+        det,
+        bboxes,
         woo_article=None,
         review_status="rejected",
-        bounding_boxes=bboxes,
         reasoning=reason,
         source="whitelist_gemeente",
-        start_char=det.start_char,
-        end_char=det.end_char,
     )
 
 
@@ -197,7 +218,7 @@ _STRUCTURE_REASON: dict[str, str] = {
 
 def _structure_to_pipeline_detection(
     det: NERDetection,
-    bboxes: list[dict[str, Any]],
+    bboxes: list[Bbox],
     structure: StructureSpan,
 ) -> PipelineDetection:
     """Map a Tier 2 persoon hit enclosed in a structure span onto a
@@ -210,18 +231,16 @@ def _structure_to_pipeline_detection(
     """
     reason_stem = _STRUCTURE_REASON[structure.kind]
     if structure.kind in ("email_header", "signature_block"):
-        return PipelineDetection(
-            entity_text=det.text,
+        return _pipeline_detection_from_ner(
+            det,
+            bboxes,
             entity_type="persoon",
             tier="2",
             confidence=min(det.confidence + 0.15, 0.95),
             woo_article=DEFAULT_WOO_ARTICLE,
             review_status="auto_accepted",
-            bounding_boxes=bboxes,
             reasoning=f"{reason_stem} — automatisch geaccepteerd op basis van context.",
             source="structure",
-            start_char=det.start_char,
-            end_char=det.end_char,
         )
 
     # Salutation — private-citizen hint, stays pending so the reviewer
@@ -301,7 +320,7 @@ def _build_doc_context(
 def _resolve_bboxes(
     extraction: ExtractionResult,
     det: NERDetection,
-) -> list[dict[str, Any]]:
+) -> list[Bbox]:
     """Resolve a NER detection to exactly one bbox via occurrence index.
 
     Counting word-boundary matches up to ``det.start_char`` gives us
@@ -327,7 +346,7 @@ def _resolve_bboxes(
 
 def _classify_tier1(
     det: NERDetection,
-    bboxes: list[dict[str, Any]],
+    bboxes: list[Bbox],
     ctx: _DocContext,
 ) -> PipelineDetection:
     """Classify a Tier 1 (regex) detection.
@@ -350,20 +369,16 @@ def _classify_tier1(
 
     # 2. KvK: public handelsregister data — surface for review
     if det.entity_type == "kvk":
-        return PipelineDetection(
-            entity_text=det.text,
-            entity_type=det.entity_type,
+        return _pipeline_detection_from_ner(
+            det,
+            bboxes,
             tier="1",
-            confidence=det.confidence,
             woo_article=det.woo_article,
             review_status="pending",
-            bounding_boxes=bboxes,
             reasoning=(
                 "KvK-nummer gedetecteerd — openbaar handelsregistergegeven, standaard niet lakken."
             ),
             source=det.source,
-            start_char=det.start_char,
-            end_char=det.end_char,
         )
 
     # 3. Default: auto-accept
@@ -372,7 +387,7 @@ def _classify_tier1(
 
 def _classify_persoon(
     det: NERDetection,
-    bboxes: list[dict[str, Any]],
+    bboxes: list[Bbox],
     ctx: _DocContext,
 ) -> PipelineDetection:
     """Classify a Tier 2 persoon detection.
@@ -390,19 +405,17 @@ def _classify_persoon(
         ctx.official_names_normalized
         and normalize_reference_name(det.text) in ctx.official_names_normalized
     ):
-        return PipelineDetection(
-            entity_text=det.text,
+        return _pipeline_detection_from_ner(
+            det,
+            bboxes,
             entity_type="persoon",
             tier="2",
             confidence=0.95,
             woo_article=None,
             review_status="rejected",
-            bounding_boxes=bboxes,
             reasoning="Naam op publiek-functionarissenlijst van dit document.",
             source="reference_list",
             subject_role="publiek_functionaris",
-            start_char=det.start_char,
-            end_char=det.end_char,
         )
 
     # 2. Municipality officials whitelist — context-gated on active gemeenten
@@ -446,7 +459,7 @@ def _classify_persoon(
 
 def _classify_other_tier2(
     det: NERDetection,
-    bboxes: list[dict[str, Any]],
+    bboxes: list[Bbox],
     ctx: _DocContext,
 ) -> PipelineDetection:
     """Classify a non-persoon Tier 2 detection (adres, datum, organisatie, …).
@@ -476,7 +489,7 @@ def _classify_other_tier2(
 
 def _classify_detection(
     det: NERDetection,
-    bboxes: list[dict[str, Any]],
+    bboxes: list[Bbox],
     ctx: _DocContext,
 ) -> PipelineDetection:
     """Route a NER detection to the right classification chain."""

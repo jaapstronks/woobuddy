@@ -30,6 +30,8 @@ _DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 _GEMEENTEN_FILE = _DATA_DIR / "gemeenten.csv"
 _MEDEWERKERS_FILE = _DATA_DIR / "medewerkers_gemeenten.csv"
 
+_BARE_HONORIFICS = frozenset(h.strip(".") for h in _HONORIFIC_TOKENS)
+
 
 def _parse_addressen_field(raw: str) -> list[dict[str, str]]:
     """Parse the packed ``Adressen`` column from ``gemeenten.csv``.
@@ -253,8 +255,7 @@ def _looks_like_person_row(naam: str) -> bool:
     if not stripped:
         return False
     tokens = stripped.split()
-    bare_honorifics = {h.strip(".") for h in _HONORIFIC_TOKENS}
-    has_honorific = any(tok.lower().strip(".") in bare_honorifics for tok in tokens)
+    has_honorific = any(tok.lower().strip(".") in _BARE_HONORIFICS for tok in tokens)
     has_initial = any(_INITIAL_RE.match(tok) for tok in tokens)
     return has_honorific or has_initial
 
@@ -278,14 +279,14 @@ def _parse_medewerker_name(naam: str) -> tuple[str, str] | None:
     seen_non_honorific = False
     for tok in tokens:
         norm_tok = tok.lower().rstrip(".")
-        if not seen_non_honorific and norm_tok in {h.strip(".") for h in _HONORIFIC_TOKENS}:
+        if not seen_non_honorific and norm_tok in _BARE_HONORIFICS:
             continue
         seen_non_honorific = True
         if _INITIAL_RE.match(tok):
             initial_letters.extend(m.group(0) for m in _INITIAL_LETTERS_RE.finditer(tok))
             continue
         # Stray sub-titles ("ing.", "mr.") after the honorific — skip.
-        if norm_tok in {h.strip(".") for h in _HONORIFIC_TOKENS}:
+        if norm_tok in _BARE_HONORIFICS:
             continue
         surname_tokens.append(tok)
 

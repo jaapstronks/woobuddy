@@ -56,10 +56,12 @@
 	import ReviewSkeleton from '$lib/components/review/ReviewSkeleton.svelte';
 	import Alert from '$lib/components/ui/Alert.svelte';
 	import LeadCaptureForm from '$lib/components/marketing/LeadCaptureForm.svelte';
-	import { getPdf, storePdf } from '$lib/services/pdf-store';
-	import { extractText, loadPdfDocument } from '$lib/services/pdf-text-extractor';
-	import { exportRedactedPdf, downloadBlob } from '$lib/services/export-service';
-	import { buildDebugExport, downloadDebugExport } from '$lib/services/debug-export';
+	import {
+		loadPdfAndDetections as loadReviewPdf,
+		attachUploadedPdf,
+		pickPdfFile
+	} from '$lib/services/review-pdf-loader';
+	import { reviewExportStore } from '$lib/stores/review-export.svelte';
 	import type { WooArticleCode, EntityType, DetectionTier } from '$lib/types';
 	import {
 		ArrowLeft,
@@ -81,12 +83,6 @@
 
 	let pdfData = $state<ArrayBuffer | null>(null);
 	let needsPdf = $state(false);
-	let exporting = $state(false);
-	let exportError = $state<string | null>(null);
-	// #45 — After a successful export we surface the lead-capture form as a
-	// dismissible card. The flag is reviewer-session-scoped; dismissing (or
-	// successfully submitting) hides it until the next export completes.
-	let showPostExportLead = $state(false);
 	// Art. 5.3 contextual hint — shown when the extracted document date
 	// suggests the document may be older than 5 years. Worded as a reminder
 	// rather than a declarative claim (our date heuristic can still be fooled
@@ -103,6 +99,10 @@
 	// PdfViewer exposes `flashDetections` via `bind:this` for the undo effect
 	// below — the viewer flashes affected overlays after each undo/redo push.
 	let pdfViewerRef = $state<{ flashDetections: (ids: string[]) => void } | null>(null);
+	// Sidebar scroll container — passed down to DetectionList so the
+	// selection-follow effect can center the chosen card. Keeping the
+	// reference here avoids ancestor DOM queries from inside the child.
+	let sidebarScrollEl = $state<HTMLDivElement | null>(null);
 
 	// Recompute fit-to-width / fit-to-page whenever the PDF column is
 	// resized (sidebar toggle, window resize) or the natural page size
@@ -133,6 +133,7 @@
 		pageReviewStore.clear();
 		referenceNamesStore.clear();
 		customTermsStore.clear();
+		reviewExportStore.reset();
 		reviewStore.loadDocument(docId);
 		loadPdfAndDetections(docId);
 		pageReviewStore.load(docId);
@@ -193,79 +194,34 @@
 	});
 
 	async function loadPdfAndDetections(documentId: string) {
-		const stored = await getPdf(documentId);
-		if (stored) {
-			pdfData = stored.pdfBytes;
-			await extractAndSetText(stored.pdfBytes);
+		const { pdfBytes } = await loadReviewPdf(documentId);
+		if (pdfBytes) {
+			pdfData = pdfBytes;
 		} else {
 			needsPdf = true;
 		}
-		await detectionStore.load(documentId);
 	}
 
-	async function extractAndSetText(bytes: ArrayBuffer) {
-		// `loadPdfDocument` wraps pdf.js errors into a typed `PdfError` —
-		// we swallow errors here because the review screen already has a
-		// valid detections payload from the server; the client-side extraction
-		// is only needed for features like manual search-and-redact. A scanned
-		// or corrupt PDF should not break the review view.
-		try {
-			const doc = await loadPdfDocument(bytes);
-			const extraction = await extractText(doc);
-			detectionStore.setExtraction(extraction);
-		} catch (e) {
-			console.warn('Review page: could not re-extract text from PDF', e);
-		}
-	}
-
-	async function handleFileSelect(event: Event) {
-		const input = event.target as HTMLInputElement;
-		const file = input.files?.[0];
+	async function openPdfFilePicker() {
+		const file = await pickPdfFile();
 		if (!file) return;
-
 		const bytes = await file.arrayBuffer();
-		await storePdf(docId, file.name, bytes);
+		await attachUploadedPdf(docId, file.name, bytes);
 		pdfData = bytes;
 		needsPdf = false;
-		await extractAndSetText(bytes);
-		await detectionStore.load(docId);
-	}
-
-	function openPdfFilePicker() {
-		const input = document.createElement('input');
-		input.type = 'file';
-		input.accept = '.pdf';
-		input.onchange = handleFileSelect;
-		input.click();
 	}
 
 	function handleDebugExport() {
-		// Diagnostic dump of the analyzer's output for the current document.
-		// Runs entirely client-side: pulls from the in-memory detection
-		// store, no server round-trip. Intended for comparing the sidebar
-		// against a fixture PDF when triaging false positives/negatives.
-		const payload = buildDebugExport(reviewStore.document, detectionStore.all);
-		const base = reviewStore.document?.filename ?? `document-${docId}`;
-		downloadDebugExport(payload, base);
+		reviewExportStore.runDebugExport(reviewStore.document, detectionStore.all, docId);
 	}
 
 	async function handleExport() {
 		if (!pdfData) {
-			exportError = 'Geen PDF beschikbaar om te exporteren.';
+			reviewExportStore.setError('Geen PDF beschikbaar om te exporteren.');
 			return;
 		}
-		exporting = true;
-		exportError = null;
-		try {
-			const filename = reviewStore.document?.filename ?? 'document.pdf';
-			const redacted = await exportRedactedPdf(docId, pdfData);
-			downloadBlob(redacted, `gelakt_${filename}`);
-			showPostExportLead = true;
-		} catch (e) {
-			exportError = e instanceof Error ? e.message : 'Export mislukt';
-		} finally {
-			exporting = false;
-		}
+		const filename = reviewStore.document?.filename ?? 'document.pdf';
+		await reviewExportStore.runExport({ docId, pdfBytes: pdfData, filename });
 	}
 
 	// Progress data
@@ -576,8 +532,13 @@
 				<FileJson size={14} />
 			</sl-button>
 		</sl-tooltip>
-		<sl-button size="small" variant="primary" onclick={handleExport} disabled={exporting || !pdfData}>
-			{#if exporting}
+		<sl-button
+			size="small"
+			variant="primary"
+			onclick={handleExport}
+			disabled={reviewExportStore.exporting || !pdfData}
+		>
+			{#if reviewExportStore.exporting}
 				<sl-spinner slot="prefix" style="font-size: 1rem; --indicator-color: white;"></sl-spinner>
 				Exporteren...
 			{:else}
@@ -620,15 +581,15 @@
 				</button>
 			</div>
 		{/if}
-		{#if exportError}
+		{#if reviewExportStore.exportError}
 			<!-- Inline export retry: the PDF bytes are still in memory, so the
 			     retry button re-runs only the redact-stream request without
 			     forcing a re-upload from IndexedDB. -->
 			<div class="mx-4 mt-3 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
-				<span>{exportError}</span>
+				<span>{reviewExportStore.exportError}</span>
 				<button
 					onclick={handleExport}
-					disabled={exporting}
+					disabled={reviewExportStore.exporting}
 					class="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60"
 				>
 					<RotateCw size={14} />
@@ -636,7 +597,7 @@
 				</button>
 			</div>
 		{/if}
-		{#if showPostExportLead}
+		{#if reviewExportStore.showPostExportLead}
 			<!-- #45 — post-export lead capture. Appears once per successful
 			     export and is dismissible so a repeat exporter isn't nagged. -->
 			<div class="mx-4 mt-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
@@ -652,7 +613,7 @@
 					</div>
 					<button
 						type="button"
-						onclick={() => (showPostExportLead = false)}
+						onclick={() => reviewExportStore.setPostExportLead(false)}
 						class="shrink-0 rounded-md p-1 text-ink-mute hover:bg-primary/10 hover:text-ink"
 						aria-label="Sluiten"
 					>
@@ -823,13 +784,14 @@
 						onRemove={(id, term) => removeCustomTerm(id, term, docId)}
 						matchCounts={customTermMatchCounts}
 					/>
-					<div data-sidebar-scroll class="flex-1 overflow-y-auto p-4">
+					<div bind:this={sidebarScrollEl} class="flex-1 overflow-y-auto p-4">
 						<DetectionList
 							detections={detectionStore.filtered}
 							selectedId={detectionStore.selectedId}
 							multiSelectedIds={detectionStore.multiSelectedIds}
 							structureSpans={structureSpansStore.spans}
 							allDetections={detectionStore.all}
+							scrollContainer={sidebarScrollEl}
 							onSelect={handleSelectDetection}
 							onAccept={handleAccept}
 							onReject={handleReject}

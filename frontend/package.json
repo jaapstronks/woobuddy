@@ -8,6 +8,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
+		"setup:tesseract": "node scripts/download-tesseract-data.mjs",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test": "vitest run",
@@ -30,6 +31,7 @@
 		"fflate": "^0.8.2",
 		"lucide-svelte": "^0.503.0",
 		"pdfjs-dist": "^4.10.38",
-		"tailwindcss": "^4.0.0"
+		"tailwindcss": "^4.0.0",
+		"tesseract.js": "^5.1.1"
 	}
 }

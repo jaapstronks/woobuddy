@@ -2,6 +2,7 @@
 	import '@shoelace-style/shoelace/dist/components/input/input.js';
 	import '@shoelace-style/shoelace/dist/components/button/button.js';
 	import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
+	import type SlInput from '@shoelace-style/shoelace/dist/components/input/input.js';
 
 	import { onMount } from 'svelte';
 	import { Search, X, CheckSquare, Square } from 'lucide-svelte';
@@ -10,6 +11,7 @@
 	import { getRecentArticles, recordRecentArticle } from '$lib/services/recent-articles';
 	import type { EntityType, WooArticleCode, DetectionTier } from '$lib/types';
 	import type { SearchOccurrence } from '$lib/services/search-redact';
+	import { highlightedContext } from '$lib/utils/search-context';
 	import ArticlePicker from './ArticlePicker.svelte';
 
 	interface Props {
@@ -26,10 +28,7 @@
 
 	let { onClose, onJumpToOccurrence, onRedactOccurrences }: Props = $props();
 
-	// Keep this loose — Shoelace's SL-INPUT element type isn't structurally
-	// assignable to HTMLElement in the generated types, and we only call
-	// `.focus()` on it, which the shim below handles.
-	let inputEl = $state<{ focus?: () => void } | null>(null);
+	let inputEl = $state<SlInput | null>(null);
 	let pickerOpen = $state(false);
 	let pickerTargets = $state<SearchOccurrence[]>([]);
 	let submitting = $state(false);
@@ -50,7 +49,7 @@
 		// Focus the input once Shoelace has hydrated. The custom element needs
 		// a tick before its internal native input is ready to receive focus.
 		queueMicrotask(() => {
-			inputEl?.focus?.();
+			inputEl?.focus();
 		});
 	});
 
@@ -100,20 +99,7 @@
 		}
 	}
 
-	function highlightedContext(occ: SearchOccurrence): { before: string; match: string; after: string } {
-		// The context string already has ellipses and collapsed whitespace.
-		// Find the match by case-insensitive lookup of the normalized match
-		// text — the original case may differ from the context slice.
-		const ctx = occ.context;
-		const target = occ.matchText;
-		const idx = ctx.toLowerCase().indexOf(target.toLowerCase());
-		if (idx === -1) return { before: ctx, match: '', after: '' };
-		return {
-			before: ctx.slice(0, idx),
-			match: ctx.slice(idx, idx + target.length),
-			after: ctx.slice(idx + target.length)
-		};
-	}
+	const occContext = (occ: SearchOccurrence) => highlightedContext(occ.context, occ.matchText);
 
 	// Reactive shortcut references for the template.
 	const resultCount = $derived(searchStore.redactable.length);
@@ -209,7 +195,7 @@
 		{#if resultCount > 0}
 			<ul class="space-y-1">
 				{#each searchStore.redactable as occ (occ.id)}
-					{@const parts = highlightedContext(occ)}
+					{@const parts = occContext(occ)}
 					{@const isSelected = searchStore.selectedIds.has(occ.id)}
 					{@const isFocused = searchStore.focusedId === occ.id}
 					<li
@@ -249,7 +235,7 @@
 				</summary>
 				<ul class="mt-1 space-y-1">
 					{#each searchStore.alreadyRedacted as occ (occ.id)}
-						{@const parts = highlightedContext(occ)}
+						{@const parts = occContext(occ)}
 						<li class="occ-row occ-muted">
 							<span class="occ-check"></span>
 							<button

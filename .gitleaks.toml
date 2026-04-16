@@ -8,8 +8,9 @@
 useDefault = true
 
 [allowlist]
-description = "External reference data from Dutch government registries. These CSVs contain public URLs with high-entropy download tokens (e.g. `?token=<hex>`) that trip the generic-api-key heuristic but are not secrets. The files are sourced data, never application secrets."
+description = "External reference data from Dutch government registries. These CSVs contain public URLs with high-entropy download tokens (e.g. `?token=<hex>`) that trip the generic-api-key heuristic but are not secrets. The files are sourced data, never application secrets. Also allows test sentinel strings used to verify log-hygiene invariants."
 paths = [
     '''backend/app/data/gemeenten\.csv''',
     '''backend/app/data/medewerkers_gemeenten\.csv''',
+    '''backend/tests/test_analyze_api\.py''',
 ]

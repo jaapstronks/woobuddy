@@ -31,6 +31,43 @@ import type {
 import { confidenceToLevel } from '$lib/utils/tiers';
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const isPendingTier1 = (d: Detection): boolean =>
+	d.tier === '1' && d.review_status === 'pending';
+
+const isHighConfidencePendingTier2 = (d: Detection): boolean =>
+	d.tier === '2' &&
+	d.review_status === 'pending' &&
+	d.confidence >= HIGH_CONFIDENCE_THRESHOLD;
+
+/**
+ * Merge a server response back into the local list, preserving the
+ * client-only `entity_text`. The server does not store document content,
+ * so its response omits the text; without this splice the sidebar would
+ * blank out on every status change or bbox nudge.
+ */
+function mergeServerUpdate(
+	id: string,
+	updated: Detection,
+	preferUpdatedText: boolean
+): void {
+	const existingText = byId[id]?.entity_text;
+	allDetections = allDetections.map((d) =>
+		d.id === id
+			? {
+					...updated,
+					entity_text: preferUpdatedText
+						? updated.entity_text ?? existingText ?? d.entity_text
+						: existingText ?? d.entity_text,
+					confidence_level: confidenceToLevel(updated.confidence)
+				}
+			: d
+	);
+}
+
+// ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
@@ -66,16 +103,9 @@ const filtered = $derived.by(() => {
 	return result;
 });
 
-const tier1PendingCount = $derived(
-	allDetections.filter((d) => d.tier === '1' && d.review_status === 'pending').length
-);
+const tier1PendingCount = $derived(allDetections.filter(isPendingTier1).length);
 const tier2HighConfidencePendingCount = $derived(
-	allDetections.filter(
-		(d) =>
-			d.tier === '2' &&
-			d.review_status === 'pending' &&
-			d.confidence >= HIGH_CONFIDENCE_THRESHOLD
-	).length
+	allDetections.filter(isHighConfidencePendingTier2).length
 );
 
 /**
@@ -200,21 +230,7 @@ function selectPrevious() {
 async function review(id: string, data: UpdateDetectionRequest) {
 	try {
 		const updated = await updateDetection(id, data);
-		// Preserve the client-only `entity_text` across the round-trip — the
-		// server does not store document content, so its response will not
-		// carry the text and the sidebar/card would otherwise blank out on
-		// every status change. The text is derived from the original
-		// extraction and is not affected by review-status updates.
-		const existingText = byId[id]?.entity_text;
-		allDetections = allDetections.map((d) =>
-			d.id === id
-				? {
-						...updated,
-						entity_text: updated.entity_text ?? existingText ?? d.entity_text,
-						confidence_level: confidenceToLevel(updated.confidence)
-					}
-				: d
-		);
+		mergeServerUpdate(id, updated, /* preferUpdatedText */ true);
 	} catch (e) {
 		error = e instanceof Error ? e.message : 'Bijwerken mislukt';
 	}
@@ -301,20 +317,7 @@ async function adjustBoundary(
 		const payload: UpdateDetectionRequest = { bounding_boxes: bboxes };
 		if (keepStatus) payload.review_status = keepStatus.review_status;
 		const updated = await updateDetection(id, payload);
-		// Preserve the client-only entity_text if the sidebar had already
-		// resolved one — otherwise the sidebar row would suddenly lose its
-		// label on every bbox nudge. The text is derived from the original
-		// text-layer span so it is not affected by the bbox change.
-		const existingText = byId[id]?.entity_text;
-		allDetections = allDetections.map((d) =>
-			d.id === id
-				? {
-						...updated,
-						entity_text: existingText ?? d.entity_text,
-						confidence_level: confidenceToLevel(updated.confidence)
-					}
-				: d
-		);
+		mergeServerUpdate(id, updated, /* preferUpdatedText */ false);
 		return updated;
 	} catch (e) {
 		error = e instanceof Error ? e.message : 'Grenscorrectie mislukt';
@@ -432,21 +435,14 @@ function clearError() {
 }
 
 async function acceptAllPendingTier1() {
-	const pending = allDetections.filter(
-		(d) => d.tier === '1' && d.review_status === 'pending'
-	);
+	const pending = allDetections.filter(isPendingTier1);
 	for (const d of pending) {
 		await accept(d.id, d.woo_article ?? undefined);
 	}
 }
 
 async function acceptHighConfidenceTier2() {
-	const pending = allDetections.filter(
-		(d) =>
-			d.tier === '2' &&
-			d.review_status === 'pending' &&
-			d.confidence >= HIGH_CONFIDENCE_THRESHOLD
-	);
+	const pending = allDetections.filter(isHighConfidencePendingTier2);
 	for (const d of pending) {
 		await accept(d.id, d.woo_article ?? undefined);
 	}

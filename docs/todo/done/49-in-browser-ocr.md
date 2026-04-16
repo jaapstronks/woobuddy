@@ -5,6 +5,49 @@
 - **Source:** Multi-format document support plan 2026-04
 - **Depends on:** Nothing (independent of #46 and #47)
 - **Blocks:** Nothing
+- **Status:** Implemented 2026-04-16 on branch `moar-refactoring`
+
+## Implementation notes (2026-04-16)
+
+**Chosen approach:** parallel map in IndexedDB, not invisible-text PDF.
+The scope section called out both options. Parallel-map keeps `pdf-lib`
+out of the ingest path and means the OCR'd `ExtractionResult` has the
+same shape the digital-PDF path produces — so `bbox-text-resolver`,
+`search-redact`, and `detectionStore.setExtraction` all work unchanged
+on scanned documents.
+
+**Language pack hosting.** The Dutch model is fetched from
+`tesseract-ocr/tessdata_fast` at dev-setup time (not runtime) by
+`frontend/scripts/download-tesseract-data.mjs`, then served from
+`/tesseract/` on our own origin. `tessdata_fast` is ~3 MB gzipped for
+Dutch rather than the ~10 MB the original estimate — quality is still
+adequate for printed Dutch; swap to `tessdata` or `tessdata_best` via
+one URL change if pilots report misses.
+
+**Tesseract worker + wasm core** are copied out of
+`node_modules/tesseract.js-core/` into `static/tesseract/` by the same
+setup script. All three paths (`workerPath`, `corePath`, `langPath`)
+are passed to `createWorker` so nothing runtime-fetches from
+`cdn.jsdelivr.net`.
+
+**Shared IndexedDB.** Introduced `frontend/src/lib/services/idb.ts` as
+the single owner of the WOO Buddy DB schema. The OCR extraction cache
+lives in a new `extractions` store, so the DB bumps from v2 → v3;
+coordinating that from `pdf-store` alone would have raced with
+`extraction-store`.
+
+**Tests shipped:** `upload-flow.test.ts` covers four branches — digital,
+accept OCR, decline OCR, unrelated extract error — plus the pre-#49
+no-handler fallback. **Not shipped:** a real scanned-PDF fixture —
+tesseract.js won't run in jsdom, so "OCR fires on a fixture containing
+an IBAN" needs a Playwright run we haven't wired yet.
+
+**Known follow-ups:**
+- Integration test via Playwright on a real scanned fixture
+- Pilot-quality feedback on `tessdata_fast`; swap models if needed
+- Copy in the review toolbar (#07) when detections are empty because
+  OCR was declined — should nudge the reviewer toward area selection
+  rather than leaving the empty state unexplained
 
 ## Why
 
