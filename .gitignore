@@ -35,6 +35,9 @@ htmlcov/
 coverage/
 .nyc_output/
 
+# Local diagnostic scripts (not part of the test suite)
+backend/tests/diagnostic_*.py
+
 # OS
 Thumbs.db
 Desktop.ini

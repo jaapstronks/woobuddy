@@ -29,7 +29,7 @@
 	];
 
 	const entityOptions: EntityType[] = [
-		'persoon', 'bsn', 'email', 'telefoonnummer', 'adres', 'iban', 'postcode', 'kenteken'
+		'persoon', 'bsn', 'email', 'telefoon', 'adres', 'iban', 'postcode', 'kenteken'
 	];
 </script>
 

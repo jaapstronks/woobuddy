@@ -133,6 +133,44 @@ describe('findTextForBboxes', () => {
 		expect(text).toBe('Amsterdam');
 	});
 
+	it('joins touching single-glyph items without spaces (Menlo/monospace)', () => {
+		// Regression: pdf.js returns each glyph as its own text item for
+		// some monospace fonts (Menlo, Courier). The resolver used to
+		// `.join(' ')` unconditionally and rendered "W i l l e m i j n"
+		// in the sidebar card, even though the glyphs visually touch and
+		// the detector saw "Willemijn".
+		const chars = 'Willemijn'.split('');
+		const charWidth = 7.22;
+		const items = chars.map((c, i) => ({
+			text: c,
+			x0: 10 + i * charWidth,
+			x1: 10 + (i + 1) * charWidth
+		}));
+		const ext = makeExtraction([items]);
+		const bbox = box(0, 10, 10 + chars.length * charWidth);
+		const text = findTextForBboxes([bbox], ext);
+		expect(text).toBe('Willemijn');
+	});
+
+	it('inserts a space when single-glyph items are separated by a visual gap', () => {
+		// Same setup as the previous test, but with a 10pt visual gap
+		// halfway through — e.g. "Willem ijn" in a monospace font where
+		// the extractor would (correctly) see a word break.
+		const charWidth = 7.22;
+		const items = [
+			{ text: 'W', x0: 10, x1: 10 + charWidth },
+			{ text: 'i', x0: 10 + charWidth, x1: 10 + charWidth * 2 },
+			{ text: 'l', x0: 10 + charWidth * 2, x1: 10 + charWidth * 3 },
+			// Big gap here
+			{ text: 'X', x0: 10 + charWidth * 3 + 10, x1: 10 + charWidth * 4 + 10 },
+			{ text: 'Y', x0: 10 + charWidth * 4 + 10, x1: 10 + charWidth * 5 + 10 }
+		];
+		const ext = makeExtraction([items]);
+		const bbox = box(0, 10, 10 + charWidth * 5 + 10);
+		const text = findTextForBboxes([bbox], ext);
+		expect(text).toBe('Wil XY');
+	});
+
 	it('never crosses lines even when the bbox y range overlaps both', () => {
 		const ext = makeExtraction([
 			[

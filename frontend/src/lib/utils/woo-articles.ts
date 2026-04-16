@@ -1,4 +1,4 @@
-import type { WooArticleCode, DetectionTier } from '$lib/types';
+import type { WooArticleCode, DetectionTier, EntityType } from '$lib/types';
 
 export interface WooArticle {
 	code: WooArticleCode;
@@ -96,6 +96,25 @@ export const WOO_ARTICLES: Record<WooArticleCode, WooArticle> = {
 		type: 'residual',
 		tier: '3'
 	}
+};
+
+/** Default entity-type nudge when the reviewer picks an article. */
+export const ARTICLE_TO_ENTITY: Partial<Record<WooArticleCode, EntityType>> = {
+	'5.1.1e': 'bsn',
+	'5.1.2e': 'persoon'
+};
+
+/** Articles grouped by tier, sorted by code within each tier. */
+export const ARTICLES_BY_TIER: Record<DetectionTier, WooArticle[]> = {
+	'1': Object.values(WOO_ARTICLES)
+		.filter((a) => a.tier === '1')
+		.sort((a, b) => a.code.localeCompare(b.code)),
+	'2': Object.values(WOO_ARTICLES)
+		.filter((a) => a.tier === '2')
+		.sort((a, b) => a.code.localeCompare(b.code)),
+	'3': Object.values(WOO_ARTICLES)
+		.filter((a) => a.tier === '3')
+		.sort((a, b) => a.code.localeCompare(b.code))
 };
 
 export function getArticleLabel(code: WooArticleCode): string {

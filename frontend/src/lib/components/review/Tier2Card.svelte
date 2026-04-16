@@ -60,7 +60,7 @@
 	// now a follow-up question on the *rejected* path only: "je hebt
 	// 'niet lakken' gekozen — waarom?". The pending card never shows them,
 	// and classification no longer flips review_status as a side-effect.
-	const PERSON_ENTITY_TYPES: EntityType[] = ['persoon', 'adres', 'telefoonnummer', 'email'];
+	const PERSON_ENTITY_TYPES: EntityType[] = ['persoon', 'adres', 'telefoon', 'email'];
 	const showRoleChips = $derived(PERSON_ENTITY_TYPES.includes(detection.entity_type));
 
 	// Tier 2 articles the picker exposes — same filter idea as Tier3Panel.

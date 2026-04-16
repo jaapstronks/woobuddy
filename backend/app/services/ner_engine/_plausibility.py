@@ -10,75 +10,7 @@ from __future__ import annotations
 
 import re
 
-# Institutions and generic-noun keywords that indicate a Deduce `persoon`
-# hit is actually an organization, place, or common noun — not a person.
-# Matched case-insensitively as whole words anywhere in the detection text.
-# Source: real false positives observed on Dutch Woo documents (e.g.
-# "Amsterdamse Hogeschool voor de Kunsten", "Instituut Beeld & Geluid",
-# "Naturalis", "Rijksmuseum", "Kunsthal", "gemeente Amsterdam").
-_ORGANIZATION_KEYWORDS = {
-    # Education
-    "hogeschool",
-    "universiteit",
-    "school",
-    "academie",
-    "faculteit",
-    "college",
-    "lyceum",
-    "gymnasium",
-    "mbo",
-    "hbo",
-    # Research / cultural institutions
-    "instituut",
-    "museum",
-    "kunsthal",
-    "bibliotheek",
-    "archief",
-    "theater",
-    "concertgebouw",
-    "orkest",
-    # Government bodies ("college" already listed above)
-    "gemeente",
-    "provincie",
-    "ministerie",
-    "raad",
-    "commissie",
-    "directie",
-    "afdeling",
-    "departement",
-    "bureau",
-    "dienst",
-    "kamer",
-    "tweedekamer",
-    "eerstekamer",
-    "kabinet",
-    "rechtbank",
-    "hof",
-    # Companies / legal forms
-    "stichting",
-    "vereniging",
-    "fonds",
-    "platform",
-    "federatie",
-    "unie",
-    "coöperatie",
-    "cooperatie",
-    "maatschappij",
-    "holding",
-    "groep",
-    # Health
-    "ziekenhuis",
-    "kliniek",
-    "zorgcentrum",
-    "ggd",
-    "ggz",
-    # Religious / misc
-    "kerk",
-    "moskee",
-    "synagoge",
-    "tempel",
-    "parochie",
-}
+from ._types import ORGANIZATION_KEYWORDS
 
 # Dutch articles and demonstratives that signal a Deduce hit is a
 # generic noun phrase rather than a name. Matched case-insensitively
@@ -115,7 +47,7 @@ def _is_plausible_person_name(text: str) -> bool:
     Runs before the detection is emitted, so organization names,
     fragments, and generic phrases never enter the review list in the
     first place. The goal is to drop the obvious garbage — marginal
-    cases should still be kept and fall through to the LLM verifier.
+    cases should still be kept for the reviewer to decide.
     Returns True to keep the detection, False to drop it.
     """
     stripped = text.strip()
@@ -153,7 +85,7 @@ def _is_plausible_person_name(text: str) -> bool:
     # "Amsterdamse Hogeschool", "Instituut Beeld", "gemeente Amsterdam",
     # "Stichting Woo Buddy", etc. The keyword has to appear as a whole
     # token — "Schoolstraat" does not trigger on "school".
-    if _ORGANIZATION_KEYWORDS & set(lower_tokens):
+    if ORGANIZATION_KEYWORDS & set(lower_tokens):
         return False
 
     # Reject if the text contains a sentence-ending period followed

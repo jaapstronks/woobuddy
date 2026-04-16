@@ -44,20 +44,24 @@ export type WooArticleCode =
 export type EntityType =
 	| 'persoon'
 	| 'bsn'
-	| 'telefoonnummer'
+	| 'telefoon'
 	| 'email'
 	| 'adres'
 	| 'iban'
-	| 'gezondheid'
 	| 'datum'
 	| 'geboortedatum'
 	| 'postcode'
 	| 'kenteken'
 	| 'creditcard'
-	| 'paspoort'
-	| 'rijbewijs'
 	| 'kvk'
 	| 'btw'
+	| 'url'
+	| 'organisatie'
+	// Label-anchored reference numbers — klantnummer, factuurnummer,
+	// dossiernummer, kenmerk, … Tiered confidence per label. Span
+	// covers the number only so the redacted output still shows the
+	// label ("Klantnummer: ███").
+	| 'referentie'
 	// Reviewer-drawn area redaction (#07). Has no selectable text — the
 	// rectangle comes from a Shift+drag on the PDF stage, used for signatures,
 	// stamps, photos, or scanned fragments inside an otherwise digital PDF.

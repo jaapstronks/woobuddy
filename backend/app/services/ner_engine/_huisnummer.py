@@ -51,19 +51,17 @@ def _detect_adres_by_huisnummer(text: str) -> list[NERDetection]:
 
     for m in _HUISNUMMER_PATTERN.finditer(text):
         detections.append(
-            NERDetection(
+            NERDetection.tier2(
                 text=m.group(0),
                 entity_type="adres",
-                tier="2",
                 confidence=0.85,
-                woo_article="5.1.2e",
-                source="regex",
                 start_char=m.start(),
                 end_char=m.end(),
                 reasoning=(
                     "Huisnummer in tekst — in combinatie met een straatnaam "
                     "elders in het document herleidbaar tot een woonadres."
                 ),
+                source="regex",
             )
         )
 
@@ -74,18 +72,14 @@ def _detect_adres_by_huisnummer(text: str) -> list[NERDetection]:
         inner_start = m.start(1)
         inner_end = m.end(1)
         detections.append(
-            NERDetection(
+            NERDetection.tier2(
                 text=text[inner_start:inner_end],
                 entity_type="adres",
-                tier="2",
                 confidence=0.80,
-                woo_article="5.1.2e",
-                source="regex",
                 start_char=inner_start,
                 end_char=inner_end,
-                reasoning=(
-                    "Huisnummer met bewonerscontext — mogelijk woonadres."
-                ),
+                reasoning="Huisnummer met bewonerscontext — mogelijk woonadres.",
+                source="regex",
             )
         )
 

@@ -6,48 +6,32 @@ Tier 2: Contextual personal data detected by Deduce (Dutch NER).
 Deduce is initialized once at module level (not per-request) because
 it takes ~2s to load lookup tables.
 
-The engine is split across a few files by concern:
+The engine is split across sub-modules by concern:
 
-- ``_types``        — ``NERDetection`` dataclass + ``_deduplicate`` helper
-- ``_tier1``        — Tier 1 regex patterns + validators + ``detect_tier1``
-- ``_deduce``       — lazy-init for Deduce + Meertens/CBS name lists
-- ``_plausibility`` — ``_is_plausible_person_name`` + organization-noun filter
-- ``_title_prefix`` — salutation-anchored non-CBS name rule (#48)
-- ``_huisnummer``   — partial-anonymization huisnummer rule (#51)
-- ``_tier2``        — ``detect_tier2`` pipeline + recent-date filter
+- ``_types``            — ``NERDetection`` dataclass + dedup helpers
+- ``_tier1``            — Tier 1 regex patterns + validators
+- ``_deduce``           — lazy-init for Deduce + Meertens/CBS name lists
+- ``_plausibility``     — person-name heuristic filter
+- ``_title_prefix``     — salutation-anchored non-CBS name rule
+- ``_initials``         — initials + surname structural rule
+- ``_straatnaam``       — Dutch street-suffix + house-number rule
+- ``_huisnummer``       — partial-anonymization "huisnummer N" rule
+- ``_label_anchored_id``— labelled reference-number rule
+- ``_tier2``            — Tier 2 orchestrator (Deduce + all sub-rules)
 
-Importers should continue using ``from app.services.ner_engine import ...``
-— the public API is re-exported here.
+Public API: import ``NERDetection``, ``detect_all``, ``detect_tier1``,
+``detect_tier2``, ``init_deduce``, ``init_name_lists`` from this package.
+Tests import private helpers directly from their sub-modules.
 """
 
 from __future__ import annotations
 
 from app.logging_config import get_logger
 
-from ._deduce import (
-    _DEDUCE_TAG_MAP,
-    _get_deduce,
-    _get_name_lists,
-    init_deduce,
-    init_name_lists,
-)
-from ._huisnummer import _detect_adres_by_huisnummer
-from ._plausibility import (
-    _NON_NAME_STARTERS,
-    _ORGANIZATION_KEYWORDS,
-    _is_plausible_person_name,
-)
-from ._tier1 import (
-    _is_plausible_birth_date,
-    _parse_birth_date,
-    _validate_bsn,
-    _validate_btw,
-    _validate_luhn,
-    detect_tier1,
-)
+from ._deduce import init_deduce, init_name_lists
+from ._tier1 import detect_tier1
 from ._tier2 import detect_tier2
-from ._title_prefix import _detect_persoon_via_title_prefix
-from ._types import NERDetection, _deduplicate
+from ._types import DEFAULT_WOO_ARTICLE, NERDetection, NEREntityType, NERSource, NERTier
 
 logger = get_logger(__name__)
 
@@ -94,26 +78,14 @@ def detect_all(text: str) -> list[NERDetection]:
 
 
 __all__ = [
+    "DEFAULT_WOO_ARTICLE",
     "NERDetection",
+    "NEREntityType",
+    "NERSource",
+    "NERTier",
     "detect_all",
     "detect_tier1",
     "detect_tier2",
     "init_deduce",
     "init_name_lists",
-    # Private names re-exported for tests (test_ner_engine.py pulls these
-    # directly via ``from app.services.ner_engine import ...``).
-    "_DEDUCE_TAG_MAP",
-    "_NON_NAME_STARTERS",
-    "_ORGANIZATION_KEYWORDS",
-    "_deduplicate",
-    "_detect_adres_by_huisnummer",
-    "_detect_persoon_via_title_prefix",
-    "_get_deduce",
-    "_get_name_lists",
-    "_is_plausible_birth_date",
-    "_is_plausible_person_name",
-    "_parse_birth_date",
-    "_validate_bsn",
-    "_validate_btw",
-    "_validate_luhn",
 ]

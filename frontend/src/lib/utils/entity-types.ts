@@ -28,7 +28,7 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
 		description: 'Burgerservicenummer',
 		badgeClass: 'bg-red-100 text-red-900'
 	},
-	telefoonnummer: {
+	telefoon: {
 		label: 'Telefoon',
 		description: 'Telefoon- of mobiel nummer',
 		badgeClass: 'bg-blue-100 text-blue-900'
@@ -47,11 +47,6 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
 		label: 'IBAN',
 		description: 'Bankrekeningnummer (IBAN)',
 		badgeClass: 'bg-red-100 text-red-900'
-	},
-	gezondheid: {
-		label: 'Gezondheid',
-		description: 'Bijzonder persoonsgegeven — gezondheid',
-		badgeClass: 'bg-rose-100 text-rose-900'
 	},
 	datum: {
 		label: 'Datum',
@@ -78,16 +73,6 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
 		description: 'Creditcardnummer',
 		badgeClass: 'bg-red-100 text-red-900'
 	},
-	paspoort: {
-		label: 'Paspoort',
-		description: 'Paspoort- of ID-nummer',
-		badgeClass: 'bg-red-100 text-red-900'
-	},
-	rijbewijs: {
-		label: 'Rijbewijs',
-		description: 'Rijbewijsnummer',
-		badgeClass: 'bg-red-100 text-red-900'
-	},
 	kvk: {
 		label: 'KvK',
 		description: 'KvK-nummer',
@@ -97,6 +82,21 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
 		label: 'BTW',
 		description: 'BTW-identificatienummer',
 		badgeClass: 'bg-violet-100 text-violet-900'
+	},
+	url: {
+		label: 'URL',
+		description: 'Webadres (URL)',
+		badgeClass: 'bg-sky-100 text-sky-900'
+	},
+	organisatie: {
+		label: 'Organisatie',
+		description: 'Organisatienaam',
+		badgeClass: 'bg-blue-100 text-blue-600'
+	},
+	referentie: {
+		label: 'Referentie',
+		description: 'Kenmerk- of referentienummer (klantnummer, factuurnummer, dossiernummer, …)',
+		badgeClass: 'bg-amber-100 text-amber-900'
 	},
 	area: {
 		label: 'Gebied',
@@ -110,11 +110,33 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
 	}
 };
 
+/** Form-facing labels used in manual-redaction and search-redact pickers. */
+export const ENTITY_FORM_LABELS: Record<EntityType, string> = {
+	persoon: 'Persoon (naam)',
+	bsn: 'BSN',
+	telefoon: 'Telefoonnummer',
+	email: 'E-mailadres',
+	adres: 'Adres',
+	iban: 'IBAN',
+	datum: 'Datum',
+	geboortedatum: 'Geboortedatum',
+	postcode: 'Postcode',
+	kenteken: 'Kenteken',
+	creditcard: 'Creditcard',
+	kvk: 'KvK-nummer',
+	btw: 'BTW-nummer',
+	url: 'URL',
+	organisatie: 'Organisatienaam',
+	referentie: 'Referentienummer',
+	area: 'Handmatig gebied',
+	custom: 'Zoekterm (eigen lijst)'
+};
+
 /** Entity types in the order they should appear in filter dropdowns. */
 export const ENTITY_TYPE_ORDER: EntityType[] = [
 	'persoon',
 	'email',
-	'telefoonnummer',
+	'telefoon',
 	'adres',
 	'postcode',
 	'bsn',
@@ -123,11 +145,11 @@ export const ENTITY_TYPE_ORDER: EntityType[] = [
 	'geboortedatum',
 	'datum',
 	'creditcard',
-	'paspoort',
-	'rijbewijs',
 	'kvk',
 	'btw',
-	'gezondheid',
+	'url',
+	'organisatie',
+	'referentie',
 	'area',
 	'custom'
 ];

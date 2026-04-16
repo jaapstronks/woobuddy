@@ -37,6 +37,18 @@ const X_TOLERANCE = 2.0;
 // touched.
 const CONTAINED_ITEM_TOLERANCE = 1.5;
 
+// Gap (in points) below which two matched items on the same line are
+// considered "touching" and join without a space in the display text.
+// Mirrors `ADJACENT_X_TOLERANCE` in `pdf-text-extractor.ts`: the
+// extractor uses the same threshold to decide whether to insert a space
+// when building the per-page fullText sent to the backend, so the card
+// display matches the text the detector actually saw. Without this, a
+// monospace PDF (e.g. Menlo) where pdf.js returns one item per glyph
+// surfaces every detection as "W i l l e m i j n" / "0 0 0 4 7 5 2 8 6 1"
+// in the sidebar, even though the underlying detection is correct.
+const TOUCHING_GAP = 1.5;
+const SAME_LINE_Y_TOLERANCE = 2;
+
 function overlapsVertically(bbox: BoundingBox, item: ExtractedTextItem): boolean {
 	const itemCenterY = (item.y0 + item.y1) / 2;
 	return itemCenterY >= bbox.y0 && itemCenterY <= bbox.y1;
@@ -97,20 +109,41 @@ export function findTextForBboxes(
 		const page = extraction.pages.find((p) => p.pageNumber === bbox.page);
 		if (!page) continue;
 
-		const matching = page.textItems
+		const matchingItems = page.textItems
 			.filter((item) => overlapsVertically(bbox, item) && overlapsHorizontally(bbox, item))
 			.sort((a, b) => {
 				// Sort by position: top-to-bottom, then left-to-right
 				const yDiff = a.y0 - b.y0;
 				if (Math.abs(yDiff) > 2) return yDiff;
 				return a.x0 - b.x0;
-			})
-			.map((item) => sliceItemTextByBbox(bbox, item))
-			.filter((t) => t.length > 0);
+			});
 
-		if (matching.length === 0) continue;
+		if (matchingItems.length === 0) continue;
 
-		const joined = matching.join(' ').replace(/\s+/g, ' ').trim();
+		// Join text items preserving visual adjacency: if the next item
+		// starts where the previous one ended (same line, touching x
+		// coordinates), concatenate without inserting a space. This is
+		// the same heuristic `pdf-text-extractor.ts` uses when building
+		// the backend full-text, and it is essential for PDFs where
+		// pdf.js returns one text item per glyph (monospace fonts like
+		// Menlo). Without it the sidebar card shows "W i l l e m i j n"
+		// while the PDF clearly reads "Willemijn" and the detector saw
+		// "Willemijn".
+		let joined = '';
+		let prev: ExtractedTextItem | null = null;
+		for (const item of matchingItems) {
+			const slice = sliceItemTextByBbox(bbox, item);
+			if (!slice) continue;
+			if (prev === null) {
+				joined = slice;
+			} else {
+				const sameLine = Math.abs(item.y0 - prev.y0) < SAME_LINE_Y_TOLERANCE;
+				const touching = sameLine && item.x0 - prev.x1 < TOUCHING_GAP;
+				joined += (touching ? '' : ' ') + slice;
+			}
+			prev = item;
+		}
+		joined = joined.replace(/\s+/g, ' ').trim();
 		if (!joined) continue;
 
 		// Normalize for dedup: collapse whitespace, lowercase, strip

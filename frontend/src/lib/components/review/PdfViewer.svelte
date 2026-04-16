@@ -10,10 +10,8 @@
 	import type { Detection, BoundingBox } from '$lib/types';
 	import type { ReviewMode } from '$lib/stores/review.svelte';
 	import {
-		computeRectAnchor,
 		computeSelectionAnchor,
 		rangeToBoundingBoxes,
-		rectToBoundingBox,
 		snapRangeToWordBoundaries,
 		type ManualSelection
 	} from '$lib/services/selection-bbox';
@@ -27,16 +25,8 @@
 	import PageStrip from './PageStrip.svelte';
 	import PageReviewActions from './PageReviewActions.svelte';
 	import BoundaryEditOverlay from './BoundaryEditOverlay.svelte';
-	import {
-		applyHandleDelta,
-		arrowKeyToNudge,
-		bboxesEqual,
-		cloneBboxes,
-		extendBboxToWord,
-		nudgeBbox,
-		shrinkBboxByWord,
-		type HandleDir
-	} from '$lib/services/boundary-edit-geometry';
+	import { BoundaryEditController } from '$lib/services/boundary-edit-controller.svelte';
+	import { AreaDrawController } from '$lib/services/area-draw-controller.svelte';
 	import type { PageReviewStatusValue } from './page-review-status';
 
 	interface Props {
@@ -152,169 +142,44 @@
 	let renderedScale = $state(0);
 	let currentTextLayer: { cancel: () => void } | null = null;
 
-	// Area-selection draw state (#07). The live rectangle is reactive so it
-	// renders declaratively alongside canvas/overlay; the start/current coords
-	// are plain module-scoped variables because they change on every
-	// mousemove and don't need to drive other reactive reads.
-	let drawRect = $state<{ x: number; y: number; w: number; h: number } | null>(null);
-	let drawingAreaClass = $state(false);
-	let isDrawingArea = false;
-	let drawStartX = 0;
-	let drawStartY = 0;
-	let drawCurrentX = 0;
-	let drawCurrentY = 0;
-	// When a Shift+drag ends, the same mouse gesture also fires a mouseup on
-	// the text layer. Suppressing exactly one text-layer mouseup after the
-	// area draw prevents that bubble from clearing the selection we just
-	// pushed to the manual-selection store.
-	let suppressNextTextLayerMouseUp = false;
-	// Minimum rectangle size (pixels) — anything smaller is treated as an
-	// accidental click and silently dropped (area selections are coarse by
-	// nature; a <6px "draw" is overwhelmingly a misclick).
-	const AREA_MIN_SIZE_PX = 6;
-
 	// ---------------------------------------------------------------------
-	// Boundary adjustment state (#11)
+	// Interaction controllers
 	//
-	// When the reviewer clicks an existing detection in Edit mode, the
-	// component enters a "boundary edit" state for that detection. Draft
-	// bboxes are cloned into `editingBboxes` and rendered via the
-	// BoundaryEditOverlay child with 8 resize handles per box;
-	// drawDetectionOverlays hides the original overlay for the editing
-	// detection so the two don't double up.
+	// Two independent gesture state machines live alongside the PDF canvas:
 	//
-	// Committing the edit (Enter or the floating Opslaan button) emits
-	// `onBoundaryAdjust` to the parent, which wraps it in a
-	// `BoundaryAdjustCommand` for undo/redo. Escape reverts the draft to
-	// the snapshot taken when editing started.
+	//  - BoundaryEditController (#11) — clicking an existing detection in
+	//    Edit mode enters a draft-bbox flow with 8 resize handles per box,
+	//    keyboard nudging, and Shift/Alt+click word extension. Committing
+	//    emits `onBoundaryAdjust` which the parent wraps in a
+	//    BoundaryAdjustCommand for undo/redo.
 	//
-	// `BBOX_MIN_PT`, `ARROW_NUDGE_PT`, `ARROW_NUDGE_FINE_PT`, and the
-	// bbox-math helpers below live in `$lib/services/boundary-edit-geometry`.
+	//  - AreaDrawController (#07) — Shift+drag on the stage draws a live
+	//    rectangle and emits a manual-selection bbox when released.
+	//
+	// Both controllers are class-based with their own $state fields
+	// (declared in their respective `.svelte.ts` files) so this component
+	// stays focused on canvas rendering, overlay dispatch, and text-layer
+	// handling. They read per-frame props (scale, currentPage, mode,
+	// stageEl) via closures so updates always reach them without a manual
+	// sync step.
 	// ---------------------------------------------------------------------
 
-	let editingDetectionId = $state<string | null>(null);
-	let editingBboxes = $state<BoundingBox[] | null>(null);
-	// Snapshot captured when edit starts — `Escape` rolls back to this.
-	// Not reactive because it only drives imperative reverts.
-	let editingOriginalBboxes: BoundingBox[] | null = null;
+	const boundaryEdit = new BoundaryEditController({
+		getDetections: () => detections,
+		getCurrentPage: () => currentPage,
+		getScale: () => scale,
+		getStageEl: () => stageEl,
+		getMode: () => mode,
+		onSelectDetection: (id) => onSelectDetection(id),
+		onBoundaryAdjust: (id, next) => onBoundaryAdjust?.(id, next)
+	});
 
-	// Handle drag state — plain vars because they mutate on every mousemove.
-	let dragHandle: {
-		boxIndex: number;
-		dir: HandleDir;
-		startClientX: number;
-		startClientY: number;
-		initialBbox: BoundingBox;
-	} | null = null;
-
-	function enterBoundaryEdit(detectionId: string) {
-		const det = detections.find((d) => d.id === detectionId);
-		if (!det || !det.bounding_boxes || det.bounding_boxes.length === 0) return;
-		editingDetectionId = detectionId;
-		editingBboxes = cloneBboxes(det.bounding_boxes);
-		editingOriginalBboxes = cloneBboxes(det.bounding_boxes);
-		// Also mark the detection as selected so the sidebar row highlights.
-		onSelectDetection(detectionId);
-	}
-
-	function cancelBoundaryEdit() {
-		editingDetectionId = null;
-		editingBboxes = null;
-		editingOriginalBboxes = null;
-		dragHandle = null;
-	}
-
-	function commitBoundaryEdit() {
-		if (!editingDetectionId || !editingBboxes) return;
-		const id = editingDetectionId;
-		const next = cloneBboxes(editingBboxes);
-		cancelBoundaryEdit();
-		onBoundaryAdjust?.(id, next);
-	}
-
-	function resetBoundaryEditDraft() {
-		if (!editingOriginalBboxes) return;
-		editingBboxes = cloneBboxes(editingOriginalBboxes);
-	}
-
-	function handleResizeMouseDown(e: MouseEvent, boxIndex: number, dir: HandleDir) {
-		if (!editingBboxes) return;
-		e.preventDefault();
-		e.stopPropagation();
-		dragHandle = {
-			boxIndex,
-			dir,
-			startClientX: e.clientX,
-			startClientY: e.clientY,
-			initialBbox: { ...editingBboxes[boxIndex] }
-		};
-	}
-
-	function handleBoundaryDragMove(e: MouseEvent) {
-		if (!dragHandle || !editingBboxes) return;
-		const dxPt = (e.clientX - dragHandle.startClientX) / scale;
-		const dyPt = (e.clientY - dragHandle.startClientY) / scale;
-		const updated = applyHandleDelta(dragHandle.initialBbox, dragHandle.dir, dxPt, dyPt);
-		editingBboxes = editingBboxes.map((b, i) => (i === dragHandle!.boxIndex ? updated : b));
-	}
-
-	function handleBoundaryDragEnd() {
-		dragHandle = null;
-	}
-
-	/**
-	 * Nudge the currently-editing bbox(es) with an arrow key. Operates on
-	 * all bboxes of the editing detection that sit on the current page —
-	 * which for nearly all single-line detections is exactly one box.
-	 * Geometry lives in `boundary-edit-geometry.ts`.
-	 */
-	function nudgeEditingBbox(
-		side: 'left' | 'right' | 'top' | 'bottom',
-		stepPt: number,
-		shrink: boolean
-	) {
-		if (!editingBboxes) return;
-		editingBboxes = editingBboxes.map((b) =>
-			b.page === currentPage ? nudgeBbox(b, side, stepPt, shrink) : b
-		);
-	}
-
-	/**
-	 * Shift+click on a word in the text layer while a detection is being
-	 * edited: extend (or shrink) the editing bbox on the current page to
-	 * include the clicked word's rectangle. Alt+click on a word at the
-	 * current bbox edge shrinks it to exclude that word. The word rect is
-	 * derived from the clicked text-layer span's bounding client rect,
-	 * converted to PDF points using the same helpers as manual selection.
-	 */
-	function handleTextLayerClick(e: MouseEvent) {
-		if (mode !== 'edit' || !editingBboxes || !stageEl) return;
-		if (!e.shiftKey && !e.altKey) return;
-		const target = e.target as HTMLElement | null;
-		// Text-layer glyphs are span elements; anything else (the container,
-		// the endOfContent probe, whitespace) has nothing meaningful to grab.
-		if (!target || target.tagName !== 'SPAN') return;
-		const spanRect = target.getBoundingClientRect();
-		const stageRect = stageEl.getBoundingClientRect();
-		const wordBbox = rectToBoundingBox(
-			{
-				left: spanRect.left,
-				top: spanRect.top,
-				right: spanRect.right,
-				bottom: spanRect.bottom
-			},
-			stageRect,
-			scale,
-			currentPage
-		);
-		e.preventDefault();
-		e.stopPropagation();
-
-		editingBboxes = editingBboxes.map((b) => {
-			if (b.page !== currentPage) return b;
-			return e.shiftKey ? extendBboxToWord(b, wordBbox) : shrinkBboxByWord(b, wordBbox);
-		});
-	}
+	const areaDraw = new AreaDrawController({
+		getStageEl: () => stageEl,
+		getCurrentPage: () => currentPage,
+		getScale: () => scale,
+		onManualSelection: (selection) => onManualSelection?.(selection)
+	});
 
 	onMount(async () => {
 		// Area-selection listeners live on the window so a drag that leaves
@@ -383,20 +248,19 @@
 		// boundary-edit flow instead of just highlighting it. Review mode
 		// keeps the classic select-for-sidebar behavior.
 		if (mode === 'edit') {
-			enterBoundaryEdit(det.id);
+			boundaryEdit.enter(det.id);
 		} else {
 			onSelectDetection(det.id);
 		}
 	}
 
-	// Text selection handling — only active in edit mode. On mouseup we read
-	// the current native Selection, optionally snap to word boundaries, and
-	// hand the resulting bboxes up so the review page can open the action bar.
+	// Text selection handling. On mouseup we read the current native
+	// Selection, optionally snap to word boundaries, and hand the
+	// resulting bboxes up so the review page can open the action bar.
 	function handleTextLayerMouseUp(e: MouseEvent) {
-		if (suppressNextTextLayerMouseUp) {
+		if (areaDraw.consumeSuppressTextLayerMouseUp()) {
 			// The area-draw mouseup chain emitted a selection already. Eat
 			// this one so we don't immediately clear it.
-			suppressNextTextLayerMouseUp = false;
 			return;
 		}
 		if (!textLayerEl) return;
@@ -409,154 +273,32 @@
 		setTimeout(() => emitSelection(e.altKey), 0);
 	}
 
-	// ---------------------------------------------------------------------
-	// Area selection (#07)
-	//
-	// Shift + mousedown on the PDF stage starts drawing a rectangle — works
-	// in both Beoordelen and Bewerken under the hybrid model, since Shift is
-	// the unambiguous signal. We use window-level mousemove/mouseup so
-	// drags that leave the stage mid-gesture still finish cleanly.
-	// Text-layer selection is suppressed by preventing the default on
-	// mousedown; a dedicated `drawing-area` class also disables user-select
-	// on the text layer so the two interactions never interleave visually.
-	// ---------------------------------------------------------------------
-
-	function cancelAreaDraw() {
-		isDrawingArea = false;
-		drawRect = null;
-		drawingAreaClass = false;
-	}
-
-	function handleStageMouseDown(e: MouseEvent) {
-		// Area draw works in both modes — the Shift modifier is the explicit
-		// signal, so there's no ambiguity with review-mode clicks.
-		if (!e.shiftKey || !stageEl) return;
-		// Ignore mousedowns that land on existing detection overlays.
-		const target = e.target as HTMLElement | null;
-		if (target?.dataset?.overlay === 'detection') return;
-
-		// Kill the native text selection that would otherwise start when the
-		// mousedown bubbles through the text layer.
-		e.preventDefault();
-		window.getSelection()?.removeAllRanges();
-
-		const stageRect = stageEl.getBoundingClientRect();
-		drawStartX = e.clientX - stageRect.left;
-		drawStartY = e.clientY - stageRect.top;
-		drawCurrentX = drawStartX;
-		drawCurrentY = drawStartY;
-		isDrawingArea = true;
-		drawingAreaClass = true;
-		drawRect = { x: drawStartX, y: drawStartY, w: 0, h: 0 };
-	}
-
+	// Window-level mouse handlers dispatch to whichever controller is
+	// active. Boundary-edit resize drag takes precedence over any area
+	// draw, because the two gestures are mutually exclusive (you can't be
+	// mid-handle-drag while also dragging out a new rectangle).
 	function handleWindowMouseMove(e: MouseEvent) {
-		// Boundary-edit resize drag takes precedence over any area draw,
-		// because the two gestures are mutually exclusive (you can't be
-		// mid-handle-drag while also dragging out a new rectangle).
-		if (dragHandle) {
-			handleBoundaryDragMove(e);
+		if (boundaryEdit.isDraggingHandle) {
+			boundaryEdit.handleDragMove(e);
 			return;
 		}
-		if (!isDrawingArea || !stageEl) return;
-		const stageRect = stageEl.getBoundingClientRect();
-		drawCurrentX = e.clientX - stageRect.left;
-		drawCurrentY = e.clientY - stageRect.top;
-		drawRect = {
-			x: Math.min(drawStartX, drawCurrentX),
-			y: Math.min(drawStartY, drawCurrentY),
-			w: Math.abs(drawCurrentX - drawStartX),
-			h: Math.abs(drawCurrentY - drawStartY)
-		};
+		areaDraw.handleWindowMouseMove(e);
 	}
 
 	function handleWindowMouseUp() {
-		if (dragHandle) {
-			handleBoundaryDragEnd();
+		if (boundaryEdit.isDraggingHandle) {
+			boundaryEdit.handleDragEnd();
 			return;
 		}
-		if (!isDrawingArea || !stageEl) return;
-		isDrawingArea = false;
-		stageEl.classList.remove('drawing-area');
-
-		const w = Math.abs(drawCurrentX - drawStartX);
-		const h = Math.abs(drawCurrentY - drawStartY);
-		drawRect = null;
-
-		if (w < AREA_MIN_SIZE_PX || h < AREA_MIN_SIZE_PX) {
-			// Misclick — drop silently. Don't suppress the text-layer mouseup
-			// either; there's no selection to protect.
-			return;
-		}
-
-		const left = Math.min(drawStartX, drawCurrentX);
-		const top = Math.min(drawStartY, drawCurrentY);
-		const stageRect = stageEl.getBoundingClientRect();
-		// Reconstruct a viewport-space rect so the shared helpers in
-		// selection-bbox.ts (which operate in absolute viewport coords) can
-		// convert it to a PDF-point bbox and an anchor the same way the
-		// text-selection flow does.
-		const rectViewport = {
-			left: stageRect.left + left,
-			top: stageRect.top + top,
-			right: stageRect.left + left + w,
-			bottom: stageRect.top + top + h
-		};
-
-		const bbox = rectToBoundingBox(rectViewport, stageRect, scale, currentPage);
-		const anchor = computeRectAnchor(rectViewport, stageRect, scale, currentPage);
-
-		suppressNextTextLayerMouseUp = true;
-		onManualSelection?.({
-			page: currentPage,
-			text: '',
-			bboxes: [bbox],
-			anchor
-		});
+		areaDraw.handleWindowMouseUp();
 	}
 
 	function handleWindowKeyDown(e: KeyboardEvent) {
-		if (e.key === 'Escape' && isDrawingArea) {
-			cancelAreaDraw();
+		if (e.key === 'Escape' && areaDraw.isDrawing) {
+			areaDraw.cancel();
 			return;
 		}
-		if (editingDetectionId) {
-			// Don't interfere with typing in a form field (unlikely while
-			// boundary-editing, but the review page has textareas for
-			// motivations).
-			const t = e.target as HTMLElement | null;
-			if (t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA' || t?.isContentEditable) {
-				return;
-			}
-			if (e.key === 'Escape') {
-				e.preventDefault();
-				// First Escape: revert draft to the snapshot. If the draft
-				// already matches the snapshot (reviewer just wants to bail
-				// out), exit boundary edit entirely.
-				if (bboxesEqual(editingBboxes, editingOriginalBboxes)) {
-					cancelBoundaryEdit();
-				} else {
-					resetBoundaryEditDraft();
-				}
-				return;
-			}
-			if (e.key === 'Enter') {
-				e.preventDefault();
-				commitBoundaryEdit();
-				return;
-			}
-			// Both PdfViewer and KeyboardShortcuts register window keydown
-			// listeners. While a boundary edit is active the arrow keys
-			// belong to us — stopImmediatePropagation prevents the
-			// KeyboardShortcuts listener from also treating them as
-			// next/prev detection navigation.
-			const nudge = arrowKeyToNudge(e.key, e.shiftKey, e.altKey);
-			if (nudge) {
-				e.preventDefault();
-				e.stopImmediatePropagation();
-				nudgeEditingBbox(nudge.side, nudge.stepPt, nudge.shrink);
-			}
-		}
+		boundaryEdit.handleKeyDown(e);
 	}
 
 	function emitSelection(altKey: boolean) {
@@ -618,14 +360,14 @@
 	});
 
 	// Draw overlays when detections, selection, or page changes. Also
-	// re-runs when `editingDetectionId` toggles so the editing detection's
-	// DOM-built overlay disappears (and the Svelte-driven draft overlay
-	// takes its place).
+	// re-runs when the boundary-edit target toggles so the editing
+	// detection's DOM-built overlay disappears (and the Svelte-driven
+	// draft overlay takes its place).
 	$effect(() => {
 		void detections;
 		void selectedDetectionId;
 		void currentPage;
-		void editingDetectionId;
+		void boundaryEdit.editingDetectionId;
 		// #18 — re-draw so split/merge visual cues appear the moment the
 		// parent flips these props.
 		void splitPendingId;
@@ -640,6 +382,7 @@
 		void renderedScale;
 		void viewportSize;
 		if (pdfDoc && overlayEl && renderedScale > 0) {
+			const editingId = boundaryEdit.editingDetectionId;
 			untrack(() => {
 				drawDetectionOverlays({
 					overlayEl: overlayEl!,
@@ -648,7 +391,7 @@
 					scale: renderedScale,
 					viewportSize,
 					selectedDetectionId,
-					editingDetectionId,
+					editingDetectionId: editingId,
 					splitPendingId,
 					mergeStagingIds,
 					onOverlayClick: handleOverlayClick
@@ -727,7 +470,7 @@
 	$effect(() => {
 		if (mode === 'review') {
 			untrack(() => {
-				cancelBoundaryEdit();
+				boundaryEdit.cancel();
 			});
 		}
 	});
@@ -739,8 +482,8 @@
 	$effect(() => {
 		void currentPage;
 		untrack(() => {
-			if (isDrawingArea) cancelAreaDraw();
-			if (editingDetectionId) cancelBoundaryEdit();
+			if (areaDraw.isDrawing) areaDraw.cancel();
+			if (boundaryEdit.isEditing) boundaryEdit.cancel();
 		});
 	});
 
@@ -750,8 +493,9 @@
 	$effect(() => {
 		void detections;
 		untrack(() => {
-			if (editingDetectionId && !detections.some((d) => d.id === editingDetectionId)) {
-				cancelBoundaryEdit();
+			const id = boundaryEdit.editingDetectionId;
+			if (id && !detections.some((d) => d.id === id)) {
+				boundaryEdit.cancel();
 			}
 		});
 	});
@@ -813,8 +557,8 @@
 			<div
 				bind:this={stageEl}
 				class="pdf-stage relative"
-				class:drawing-area={drawingAreaClass}
-				onmousedown={handleStageMouseDown}
+				class:drawing-area={areaDraw.drawingAreaClass}
+				onmousedown={(e) => areaDraw.handleStageMouseDown(e)}
 				onclick={(e) => {
 					// Clicks on overlays stopPropagation, so reaching here means empty space.
 					if ((e.target as HTMLElement)?.dataset.overlay === 'detection') return;
@@ -829,29 +573,30 @@
 					bind:this={textLayerEl}
 					class="textLayer absolute top-0 left-0"
 					onmouseup={handleTextLayerMouseUp}
-					onclick={handleTextLayerClick}
+					onclick={(e) => boundaryEdit.handleTextLayerClick(e)}
 				></div>
 				<!-- Boundary adjustment draft overlay (#11). Rendered above
 				     the text layer so its handles are clickable; the box
 				     itself is inert to pointer events, so mousedowns inside
 				     the box (but outside a handle) still reach the text
 				     layer for Shift/Alt+click word extension. -->
-				{#if editingBboxes}
+				{#if boundaryEdit.editingBboxes}
 					<BoundaryEditOverlay
-						{editingBboxes}
+						editingBboxes={boundaryEdit.editingBboxes}
 						{currentPage}
 						{scale}
-						onHandleMouseDown={handleResizeMouseDown}
-						onCommit={commitBoundaryEdit}
-						onCancel={cancelBoundaryEdit}
+						onHandleMouseDown={(e, boxIndex, dir) =>
+							boundaryEdit.handleResizeMouseDown(e, boxIndex, dir)}
+						onCommit={() => boundaryEdit.commit()}
+						onCancel={() => boundaryEdit.cancel()}
 					/>
 				{/if}
-				{#if drawRect}
+				{#if areaDraw.drawRect}
 					<!-- Live area-draw rectangle (#07). Inert to pointer events so
 					     mousemove continues to reach the window listener. -->
 					<div
 						class="area-draw"
-						style="left: {drawRect.x}px; top: {drawRect.y}px; width: {drawRect.w}px; height: {drawRect.h}px;"
+						style="left: {areaDraw.drawRect.x}px; top: {areaDraw.drawRect.y}px; width: {areaDraw.drawRect.w}px; height: {areaDraw.drawRect.h}px;"
 					></div>
 				{/if}
 				{#if onMarkPageReviewed || onFlagPage}

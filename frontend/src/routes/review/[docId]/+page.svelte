@@ -15,31 +15,37 @@
 	import {
 		undoStore,
 		CreateManualCommand,
-		ReviewStatusCommand,
 		BoundaryAdjustCommand,
-		ChangeArticleCommand,
-		SetSubjectRoleCommand,
-		AddReferenceNameCommand,
-		RemoveReferenceNameCommand,
-		AddCustomTermCommand,
-		RemoveCustomTermCommand,
-		SweepBlockCommand,
-		SameNameSweepCommand,
-		BatchCommand,
-		type Command
 	} from '$lib/stores/undo.svelte';
 	import { structureSpansStore } from '$lib/stores/structure-spans.svelte';
+	import { splitMergeStore } from '$lib/stores/split-merge.svelte';
+	import { spanKey } from '$lib/utils/structure-matching';
+	import { sweepBlock, sameNameSweep, findEnclosingSpan } from '$lib/services/bulk-sweep';
 	import {
-		spanKey,
-		detectionInsideSpan,
-		findSameNameDetections
-	} from '$lib/utils/structure-matching';
-	import type { StructureSpan, ReviewStatus } from '$lib/types';
+		touchDetectionPages,
+		handleAccept,
+		handleRedactWithArticle,
+		handleReject,
+		handleDefer,
+		handleReopen,
+		handleChangeArticle,
+		handleSetSubjectRole,
+		handleSaveMotivation,
+		handleAcceptAllTier1,
+		handleAcceptHighConfidenceTier2,
+	} from '$lib/services/review-actions';
+	import {
+		handleAddReferenceName as addReferenceName,
+		handleRemoveReferenceName as removeReferenceName,
+		handleAddCustomTerm as addCustomTerm,
+		handleRemoveCustomTerm as removeCustomTerm,
+	} from '$lib/services/list-panel-actions';
 	import PdfViewer from '$lib/components/review/PdfViewer.svelte';
 	import SelectionActionBar from '$lib/components/review/SelectionActionBar.svelte';
 	import ManualRedactionForm from '$lib/components/review/ManualRedactionForm.svelte';
 	import SearchPanel from '$lib/components/review/SearchPanel.svelte';
 	import type { SearchOccurrence } from '$lib/services/search-redact';
+	import { redactSearchOccurrences } from '$lib/services/search-redact-commit';
 	import DetectionList from '$lib/components/review/DetectionList.svelte';
 	import ReferenceNamesPanel from '$lib/components/review/ReferenceNamesPanel.svelte';
 	import CustomTermsPanel from '$lib/components/review/CustomTermsPanel.svelte';
@@ -54,9 +60,7 @@
 	import { extractText, loadPdfDocument } from '$lib/services/pdf-text-extractor';
 	import { exportRedactedPdf, downloadBlob } from '$lib/services/export-service';
 	import { buildDebugExport, downloadDebugExport } from '$lib/services/debug-export';
-	import { computeSplitBboxes } from '$lib/services/boundary-edit-geometry';
-	import { HIGH_CONFIDENCE_THRESHOLD } from '$lib/config/thresholds';
-	import type { WooArticleCode, EntityType, DetectionTier, SubjectRole } from '$lib/types';
+	import type { WooArticleCode, EntityType, DetectionTier } from '$lib/types';
 	import {
 		ArrowLeft,
 		PanelRightClose,
@@ -83,6 +87,11 @@
 	// dismissible card. The flag is reviewer-session-scoped; dismissing (or
 	// successfully submitting) hides it until the next export completes.
 	let showPostExportLead = $state(false);
+	// Art. 5.3 contextual hint — shown when the extracted document date
+	// suggests the document may be older than 5 years. Worded as a reminder
+	// rather than a declarative claim (our date heuristic can still be fooled
+	// by free-form text), and dismissible per reviewer session.
+	let fiveYearHintDismissed = $state(false);
 	// Exposed by PdfViewer via `bind:stageEl` — the manual selection bar/form
 	// use this element's bounding rect to project page-space anchors to
 	// viewport pixels, so they follow the PDF through scroll and zoom.
@@ -275,10 +284,10 @@
 	function handleSelectDetection(id: string, modifier?: 'ctrl') {
 		if (modifier === 'ctrl') {
 			detectionStore.toggleMultiSelect(id);
-			splitPendingId = null;
+			splitMergeStore.cancelSplit();
 			return;
 		}
-		splitPendingId = null;
+		splitMergeStore.cancelSplit();
 		detectionStore.select(id);
 		const det = detectionStore.byId[id];
 		if (det?.bounding_boxes?.length) {
@@ -286,139 +295,6 @@
 			if (targetPage !== reviewStore.currentPage) {
 				reviewStore.setPage(targetPage);
 			}
-		}
-	}
-
-	// -----------------------------------------------------------------------
-	// Split and merge (#18)
-	// -----------------------------------------------------------------------
-
-	/** Id of the detection waiting for a split-point click on the PDF, or null. */
-	let splitPendingId = $state<string | null>(null);
-
-	function handleStartSplit() {
-		const selected = detectionStore.selected;
-		if (!selected || !selected.bounding_boxes?.length) return;
-		splitPendingId = selected.id;
-	}
-
-	function handleCancelSplit() {
-		splitPendingId = null;
-	}
-
-	/**
-	 * The reviewer clicked inside the split-target detection's overlay.
-	 * `computeSplitBboxes` derives the two new bbox sets from the target
-	 * bbox and the clicked x-coordinate; we forward them to the store.
-	 */
-	async function handleSplitPointClick(args: {
-		detectionId: string;
-		bboxIndex: number;
-		pdfX: number;
-		pdfY: number;
-	}) {
-		const det = detectionStore.byId[args.detectionId];
-		if (!det || !det.bounding_boxes?.length) {
-			splitPendingId = null;
-			return;
-		}
-		const split = computeSplitBboxes(det.bounding_boxes, args.bboxIndex, args.pdfX);
-		if (!split) {
-			splitPendingId = null;
-			return;
-		}
-
-		// Clear pending state before the async call — if the request fails
-		// the reviewer should be able to re-trigger split without being stuck
-		// in a stale pending mode.
-		splitPendingId = null;
-		await detectionStore.split(args.detectionId, split.bboxesA, split.bboxesB);
-	}
-
-	async function handleMergeConfirm() {
-		await detectionStore.merge();
-	}
-
-	/**
-	 * Build a ReviewStatusCommand for a detection, capturing its current
-	 * review_status and woo_article at command-construction time so that
-	 * undoing the action restores the exact prior state.
-	 */
-	function makeStatusCommand(
-		id: string,
-		nextStatus: 'accepted' | 'rejected' | 'deferred' | 'pending',
-		nextArticle?: WooArticleCode
-	): ReviewStatusCommand | null {
-		const det = detectionStore.byId[id];
-		if (!det) return null;
-		return new ReviewStatusCommand(
-			id,
-			det.review_status,
-			nextStatus,
-			det.woo_article ?? undefined,
-			nextArticle ?? det.woo_article ?? undefined
-		);
-	}
-
-	/**
-	 * When a detection on a page is reviewed, nudge that page from
-	 * `unreviewed` to `in_progress` (#10 auto-status). Pages the reviewer
-	 * has already marked `complete` or `flagged` are left alone — those
-	 * are deliberate decisions and must not be silently downgraded.
-	 *
-	 * We bump every page the detection touches, since a single detection
-	 * can span a page break. `markInProgressIfUnreviewed` is itself a
-	 * no-op on pages already past `unreviewed`, so the fire-and-forget
-	 * calls are safe to duplicate.
-	 */
-	function touchDetectionPages(id: string) {
-		const det = detectionStore.byId[id];
-		if (!det?.bounding_boxes) return;
-		const pages = new Set(det.bounding_boxes.map((b) => b.page));
-		for (const p of pages) void pageReviewStore.markInProgressIfUnreviewed(p);
-	}
-
-	function handleAccept(id: string) {
-		const cmd = makeStatusCommand(id, 'accepted');
-		if (cmd) {
-			undoStore.push(cmd);
-			touchDetectionPages(id);
-		}
-	}
-
-	function handleRedactWithArticle(id: string, article: WooArticleCode) {
-		const cmd = makeStatusCommand(id, 'accepted', article);
-		if (cmd) {
-			undoStore.push(cmd);
-			touchDetectionPages(id);
-		}
-	}
-
-	function handleReject(id: string) {
-		const cmd = makeStatusCommand(id, 'rejected');
-		if (cmd) {
-			undoStore.push(cmd);
-			touchDetectionPages(id);
-		}
-	}
-
-	function handleDefer(id: string) {
-		const cmd = makeStatusCommand(id, 'deferred');
-		if (cmd) {
-			undoStore.push(cmd);
-			touchDetectionPages(id);
-		}
-	}
-
-	// Revert a reviewed detection back to `pending` so the reviewer sees the
-	// full decision form again. Used by Tier 3 "Opnieuw beoordelen" where
-	// re-accepting requires picking an article and writing motivation — we
-	// can't one-click flip it back to accepted.
-	function handleReopen(id: string) {
-		const cmd = makeStatusCommand(id, 'pending');
-		if (cmd) {
-			undoStore.push(cmd);
-			touchDetectionPages(id);
 		}
 	}
 
@@ -476,137 +352,17 @@
 		if (detectionStore.selectedId) handleDefer(detectionStore.selectedId);
 	}
 
-	// #15 — Tier 2 card in-place article change. Pushes a dedicated command
-	// onto the undo stack so Ctrl+Z restores the previous Woo-grond exactly.
-	async function handleChangeArticle(id: string, nextArticle: WooArticleCode) {
-		const det = detectionStore.byId[id];
-		if (!det) return;
-		if (det.woo_article === nextArticle) return;
-		const cmd = new ChangeArticleCommand(id, det.woo_article, nextArticle);
-		try {
-			await undoStore.push(cmd);
-		} catch {
-			// detectionStore.error carries the message.
-		}
-	}
+	// Bulk sweeps (#20) — real logic lives in $lib/services/bulk-sweep. These
+	// wrappers exist only so the page can thread `touchDetectionPages` into
+	// each sweep and pass a stable prop into the sidebar.
+	const handleSweepBlock = (key: string) => sweepBlock(key, touchDetectionPages);
+	const handleSameNameSweep = (detectionId: string) =>
+		sameNameSweep(detectionId, touchDetectionPages);
 
-	// #15 — Tier 2 role classification chip. Pushes a single command that
-	// captures the previous role AND status (because the publiek_functionaris
-	// path also flips the status to rejected). Undo restores both.
-	async function handleSetSubjectRole(id: string, role: SubjectRole) {
-		const det = detectionStore.byId[id];
-		if (!det) return;
-		if (det.subject_role === role) return;
-		const cmd = new SetSubjectRoleCommand(
-			id,
-			det.subject_role ?? null,
-			role,
-			det.review_status
-		);
-		try {
-			await undoStore.push(cmd);
-			touchDetectionPages(id);
-		} catch {
-			// detectionStore.error carries the message.
-		}
-	}
-
-	// -----------------------------------------------------------------------
-	// #20 — bulk sweeps (email header / signature block / same-name)
-	// -----------------------------------------------------------------------
-
-	/**
-	 * Sweep every pending detection inside the structure span identified by
-	 * `key`. Detections that already have a non-pending decision are left
-	 * alone — the reviewer explicitly decided those and must not be
-	 * overwritten. Builds a single undo command covering the whole block.
-	 */
-	async function handleSweepBlock(key: string) {
-		const span = structureSpansStore.spans.find((s) => spanKey(s) === key);
-		if (!span) return;
-		if (span.kind !== 'email_header' && span.kind !== 'signature_block') return;
-
-		// Resolve targets against the full detection list, not the filtered
-		// view — the reviewer clicked "sweep this whole block" and expects
-		// every pending row inside it to be accepted regardless of the
-		// current sidebar filter.
-		const inBlock = detectionStore.all.filter(
-			(d) => d.review_status === 'pending' && detectionInsideSpan(d, span)
-		);
-		if (inBlock.length === 0) return;
-
-		const targets = inBlock.map((d) => ({
-			id: d.id,
-			previousStatus: d.review_status,
-			previousArticle: d.woo_article ?? null,
-			nextArticle: d.woo_article ?? null
-		}));
-		const cmd = new SweepBlockCommand(span.kind, targets);
-		try {
-			await undoStore.push(cmd);
-			for (const t of targets) touchDetectionPages(t.id);
-		} catch {
-			// detectionStore.error already carries the banner message.
-		}
-	}
-
-	/**
-	 * Apply the selected detection's in-card decision to every other
-	 * occurrence of the same normalized name. The "decision" here means
-	 * accept: in practice the reviewer clicks the link on a pending card
-	 * right as they're about to accept it, and the expectation is that
-	 * every other identical row gets the same treatment. Rows that already
-	 * have an explicit non-pending decision are skipped — we never
-	 * overwrite a reviewer's prior choice.
-	 */
-	async function handleSameNameSweep(detectionId: string) {
-		const target = detectionStore.byId[detectionId];
-		if (!target || !target.entity_text) return;
-
-		const matches = findSameNameDetections(target, detectionStore.all);
-		// Only rows still awaiting a decision are swept; the target itself is
-		// always included so the action feels like "click once, whole name
-		// handled" even if the reviewer forgot to press A first.
-		const pending = matches.filter((d) => d.review_status === 'pending');
-		if (pending.length === 0) return;
-
-		const nextStatus: ReviewStatus = 'accepted';
-		const targets = pending.map((d) => ({
-			id: d.id,
-			previousStatus: d.review_status
-		}));
-		const cmd = new SameNameSweepCommand(target.entity_text, nextStatus, targets);
-		try {
-			await undoStore.push(cmd);
-			for (const t of targets) touchDetectionPages(t.id);
-		} catch {
-			// detectionStore.error already carries the banner message.
-		}
-	}
-
-	/**
-	 * Shift+H / Shift+S keyboard handlers. Resolve the span enclosing the
-	 * currently selected detection and delegate to `handleSweepBlock`.
-	 * No-op if there is no selection, no char offsets, or no matching span
-	 * of the requested kind — silent failure is the right UX here, the
-	 * reviewer will just see nothing happen and try a different detection.
-	 */
-	function findEnclosingSpan(
-		detectionId: string,
-		kind: 'email_header' | 'signature_block'
-	): StructureSpan | null {
-		const det = detectionStore.byId[detectionId];
-		if (!det) return null;
-		const candidates = structureSpansStore.spans.filter(
-			(s) => s.kind === kind && detectionInsideSpan(det, s)
-		);
-		if (candidates.length === 0) return null;
-		// Narrowest enclosing span wins — matches the sidebar chip assignment.
-		return candidates.sort(
-			(a, b) => a.end_char - a.start_char - (b.end_char - b.start_char)
-		)[0];
-	}
-
+	// Shift+H / Shift+S keyboard handlers — resolve the span enclosing the
+	// current selection and delegate to the sweep helper. No-op on missing
+	// selection or no matching span; silent failure is the right UX here,
+	// the reviewer will just see nothing happen and try a different detection.
 	function handleKeySweepHeader() {
 		const id = detectionStore.selectedId;
 		if (!id) return;
@@ -621,13 +377,6 @@
 		const span = findEnclosingSpan(id, 'signature_block');
 		if (!span) return;
 		void handleSweepBlock(spanKey(span));
-	}
-
-	function handleSaveMotivation(id: string, text: string) {
-		// Motivation edits are not currently part of the undo stack — they
-		// happen inside a form with its own cancel path, and the new command
-		// type for motivation-only changes isn't worth the surface area yet.
-		detectionStore.review(id, { review_status: 'edited', motivation_text: text });
 	}
 
 	/**
@@ -682,42 +431,6 @@
 		manualSelectionStore.cancel();
 	}
 
-	async function handleAcceptAllTier1() {
-		const children = buildAcceptBatch(
-			detectionStore.all.filter((d) => d.tier === '1' && d.review_status === 'pending')
-		);
-		if (children.length === 0) return;
-		await undoStore.push(new BatchCommand(`Accepteer alle Tier 1 (${children.length})`, children));
-	}
-
-	async function handleAcceptHighConfidenceTier2() {
-		const children = buildAcceptBatch(
-			detectionStore.all.filter(
-				(d) =>
-					d.tier === '2' &&
-					d.review_status === 'pending' &&
-					d.confidence >= HIGH_CONFIDENCE_THRESHOLD
-			)
-		);
-		if (children.length === 0) return;
-		await undoStore.push(
-			new BatchCommand(`Accepteer hoge-zekerheid Tier 2 (${children.length})`, children)
-		);
-	}
-
-	function buildAcceptBatch(dets: typeof detectionStore.all): Command[] {
-		return dets.map(
-			(d) =>
-				new ReviewStatusCommand(
-					d.id,
-					d.review_status,
-					'accepted',
-					d.woo_article ?? undefined,
-					d.woo_article ?? undefined
-				)
-		);
-	}
-
 	// -----------------------------------------------------------------------
 	// Search-and-redact (#09)
 	// -----------------------------------------------------------------------
@@ -728,40 +441,8 @@
 		}
 	}
 
-	async function handleRedactOccurrences(payload: {
-		occurrences: SearchOccurrence[];
-		article: WooArticleCode;
-		entityType: EntityType;
-		tier: DetectionTier;
-		motivation: string;
-	}) {
-		if (payload.occurrences.length === 0) return;
-		const children: Command[] = payload.occurrences.map(
-			(occ) =>
-				new CreateManualCommand({
-					documentId: docId,
-					bboxes: occ.bboxes,
-					// `matchText` is client-only — kept in the in-memory detection
-					// so the sidebar can show it, never sent to the server.
-					selectedText: occ.matchText,
-					entityType: payload.entityType,
-					tier: payload.tier,
-					wooArticle: payload.article,
-					motivation: payload.motivation,
-					source: 'search_redact'
-				})
-		);
-		try {
-			await undoStore.push(
-				new BatchCommand(
-					`Zoek & lak (${children.length})`,
-					children
-				)
-			);
-		} catch {
-			// detectionStore.error already carries the message — the banner
-			// above the viewer will render it.
-		}
+	function handleRedactOccurrences(payload: Parameters<typeof redactSearchOccurrences>[1]) {
+		return redactSearchOccurrences(docId, payload);
 	}
 
 	// Search highlights consumed by PdfViewer — strip the UI-only fields
@@ -780,81 +461,6 @@
 	// -----------------------------------------------------------------------
 	// Reference-names panel (#17)
 	// -----------------------------------------------------------------------
-
-	/**
-	 * Re-run the analyze pipeline with the current extraction and the
-	 * latest reference-name list. Called after every add/remove (and
-	 * every undo/redo of those) so newly-matched detections flip to
-	 * `rejected` in place and previously-rejected ones flip back to
-	 * `pending`. No-op if the extraction isn't loaded yet (e.g. the user
-	 * is still picking a PDF after a reload) — the panel is still
-	 * usable, the pipeline just won't re-run until the extraction is
-	 * available on the next mount.
-	 */
-	async function reanalyzeWithReferenceList() {
-		const extraction = detectionStore.extraction;
-		if (!extraction) return;
-		// #17 + #21 — the reference list and the custom wordlist are
-		// both per-document reviewer lists that feed into the same
-		// analyze pass. Threading them together here (instead of via
-		// two separate analyze calls) keeps the pipeline deterministic:
-		// the server merges overlapping hits in one pass.
-		await detectionStore.analyze(
-			docId,
-			extraction.pages,
-			referenceNamesStore.displayNames,
-			customTermsStore.analyzePayload
-		);
-	}
-
-	async function handleAddReferenceName(displayName: string) {
-		const cmd = new AddReferenceNameCommand(displayName, reanalyzeWithReferenceList);
-		try {
-			await undoStore.push(cmd);
-		} catch {
-			// referenceNamesStore.error carries the message — the panel
-			// renders it inline so the reviewer sees the banner.
-		}
-	}
-
-	async function handleRemoveReferenceName(id: string, displayName: string) {
-		const cmd = new RemoveReferenceNameCommand(id, displayName, reanalyzeWithReferenceList);
-		try {
-			await undoStore.push(cmd);
-		} catch {
-			// referenceNamesStore.error carries the message.
-		}
-	}
-
-	// #21 — per-document custom wordlist handlers. Same shape as the
-	// reference-name variants above; the re-analysis callback is the
-	// shared one so both features contribute to a single pipeline pass.
-	async function handleAddCustomTerm(term: string, wooArticle: string) {
-		const cmd = new AddCustomTermCommand(term, wooArticle, reanalyzeWithReferenceList);
-		try {
-			await undoStore.push(cmd);
-		} catch {
-			// customTermsStore.error carries the message.
-		}
-	}
-
-	async function handleRemoveCustomTerm(id: string, term: string) {
-		// Look up the full row so reverse() can re-create it with the
-		// same Woo-artikel the reviewer originally picked.
-		const existing = customTermsStore.terms.find((t) => t.id === id);
-		const wooArticle = existing?.woo_article ?? '5.1.2e';
-		const cmd = new RemoveCustomTermCommand(
-			id,
-			term,
-			wooArticle,
-			reanalyzeWithReferenceList
-		);
-		try {
-			await undoStore.push(cmd);
-		} catch {
-			// customTermsStore.error carries the message.
-		}
-	}
 
 	// Map from normalized term → number of live `custom` detections. For
 	// each known term we count detections whose reasoning contains
@@ -1058,13 +664,21 @@
 				</div>
 			</div>
 		{/if}
-		<!-- Five-year rule warning (Art. 5.3 Woo) -->
-		{#if reviewStore.document?.five_year_warning}
+		<!-- Art. 5.3 Woo — contextual reminder, not a declarative claim. The
+		     date heuristic can be fooled by cited dates or form fields, so we
+		     pitch this as a general hint and let the reviewer dismiss it. -->
+		{#if reviewStore.document?.five_year_warning && !fiveYearHintDismissed}
 			<div class="mx-4 mt-3">
-				<Alert variant="warning">
-					<strong>Let op — Vijfjaarstermijn (art. 5.3 Woo):</strong> Dit document is ouder dan 5 jaar.
-					Relatieve weigeringsgronden gelden niet automatisch. Extra motivering is vereist bij toepassing van
-					een relatieve grond.
+				<Alert
+					variant="primary"
+					closable
+					onsl-after-hide={() => {
+						fiveYearHintDismissed = true;
+					}}
+				>
+					<strong>Ter herinnering — art. 5.3 Woo:</strong> relatieve weigeringsgronden gelden
+					niet automatisch voor documenten ouder dan vijf jaar. Als dit document ouder is,
+					is extra motivering nodig bij toepassing van een relatieve grond.
 				</Alert>
 			</div>
 		{/if}
@@ -1088,9 +702,9 @@
 						{pdfData}
 						detections={detectionStore.filtered}
 						selectedDetectionId={detectionStore.selectedId}
-						splitPendingId={splitPendingId}
+						splitPendingId={splitMergeStore.pendingId}
 						mergeStagingIds={detectionStore.multiSelectedIds}
-						onSplitPointClick={handleSplitPointClick}
+						onSplitPointClick={splitMergeStore.commitSplit}
 						currentPage={reviewStore.currentPage}
 						scale={reviewStore.pdfScale}
 						mode={reviewStore.mode}
@@ -1158,21 +772,21 @@
 										<sl-button
 											size="small"
 											variant="default"
-											disabled={splitPendingId !== null}
-											onclick={handleStartSplit}
+											disabled={splitMergeStore.pendingId !== null}
+											onclick={() => splitMergeStore.startSplit()}
 										>
 											Splitsen
 										</sl-button>
 									</div>
 								{/if}
 							{/if}
-							{#if splitPendingId}
+							{#if splitMergeStore.pendingId}
 								<div class="mt-2 rounded border border-warning/40 bg-warning/10 px-2 py-1.5 text-xs text-gray-700">
 									Klik in de PDF op de plek waar de detectie gesplitst moet worden.
 									<button
 										type="button"
 										class="ml-1 underline"
-										onclick={handleCancelSplit}
+										onclick={() => splitMergeStore.cancelSplit()}
 									>
 										Annuleren
 									</button>
@@ -1185,7 +799,7 @@
 									<sl-button
 										size="small"
 										variant="primary"
-										onclick={handleMergeConfirm}
+										onclick={() => splitMergeStore.confirmMerge()}
 									>
 										Samenvoegen ({detectionStore.multiSelectedIds.length})
 									</sl-button>
@@ -1201,12 +815,12 @@
 						</div>
 					{/if}
 					<ReferenceNamesPanel
-						onAdd={handleAddReferenceName}
-						onRemove={handleRemoveReferenceName}
+						onAdd={(name) => addReferenceName(name, docId)}
+						onRemove={(id, name) => removeReferenceName(id, name, docId)}
 					/>
 					<CustomTermsPanel
-						onAdd={handleAddCustomTerm}
-						onRemove={handleRemoveCustomTerm}
+						onAdd={(term, article) => addCustomTerm(term, article, docId)}
+						onRemove={(id, term) => removeCustomTerm(id, term, docId)}
 						matchCounts={customTermMatchCounts}
 					/>
 					<div data-sidebar-scroll class="flex-1 overflow-y-auto p-4">
