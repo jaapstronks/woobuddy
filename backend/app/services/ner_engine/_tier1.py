@@ -57,13 +57,25 @@ _PHONE_PATTERNS = [
     # sites tend to use. Each alternation enforces a specific digit layout
     # so the total always sums to exactly 10 digits — keeps the regex tight
     # enough to avoid matching random numeric runs.
-    re.compile(r"\b(0[1-9]\d" + _P + r"\d{3}" + _P + r"\d{2}" + _P + r"\d{2})\b"),  # 071 516 50 00 (3+3+2+2)
-    re.compile(r"\b(0[1-9]\d" + _P + r"\d{3}" + _P + r"\d{4})\b"),  # 071 516 5000 / 010 - 267 4839 (3+3+4)
-    re.compile(r"\b(0[1-9]\d{2}" + _P + r"\d{2}" + _P + r"\d{2}" + _P + r"\d{2})\b"),  # 0412 12 34 56 (4+2+2+2)
-    re.compile(r"\b(0[1-9]\d{2}" + _P + r"\d{3}" + _P + r"\d{3})\b"),  # 0412 123 456 / 0512 - 893 472 (4+3+3)
-    re.compile(r"\b(06[\s.\-]?\d{8})\b"),  # mobile: 06-12345678 / 06 12345678
-    re.compile(r"\b(06" + _P + r"\d{4}" + _P + r"\d{4})\b"),  # 06 1234 5678 / 06 - 4471 8923 (mobile grouped)
-    re.compile(r"\b(06" + _P + r"\d{2}" + _P + r"\d{2}" + _P + r"\d{2}" + _P + r"\d{2})\b"),  # 06 12 34 56 78 / 06.12.34.56.78
+    re.compile(  # 3+3+2+2: 071 516 50 00
+        r"\b(0[1-9]\d" + _P + r"\d{3}" + _P + r"\d{2}" + _P + r"\d{2})\b"
+    ),
+    re.compile(  # 3+3+4: 071 516 5000
+        r"\b(0[1-9]\d" + _P + r"\d{3}" + _P + r"\d{4})\b"
+    ),
+    re.compile(  # 4+2+2+2: 0412 12 34 56
+        r"\b(0[1-9]\d{2}" + _P + r"\d{2}" + _P + r"\d{2}" + _P + r"\d{2})\b"
+    ),
+    re.compile(  # 4+3+3: 0412 123 456
+        r"\b(0[1-9]\d{2}" + _P + r"\d{3}" + _P + r"\d{3})\b"
+    ),
+    re.compile(r"\b(06[\s.\-]?\d{8})\b"),  # mobile compact
+    re.compile(  # mobile grouped: 06 1234 5678
+        r"\b(06" + _P + r"\d{4}" + _P + r"\d{4})\b"
+    ),
+    re.compile(  # mobile spaced: 06 12 34 56 78
+        r"\b(06" + _P + r"\d{2}" + _P + r"\d{2}" + _P + r"\d{2}" + _P + r"\d{2})\b"
+    ),
     # International mobile: +31 6 12345678, +316-12345678, +31612345678
     re.compile(r"(?<!\w)(\+31[-\s]?6[-\s]?\d{8})(?!\w)"),
     # International mobile with (0): +31(0)6 12345678, +31(0)6 33 92 14 78
