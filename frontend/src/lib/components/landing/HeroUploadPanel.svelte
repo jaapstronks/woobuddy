@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { Mail, Users, FileText as FileTextIcon, RotateCw } from 'lucide-svelte';
+	import { Mail, Users, FileText as FileTextIcon, RotateCw, ArrowRight } from 'lucide-svelte';
 	import FileUpload from '$lib/components/shared/FileUpload.svelte';
 	import ProgressSteps, { type Step } from '$lib/components/shared/ProgressSteps.svelte';
 	import OcrOptInDialog from './OcrOptInDialog.svelte';
@@ -154,7 +154,7 @@
 	}
 </script>
 
-<div id="try" class="fade-in-up lg:pt-2" style="animation-delay: 320ms;">
+<div id="try" class="fade-in-up" style="animation-delay: 480ms;">
 	{#if uploadError}
 		<div class="mb-4 rounded-md border border-danger/30 bg-danger/5 p-4 text-sm text-danger">
 			<p>{uploadError}</p>
@@ -172,84 +172,110 @@
 
 	{#if !hydrated}
 		<!-- SSR placeholder that mirrors the drop zone shape so the page
-		     doesn't jump on hydration. -->
+		     doesn't jump on hydration. Height matches the hydrated dropzone
+		     so the SSR paint aligns with the samples list on its right. -->
 		<div
-			class="flex flex-col items-center justify-center rounded-md border border-dashed border-border-strong bg-surface px-8 py-14"
+			class="flex min-h-[14rem] flex-col items-center justify-center rounded-md border border-dashed border-border-strong bg-surface px-8 py-14"
 		>
-			<span class="font-serif text-xl text-ink">Sleep een PDF hierheen</span>
+			<span class="font-serif text-xl text-ink">Sleep een PDF in je browser</span>
 			<span class="mt-1 text-sm text-ink-soft">of klik om te bladeren · max. 50 MB</span>
+			<span
+				class="mt-5 inline-flex items-center gap-1.5 rounded-full border border-border bg-bg px-2.5 py-1 text-[11px] font-medium text-ink-soft"
+			>
+				Blijft op je apparaat — geen upload
+			</span>
 		</div>
 	{:else if !uploading}
-		<FileUpload onfiles={handleFiles} />
+		<!-- Two-column split: dropzone on the left, sample documents stacked
+		     vertically on the right. On mobile both collapse to a single
+		     stack so the dropzone is the first thing a reviewer touches. -->
+		<div class="grid gap-6 lg:grid-cols-[1.1fr_1fr] lg:gap-8">
+			<!-- Left: dropzone + conditional Detecteer button. -->
+			<div class="upload-panel-dropzone flex flex-col">
+				<FileUpload onfiles={handleFiles} />
 
-		{#if files.length > 0 && !canRetryAnalyze}
-			<button
-				onclick={handleUpload}
-				class="detect-cta group relative mt-4 w-full overflow-hidden rounded-md bg-ink px-6 py-4 text-base font-medium text-bg shadow-sm transition-all duration-300 ease-out hover:-translate-y-0.5 hover:bg-primary hover:shadow-lg hover:shadow-primary/30 active:translate-y-0 active:scale-[0.985] active:duration-75"
-			>
-				<!-- Shine sweep on hover -->
-				<span
-					class="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full"
-					aria-hidden="true"
-				></span>
-				<span class="relative z-10 inline-flex items-center justify-center gap-2">
-					Detecteer persoonsgegevens
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="18"
-						height="18"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						class="transition-transform duration-300 group-hover:translate-x-0.5"
-						aria-hidden="true"
+				{#if files.length > 0 && !canRetryAnalyze}
+					<button
+						onclick={handleUpload}
+						class="detect-cta group relative mt-4 w-full overflow-hidden rounded-md bg-ink px-6 py-4 text-base font-medium text-bg shadow-sm transition-all duration-300 ease-out hover:-translate-y-0.5 hover:bg-primary hover:shadow-lg hover:shadow-primary/30 active:translate-y-0 active:scale-[0.985] active:duration-75"
 					>
-						<path d="M5 12h14" />
-						<path d="m12 5 7 7-7 7" />
-					</svg>
-				</span>
-			</button>
-		{/if}
-
-		<!-- Zero-friction path: click a fictional sample instead of
-		     having to find a real document first. -->
-		<div class="mt-6">
-			<div class="mb-3 flex items-baseline justify-between gap-4">
-				<h2 class="text-xs font-medium tracking-wide text-ink-soft uppercase">
-					Geen document bij de hand?
-				</h2>
-				<span class="text-xs text-ink-mute">100% fictieve data</span>
-			</div>
-			<ul class="grid gap-2 sm:grid-cols-3">
-				{#each SAMPLES as sample (sample.id)}
-					{@const Icon = SAMPLE_ICONS[sample.id]}
-					{@const isLoading = loadingSampleId === sample.id}
-					<li>
-						<button
-							type="button"
-							onclick={() => loadSample(sample)}
-							disabled={loadingSampleId !== null}
-							class="group flex h-full w-full flex-col items-start gap-1.5 rounded-md border border-border bg-surface p-3 text-left transition-colors hover:border-primary/60 hover:bg-bg disabled:cursor-not-allowed disabled:opacity-60"
-						>
-							<span
-								class="inline-flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary"
+						<!-- Shine sweep on hover -->
+						<span
+							class="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full"
+							aria-hidden="true"
+						></span>
+						<span class="relative z-10 inline-flex items-center justify-center gap-2">
+							Detecteer persoonsgegevens
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								width="18"
+								height="18"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								class="transition-transform duration-300 group-hover:translate-x-0.5"
+								aria-hidden="true"
 							>
-								<Icon size={14} />
-							</span>
-							<span class="text-sm font-medium text-ink">{sample.title}</span>
-							<span class="text-[11px] leading-snug text-ink-soft">
-								{sample.description}
-							</span>
-							<span class="mt-auto pt-1 text-[11px] font-medium text-primary group-hover:underline">
-								{isLoading ? 'Voorbeeld laden…' : 'Open voorbeeld →'}
-							</span>
-						</button>
-					</li>
-				{/each}
-			</ul>
+								<path d="M5 12h14" />
+								<path d="m12 5 7 7-7 7" />
+							</svg>
+						</span>
+					</button>
+				{/if}
+			</div>
+
+			<!-- Right: sample document list. Zero-friction path — click a
+			     fictional sample instead of having to find a real document. -->
+			<div class="upload-panel-samples flex flex-col">
+				<div class="mb-3 flex items-baseline justify-between gap-4">
+					<h2 class="text-xs font-medium tracking-wide text-ink-soft uppercase">
+						Geen document bij de hand?
+					</h2>
+					<span class="text-xs text-ink-mute">100% fictieve data</span>
+				</div>
+				<ul class="flex flex-col gap-2">
+					{#each SAMPLES as sample (sample.id)}
+						{@const Icon = SAMPLE_ICONS[sample.id]}
+						{@const isLoading = loadingSampleId === sample.id}
+						<li>
+							<button
+								type="button"
+								onclick={() => loadSample(sample)}
+								disabled={loadingSampleId !== null}
+								class="group flex w-full items-start gap-3 rounded-md border border-border bg-surface p-3 text-left transition-colors hover:border-primary/60 hover:bg-bg disabled:cursor-not-allowed disabled:opacity-60"
+							>
+								<span
+									class="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"
+								>
+									<Icon size={15} />
+								</span>
+								<span class="flex min-w-0 flex-1 flex-col gap-0.5">
+									<span class="text-sm font-medium text-ink">{sample.title}</span>
+									<span class="text-xs leading-snug text-ink-soft">
+										{sample.description}
+									</span>
+								</span>
+								<span
+									class="mt-1 shrink-0 text-xs font-medium text-primary"
+									aria-hidden={!isLoading}
+								>
+									{#if isLoading}
+										Laden…
+									{:else}
+										<ArrowRight
+											size={15}
+											class="transition-transform duration-200 group-hover:translate-x-0.5"
+										/>
+									{/if}
+								</span>
+							</button>
+						</li>
+					{/each}
+				</ul>
+			</div>
 		</div>
 	{:else}
 		<div class="rounded-md border border-border bg-surface px-8 py-8">

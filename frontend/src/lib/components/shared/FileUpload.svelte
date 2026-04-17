@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Upload, FileText, X } from 'lucide-svelte';
+	import { FileDown, FileText, Lock, X } from 'lucide-svelte';
 
 	let {
 		accept = '.pdf',
@@ -79,11 +79,11 @@
 	}
 </script>
 
-<div class="space-y-3">
+<div class="flex h-full flex-col gap-3">
 	<!-- Drop zone -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="drop-zone flex cursor-pointer flex-col items-center justify-center rounded-md border border-dashed px-8 py-14 transition-all duration-200 ease-out
+		class="drop-zone flex min-h-[14rem] flex-1 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed px-8 py-14 transition-all duration-200 ease-out
 			{dragging
 			? 'border-primary bg-primary-soft scale-[1.015]'
 			: 'border-border-strong bg-surface breathe-pulse hover:border-primary hover:bg-primary-soft/40'}"
@@ -95,11 +95,23 @@
 		role="button"
 		tabindex="0"
 	>
-		<Upload size={32} class={dragging ? 'text-primary' : 'text-ink-mute'} strokeWidth={1.5} />
+		<FileDown size={32} class={dragging ? 'text-primary' : 'text-ink-mute'} strokeWidth={1.5} />
 		<span class="mt-4 font-serif text-xl {dragging ? 'text-primary' : 'text-ink'}">
-			Sleep {multiple ? "PDF's" : 'een PDF'} hierheen
+			Sleep {multiple ? "PDF's" : 'een PDF'} in je browser
 		</span>
 		<span class="mt-1 text-sm text-ink-soft">of klik om te bladeren · max. {maxSizeMb} MB</span>
+
+		<!-- Trust micro-line. The dashed border + "Sleep...hierheen" pattern is
+		     universally read as "upload target", which is the opposite of what
+		     WOO Buddy does. Putting the reassurance inside the zone answers
+		     the "wait, is this sending my PDF somewhere?" question at the
+		     exact moment the reviewer is about to drop a file. -->
+		<span
+			class="mt-5 inline-flex items-center gap-1.5 rounded-full border border-border bg-bg px-2.5 py-1 text-[11px] font-medium text-ink-soft"
+		>
+			<Lock size={11} class="text-primary" strokeWidth={2} />
+			Blijft op je apparaat — geen upload
+		</span>
 	</div>
 
 	<input
