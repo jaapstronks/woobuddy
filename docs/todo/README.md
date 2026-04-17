@@ -122,6 +122,8 @@ Once the core loop works, make it feel great **and** get it in front of real use
 | 48 | [Accessible PDF export (lang tag, XMP, alt text, PDF/A-2b)](48-accessible-pdf-export.md) | P1 | M | Accessibility plan 2026-04 |
 | 49 | ~~[In-browser OCR for scanned PDFs (tesseract.js)](done/49-in-browser-ocr.md)~~ | P2 | M | Multi-format support 2026-04 |
 | 50 | [Anonymous analyze: no server persistence](50-anonymous-no-persist.md) | P1 | L | Trust story vs current persistence |
+| 51 | [Microsoft 365 / Google Drive file picker (client-side)](51-microsoft-google-file-picker.md) | P1 | L | Competitor landscape 2026-04 |
+| 52 | [DiWoo / TOOI publication metadata export](52-diwoo-publication-metadata-export.md) | P2 | M | Competitor landscape 2026-04 |
 
 Launch when all P1s in this phase are green. That is the "Phase D milestone" below.
 
@@ -147,6 +149,7 @@ Triggered by the Phase D decision gate. The ordering here reflects the real depe
 | 33 | [Organizations & data scoping](33-organizations.md) | P0 (once triggered) | L | Auth & Billing |
 | 34 | [Roles & permissions](34-roles-permissions.md) | P1 | M | Auth & Billing |
 | 36 | [Member management & invitations](36-member-management.md) | P1 | M | Auth & Billing |
+| 53 | [Dossier / multi-document mode (spike + first slice)](53-dossier-multi-document-mode.md) | P1 (once triggered) | XL | Competitor landscape 2026-04 |
 
 ## Phase F — Draft workflow & export enhancements (for paying team pilots)
 
@@ -163,6 +166,11 @@ Concept export (#29) is the one arguable exception: the watermark prevents accid
 | 29 | [Concept export with watermark](29-concept-export.md) | P3 | S | Draft Workflow |
 | 30 | [Redaction map generation](30-redaction-map.md) | P3 | M | Draft Workflow |
 | 31 | [Redaction inventory (CSV/XLSX)](31-redaction-inventory.md) | P3 | S | Draft Workflow |
+| 54 | [Cross-document deduplication](54-cross-document-deduplication.md) | P2 | M | Competitor landscape 2026-04 |
+| 55 | [Cross-document name propagation](55-cross-document-name-propagation.md) | P2 | M | Competitor landscape 2026-04 |
+| 56 | [Belanghebbenden-consultation workflow (art. 4.4)](56-belanghebbenden-consultation.md) | P2 | M | Competitor landscape 2026-04 |
+| 57 | [Public-official registry sync (shared org lists)](57-public-official-registry-sync.md) | P2 | M | Competitor landscape 2026-04 |
+| 58 | [Woo-jaarverslag / reporting dashboard](58-woo-jaarverslag-dashboard.md) | P3 | M | Competitor landscape 2026-04 |
 
 ## Phase G — Monetization (only after 1–3 manual-invoice pilots)
 
@@ -173,6 +181,7 @@ Don't integrate a payment processor before someone says "take my money." A manua
 | 37 | [Mollie billing integration](37-mollie-billing.md) | P2 (post-pilots) | XL | Auth & Billing |
 | 38 | [Email service (transactional)](38-email-service.md) | P2 | M | Testing & Polish |
 | 42 | [Microsoft SSO & 2FA](42-sso-2fa.md) | P3 (sales-driven) | M | Auth & Billing |
+| 59 | [Zaaksysteem connectors (plugin architecture)](59-zaaksysteem-connectors.md) | P3 (sales-driven) | L | Competitor landscape 2026-04 |
 
 ---
 
