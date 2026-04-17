@@ -19,7 +19,7 @@
 			icon: Download,
 			title: 'Download de gelakte PDF',
 			description:
-				'PyMuPDF lakt onomkeerbaar in het geheugen en streamt de PDF terug. Je origineel raakt nooit een schijf.'
+				'Het lakken is onomkeerbaar: de gemarkeerde tekst wordt uit de PDF verwijderd, niet alleen afgedekt. Je document wordt tijdens het lakken in het geheugen verwerkt en direct teruggestuurd — niets blijft achter.'
 		}
 	];
 </script>

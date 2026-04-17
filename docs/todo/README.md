@@ -122,8 +122,9 @@ Once the core loop works, make it feel great **and** get it in front of real use
 | 48 | [Accessible PDF export (lang tag, XMP, alt text, PDF/A-2b)](48-accessible-pdf-export.md) | P1 | M | Accessibility plan 2026-04 |
 | 49 | ~~[In-browser OCR for scanned PDFs (tesseract.js)](done/49-in-browser-ocr.md)~~ | P2 | M | Multi-format support 2026-04 |
 | 50 | [Anonymous analyze: no server persistence](50-anonymous-no-persist.md) | P1 | L | Trust story vs current persistence |
-| 51 | [Microsoft 365 / Google Drive file picker (client-side)](51-microsoft-google-file-picker.md) | P1 | L | Competitor landscape 2026-04 |
+| 51 | ~~[Microsoft 365 / Google Drive file picker (client-side)](done/51-microsoft-google-file-picker.md)~~ | P1 | L | Competitor landscape 2026-04 |
 | 52 | [DiWoo / TOOI publication metadata export](52-diwoo-publication-metadata-export.md) | P2 | M | Competitor landscape 2026-04 |
+| 60 | [Client-side PDF redaction (remove export server-touch)](60-client-side-export.md) | P2 | M–L | Trust-claim correctness 2026-04 |
 
 Launch when all P1s in this phase are green. That is the "Phase D milestone" below.
 

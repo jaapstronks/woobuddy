@@ -1,6 +1,30 @@
 <script lang="ts">
-	import { Lock, EyeOff, CircleSlash } from 'lucide-svelte';
+	import { Lock, EyeOff, CircleSlash, Cloud } from 'lucide-svelte';
 	import HeroUploadPanel from './HeroUploadPanel.svelte';
+	import { anyPickerEnabled } from '$lib/config/file-picker';
+
+	const cloudPickEnabled = anyPickerEnabled();
+
+	const chips = [
+		{ icon: Lock, label: 'Geen byte verlaat je computer' },
+		{ icon: CircleSlash, label: 'Geen AI of LLM in de pijplijn' },
+		{ icon: EyeOff, label: 'Geen trackers, geen cookies' },
+		...(cloudPickEnabled
+			? [{ icon: Cloud, label: 'Direct uit SharePoint of Drive — zonder tussenstop' }]
+			: [])
+	];
+
+	let videoEl: HTMLVideoElement | undefined = $state();
+
+	$effect(() => {
+		if (!videoEl) return;
+		const prefersReducedMotion = window.matchMedia(
+			'(prefers-reduced-motion: reduce)'
+		).matches;
+		if (!prefersReducedMotion) {
+			videoEl.play().catch(() => {});
+		}
+	});
 </script>
 
 <section class="hero-section relative overflow-hidden px-6 pt-28 pb-20 sm:pt-32">
@@ -14,7 +38,7 @@
 
 	<div class="mx-auto max-w-6xl">
 		<div
-			class="grid grid-cols-1 items-center gap-12 lg:grid-cols-[1.1fr_1fr] lg:gap-10"
+			class="grid grid-cols-1 items-center gap-12 lg:grid-cols-[0.85fr_1.15fr] lg:gap-10"
 		>
 			<!-- Left: headline + subhead + privacy chips -->
 			<div class="hero-text">
@@ -38,24 +62,14 @@
 					class="fade-in-up mt-8 flex flex-wrap gap-2.5"
 					style="animation-delay: 240ms;"
 				>
-					<li
-						class="inline-flex items-center gap-2 rounded-md border border-border bg-surface/80 px-3 py-1.5 text-xs text-ink backdrop-blur-sm"
-					>
-						<Lock size={13} class="text-primary" />
-						<span>Geen byte verlaat je computer</span>
-					</li>
-					<li
-						class="inline-flex items-center gap-2 rounded-md border border-border bg-surface/80 px-3 py-1.5 text-xs text-ink backdrop-blur-sm"
-					>
-						<CircleSlash size={13} class="text-primary" />
-						<span>Geen AI of LLM in de pijplijn</span>
-					</li>
-					<li
-						class="inline-flex items-center gap-2 rounded-md border border-border bg-surface/80 px-3 py-1.5 text-xs text-ink backdrop-blur-sm"
-					>
-						<EyeOff size={13} class="text-primary" />
-						<span>Geen trackers, geen cookies</span>
-					</li>
+					{#each chips as chip}
+						<li
+							class="inline-flex items-center gap-2 rounded-md border border-border bg-surface/80 px-3 py-1.5 text-xs text-ink backdrop-blur-sm transition-colors duration-200 hover:border-primary/40 hover:bg-surface"
+						>
+							<chip.icon size={13} class="text-primary" />
+							<span>{chip.label}</span>
+						</li>
+					{/each}
 				</ul>
 			</div>
 
@@ -64,18 +78,23 @@
 			     PNG already includes its own drop shadow; section has
 			     overflow-hidden so the bleed never introduces horizontal scroll. -->
 			<figure
-				class="hero-mockup fade-in-up relative lg:-mr-16 xl:-mr-28"
+				class="hero-mockup fade-in-up relative lg:-mr-24 xl:-mr-40"
 				style="animation-delay: 360ms;"
 			>
-				<img
-					src="/mockup.png"
-					alt="Screenshot van de WOO Buddy review-interface met gelakte tekstpassages en een zijbalk met gedetecteerde persoonsgegevens."
-					width="2151"
-					height="1312"
-					loading="eager"
-					decoding="async"
-					class="mx-auto h-auto w-full lg:max-w-none lg:w-[115%] xl:w-[125%]"
-				/>
+				<video
+					bind:this={videoEl}
+					poster="/mockup.png"
+					muted
+					loop
+					playsinline
+					preload="metadata"
+					width="1800"
+					height="1168"
+					aria-label="Demonstratie van de WOO Buddy review-interface: persoonsgegevens worden met één klik zwart gelakt."
+					class="mx-auto h-auto w-full lg:max-w-none lg:w-[125%] xl:w-[140%]"
+				>
+					<source src="/woobuddy-demo.mp4" type="video/mp4" />
+				</video>
 			</figure>
 		</div>
 

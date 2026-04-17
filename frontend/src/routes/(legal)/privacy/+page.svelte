@@ -55,7 +55,19 @@
 	gebruiken is volledig mogelijk — de landing page en de review-omgeving werken zonder registratie.
 </p>
 
-<h3>2.4 Technische logs</h3>
+<h3>2.4 Kiezen uit SharePoint, OneDrive of Google Drive</h3>
+<p>
+	Als je een bestand kiest uit Microsoft 365 (SharePoint/OneDrive) of Google Drive, meld je je
+	aan bij die provider in je eigen browser. WOO Buddy ontvangt <strong>geen</strong> inloggegevens
+	en krijgt <strong>geen</strong> toegang tot je hele drive — we vragen alleen toestemming om
+	precies het ene bestand dat je kiest te openen (scope <code>Files.Read</code> bij Microsoft,
+	<code>drive.file</code> bij Google). Het bestand wordt vervolgens rechtstreeks vanuit
+	Microsoft of Google in je browser geladen via een tijdelijke, door de provider ondertekende
+	link. De inhoud passeert onze servers niet. Het OAuth-token staat alleen in het geheugen van
+	je browsertab en verdwijnt zodra je het tabblad sluit.
+</p>
+
+<h3>2.5 Technische logs</h3>
 <p>
 	De server houdt minimale toegangslogs bij (tijdstip, endpoint, statuscode) voor stabiliteit en
 	beveiliging. Verzoekinhoud op <code>/api/analyze</code> en <code>/api/export/redact</code> wordt
@@ -94,6 +106,12 @@
 	<li><strong>Hosting:</strong> Hetzner (Duitsland/Finland, binnen de EER).</li>
 	<li><strong>E-mail (transactioneel):</strong> Postmark of gelijkwaardig — alleen adressen, nooit documentinhoud.</li>
 	<li><strong>Analytics:</strong> Plausible (zonder cookies, zonder persoonsgegevens).</li>
+	<li>
+		<strong>Microsoft / Google (optioneel):</strong> alleen als je zelf voor "Uit SharePoint of
+		OneDrive" of "Uit Google Drive" kiest. Je authenticeert rechtstreeks bij die provider in je
+		eigen browser; wij krijgen nooit je wachtwoord of iets anders dan toestemming om één bestand
+		op te halen.
+	</li>
 </ul>
 <p>
 	<strong>Geen taalmodel-leverancier.</strong> WOO Buddy gebruikt geen LLM in de detectiepijplijn —
