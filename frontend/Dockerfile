@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM node:22-alpine AS build
+FROM node:25-alpine AS build
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ ENV PUBLIC_API_URL=$PUBLIC_API_URL
 RUN npm run build
 
 # Stage 2: Run
-FROM node:22-alpine
+FROM node:25-alpine
 
 WORKDIR /app
 
