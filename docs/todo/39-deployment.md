@@ -1,50 +1,37 @@
 # 39 — Deployment Setup
 
 - **Priority:** P2
-- **Size:** M (1–3 days)
+- **Size:** S (remaining work — initial setup is done)
 - **Source:** Testing & Polish briefing, Section 5
-- **Depends on:** #01 (Testing — CI should exist before CD), #32 (Auth)
+- **Depends on:** #01 (done)
 - **Blocks:** Nothing
 
-## Why
+## Status
 
-The app needs to be accessible on the internet for real users. Deployment infrastructure must be set up before launch.
+The hosted instance at <https://woobuddy.nl> is **live**, served from a Hetzner cx23 in `fsn1` (Falkenstein, DE) via Caddy + docker-compose. Provision and deploy are scripted in [`deploy/`](../../deploy/) — see [`deploy/README.md`](../../deploy/README.md) for the operator documentation.
 
-## Scope
+What's done:
 
-### Hosting platform
+- [x] Hosting platform chosen — Hetzner Cloud (EU, simple, ~€5/month). Not Railway/Fly because the cost story is "essentially zero" and we wanted full root on a single VPS, not a PaaS.
+- [x] Two services running (`frontend`, `api`) plus `postgres:16-alpine`, all behind Caddy. No managed Postgres — overkill for current load and rules out an extra DPA.
+- [x] No S3/MinIO. Confirmed: client-first means the only persistent state is Postgres metadata.
+- [x] Hosting region documented as EU-only in the privacy policy.
+- [x] Domain registered (`woobuddy.nl` via TransIP), DNS A-records managed by `provision.sh`.
+- [x] TLS via Let's Encrypt, automatic via Caddy.
+- [x] Production environment variables documented (see [`deploy/README.md`](../../deploy/README.md) and [`.env.example`](../../.env.example)) and stored in 1Password.
+- [x] Manual deploy flow — `op run --env-file=.env -- ./deploy/deploy.sh`.
 
-- [ ] Choose between Railway (simplest) and Fly.io (EU regions, more control)
-- [ ] Configure two services: SvelteKit (Node.js adapter) + FastAPI
-- [ ] Managed PostgreSQL addon
-- [ ] **No S3/MinIO needed for document storage** — under client-first architecture, PDFs never leave the browser. The only server-side storage is PostgreSQL for metadata. If temporary artifact storage is needed (e.g., dossier ZIP assembly), use ephemeral local storage or a small S3 bucket with auto-expiry.
+## Still open
 
-### Hosting cost profile
-
-- [ ] **No GPU, no LLM inference, no model hosting.** The pipeline is regex + Deduce NER + wordlists (CPU-bound, light). A small EU VPS (Hetzner CX22 or similar, ~€5–10/month) is sufficient for the hosted free tier; managed Postgres adds another ~€15/month. This is what makes the generous free tier in #37 viable.
-- [ ] EU region only (Hetzner FSN/NBG, Fly.io AMS/FRA, Railway EU). Document hosting region in the privacy policy (#40).
-- [ ] If the dormant LLM layer is ever revived behind its feature flag, GPU hosting becomes a separate cost decision — not part of the default deployment.
-
-### Domain & DNS
-
-- [ ] Register `woobuddy.nl` (Dutch registrar)
-- [ ] Point DNS to hosting platform
-- [ ] SSL via Let's Encrypt (platform-managed)
-
-### CI/CD
-
-- [ ] GitHub Actions workflow: test → build → deploy on push to main
-- [ ] Staging environment for pre-production testing
-
-### Environment management
-
-- [ ] Production environment variables documented and securely stored
-- [ ] Separate dev/staging/production configs
+- [ ] **Scheduled off-VPS Postgres backups.** Today there's only `pgdata` on the VPS volume. A weekly `pg_dump` to Hetzner Storage Box (or equivalent) is the next step. Document the restore procedure once it exists.
+- [ ] **CI/CD: deploy on push to `main`.** Tests already run on every PR (`.github/workflows/test.yml`); the deploy step itself is still manual. See [`deploy/README.md`](../../deploy/README.md) → "Should we automate this?" for the recommendation (defer until either the team grows or we have a paying customer; require backups + smoke test + staging first).
+- [ ] **Staging environment.** A second cx22 (~€4/month) running the latest `main` continuously, so we can shake out regressions before the prod cut. Cheap, but only worth setting up once auto-deploy lands.
+- [ ] **Post-deploy smoke test.** A scripted check that `/`, `/try`, `/review/<known-doc>`, and `/api/health` all return 200 within 60s of a deploy. Required before auto-deploy is safe.
 
 ## Acceptance Criteria
 
-- App is accessible at `woobuddy.nl` with HTTPS
-- Deployments happen automatically on push to main
-- Database is backed up on a schedule
-- Hosting region is EU-only and documented in the privacy policy
-- No PDF storage in cloud object storage (PDFs stay in the browser, per #00)
+- App is accessible at `woobuddy.nl` with HTTPS — **done**
+- Deployments happen automatically on push to main — **deferred**, see open list
+- Database is backed up on a schedule — **open**
+- Hosting region is EU-only and documented in the privacy policy — **done**
+- No PDF storage in cloud object storage — **done** (architecturally enforced by #00)
