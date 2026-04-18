@@ -78,3 +78,63 @@ This is also a Team-tier marketing asset: "Haal uw document rechtstreeks uit Sha
 
 - Do we want a "recently picked" client-side history (IndexedDB of file names + provider) to speed up repeat reviews? Nice-to-have; out of V1.
 - MSAL popup vs redirect flow — popup is better UX on desktop but some IT policies block popups. Start with popup, fall back to redirect if `window.open` returns null.
+
+## Implementation (2026-04-17)
+
+- New `frontend/src/lib/services/file-picker/` module with a
+  provider-agnostic `pickFromProvider()` entry point. Each provider
+  (`microsoft.ts`, `google.ts`) loads its SDK on demand from the
+  provider's own CDN (via `script-loader.ts`) so the landing page
+  doesn't ship vendor bundles unless a reviewer actually uses a
+  picker. Shared types in `types.ts`; Plausible-friendly analytics
+  in `analytics.ts` (no-ops if Plausible isn't loaded).
+- Microsoft implementation speaks the Graph File Picker v8
+  protocol end to end: MSAL.js popup login → `GET /me/drive` to
+  discover the user's SharePoint/OneDrive host → popup + form POST
+  to `/_layouts/15/FilePicker.aspx` → postMessage/MessageChannel
+  handshake → pre-signed `@microsoft.graph.downloadUrl` download.
+  Scopes: `openid profile User.Read Files.Read Files.Read.All`,
+  strictly delegated (no `.All` app-level scopes, no
+  `Sites.Read.All`).
+- Google implementation uses GIS token-client + `gapi.picker`,
+  scope `drive.file` (the narrowest scope Drive supports; users
+  only expose the single file they pick). Bytes flow direct from
+  `www.googleapis.com/drive/v3/files/{id}?alt=media`.
+- Feature flags are env-var based (`PUBLIC_MS_PICKER_CLIENT_ID`,
+  `PUBLIC_MS_PICKER_AUTHORITY`, `PUBLIC_GOOGLE_PICKER_CLIENT_ID`,
+  `PUBLIC_GOOGLE_PICKER_API_KEY`, `PUBLIC_GOOGLE_PICKER_APP_ID`).
+  A button only renders when its config is complete, so the hosted
+  tier can enable Microsoft first and Google later — and self-host
+  deployments without registrations simply don't see the buttons.
+- UI: new `ProviderPickerButtons.svelte` renders below the drop
+  zone inside `FileUpload.svelte` when `showProviderPickers` is
+  set. The hero panel opts in. Three entry points visually: the
+  existing drag-drop zone, plus a Microsoft and Google button (side
+  by side on desktop, stacked on mobile). The button strip shows
+  its own auth→download progress and the trust line "passeert onze
+  servers niet" during transfer. Consent errors surface a tailored
+  "vraag uw ICT-beheerder" message rather than a raw OAuth stack.
+- Trust copy: added "Direct uit SharePoint of Drive — zonder
+  tussenstop" chip to the hero (only when a picker is enabled) and
+  a new section 2.4 + shared-processors entry on the
+  privacy-verklaring explaining the OAuth scopes and the
+  no-server-touch guarantee.
+- CSP (`svelte.config.js`) extended with provider CDNs under
+  `script-src`, provider token/download origins under `connect-src`,
+  and picker-iframe origins under `frame-src`. Conservative: every
+  host is a well-known Microsoft or Google origin.
+- Network isolation enforced by
+  `src/lib/services/file-picker/network-isolation.test.ts`:
+  - Source scan asserts no picker file imports `$lib/api/client`
+    or references `PUBLIC_API_URL`.
+  - Runtime test stubs the Google SDK and spies on `fetch`,
+    exercising the full pick-and-download happy path and asserting
+    every URL touched is on `googleapis.com` — never on the WOO
+    Buddy origin.
+- Self-host docs: `docs/self-hosting/file-picker.md` covers Azure
+  AD + Google Cloud setup step by step, including the
+  admin-consent URL format for gemeente IT and the explicit rule
+  that self-hosters must create their own app registrations (we
+  don't share the hosted tier's client IDs).
+- Nothing backend. No new endpoint, no token proxy, no server-side
+  download. If that changed the design would be wrong.

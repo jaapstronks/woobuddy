@@ -192,7 +192,7 @@
 		<div class="grid gap-6 lg:grid-cols-[1.1fr_1fr] lg:gap-8">
 			<!-- Left: dropzone + conditional Detecteer button. -->
 			<div class="upload-panel-dropzone flex flex-col">
-				<FileUpload onfiles={handleFiles} />
+				<FileUpload onfiles={handleFiles} showProviderPickers />
 
 				{#if files.length > 0 && !canRetryAnalyze}
 					<button

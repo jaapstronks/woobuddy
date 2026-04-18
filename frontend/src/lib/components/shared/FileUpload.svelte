@@ -1,16 +1,27 @@
 <script lang="ts">
 	import { FileDown, FileText, Lock, X } from 'lucide-svelte';
+	import ProviderPickerButtons from './ProviderPickerButtons.svelte';
 
 	let {
 		accept = '.pdf',
 		maxSizeMb = 50,
 		multiple = false,
-		onfiles
+		onfiles,
+		/**
+		 * Show the SharePoint / Drive picker buttons below the drop
+		 * zone. Only renders buttons for providers that are actually
+		 * configured (see `$lib/config/file-picker.ts`). Defaults to
+		 * false so embedders that don't want the extra surface —
+		 * e.g. places where a picked file wouldn't make sense — can
+		 * opt out.
+		 */
+		showProviderPickers = false
 	}: {
 		accept?: string;
 		maxSizeMb?: number;
 		multiple?: boolean;
 		onfiles: (files: File[]) => void;
+		showProviderPickers?: boolean;
 	} = $props();
 
 	let dragging = $state(false);
@@ -77,6 +88,10 @@
 	function openPicker() {
 		inputEl?.click();
 	}
+
+	function handleProviderPick(file: File) {
+		handleFiles([file]);
+	}
 </script>
 
 <div class="flex h-full flex-col gap-3">
@@ -122,6 +137,10 @@
 		style="display: none;"
 		onchange={handleInputChange}
 	/>
+
+	{#if showProviderPickers}
+		<ProviderPickerButtons onfile={handleProviderPick} />
+	{/if}
 
 	<!-- Error -->
 	{#if error}

@@ -1,5 +1,9 @@
 # CLAUDE.md — WOO Buddy
 
+## Project ownership
+
+WOO Buddy is a **personal side project** by Jaap Stronks and Jeroen Hammer. It is **not** a CIIIC project, even though Jaap works at CIIIC day-to-day. Don't attribute ownership, hosting, billing, or OAuth app registrations to CIIIC in any artifact (code, docs, todos, Notion, domain config, app registrations). "The team" / "us" in internal notes means Jaap + Jeroen. The hosted tier at woobuddy.nl is operated by them personally.
+
 ## Project overview
 
 WOO Buddy helps Dutch government employees redact privacy-sensitive information in Woo (Wet open overheid) documents. It uses a three-tier detection model where each tier has different detection methods, confidence levels, and UX patterns.
