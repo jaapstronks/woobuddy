@@ -15,13 +15,7 @@
  * and WOO Buddy's hosted tier can ship Microsoft first and Google
  * later without a code change.
  */
-import {
-	PUBLIC_MS_PICKER_CLIENT_ID,
-	PUBLIC_MS_PICKER_AUTHORITY,
-	PUBLIC_GOOGLE_PICKER_CLIENT_ID,
-	PUBLIC_GOOGLE_PICKER_API_KEY,
-	PUBLIC_GOOGLE_PICKER_APP_ID
-} from '$env/static/public';
+import { env } from '$env/dynamic/public';
 
 export type PickerProvider = 'microsoft' | 'google';
 
@@ -44,21 +38,22 @@ export interface GooglePickerConfig {
 	appId: string;
 }
 
-export const microsoftPickerConfig: MicrosoftPickerConfig | null =
-	PUBLIC_MS_PICKER_CLIENT_ID
-		? {
-				clientId: PUBLIC_MS_PICKER_CLIENT_ID,
-				authority:
-					PUBLIC_MS_PICKER_AUTHORITY || 'https://login.microsoftonline.com/common'
-			}
-		: null;
+export const microsoftPickerConfig: MicrosoftPickerConfig | null = env.PUBLIC_MS_PICKER_CLIENT_ID
+	? {
+			clientId: env.PUBLIC_MS_PICKER_CLIENT_ID,
+			authority:
+				env.PUBLIC_MS_PICKER_AUTHORITY || 'https://login.microsoftonline.com/common'
+		}
+	: null;
 
 export const googlePickerConfig: GooglePickerConfig | null =
-	PUBLIC_GOOGLE_PICKER_CLIENT_ID && PUBLIC_GOOGLE_PICKER_API_KEY && PUBLIC_GOOGLE_PICKER_APP_ID
+	env.PUBLIC_GOOGLE_PICKER_CLIENT_ID &&
+	env.PUBLIC_GOOGLE_PICKER_API_KEY &&
+	env.PUBLIC_GOOGLE_PICKER_APP_ID
 		? {
-				clientId: PUBLIC_GOOGLE_PICKER_CLIENT_ID,
-				apiKey: PUBLIC_GOOGLE_PICKER_API_KEY,
-				appId: PUBLIC_GOOGLE_PICKER_APP_ID
+				clientId: env.PUBLIC_GOOGLE_PICKER_CLIENT_ID,
+				apiKey: env.PUBLIC_GOOGLE_PICKER_API_KEY,
+				appId: env.PUBLIC_GOOGLE_PICKER_APP_ID
 			}
 		: null;
 
