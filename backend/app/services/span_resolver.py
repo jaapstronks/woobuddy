@@ -16,6 +16,132 @@ from app.services.pipeline_types import Bbox
 # that and we're looking at the next line.
 _SAME_LINE_TOL = 3.0
 
+# Approximate character advance widths for proportional Latin fonts,
+# expressed in 1/1000 em as per the PostScript Adobe Font Metrics (AFM)
+# convention. Values mirror Helvetica/Arial/Nimbus Sans — the overwhelming
+# majority of Dutch government PDFs ship in a Helvetica clone, so this
+# table is a close match in practice. Even for fonts that differ (Times,
+# DejaVu), the *relative* widths of common Latin glyphs are within a few
+# percent of these values, which is vastly better than the char-count
+# proportional assumption that they all behave as if the font were
+# monospace.
+#
+# Used by ``_narrow_bbox_to_substring`` to weight each character by its
+# expected width when slicing a sentence-length span down to the bbox of
+# a single detection. The pure char-count approach under-counted the
+# width of wide letters like m/w/M/V/D and over-counted narrow ones like
+# i/l/t, which in practice clipped the final 1–2 characters of names
+# such as "mevrouw De Vries" in both the overlay and the exported PDF.
+_DEFAULT_GLYPH_WIDTH = 500
+_GLYPH_WIDTHS: dict[str, int] = {
+    " ": 278,
+    "!": 278,
+    '"': 355,
+    "#": 556,
+    "$": 556,
+    "%": 889,
+    "&": 667,
+    "'": 191,
+    "(": 333,
+    ")": 333,
+    "*": 389,
+    "+": 584,
+    ",": 278,
+    "-": 333,
+    ".": 278,
+    "/": 278,
+    "0": 556,
+    "1": 556,
+    "2": 556,
+    "3": 556,
+    "4": 556,
+    "5": 556,
+    "6": 556,
+    "7": 556,
+    "8": 556,
+    "9": 556,
+    ":": 278,
+    ";": 278,
+    "<": 584,
+    "=": 584,
+    ">": 584,
+    "?": 556,
+    "@": 1015,
+    "A": 667,
+    "B": 667,
+    "C": 722,
+    "D": 722,
+    "E": 667,
+    "F": 611,
+    "G": 778,
+    "H": 722,
+    "I": 278,
+    "J": 500,
+    "K": 667,
+    "L": 556,
+    "M": 833,
+    "N": 722,
+    "O": 778,
+    "P": 667,
+    "Q": 778,
+    "R": 722,
+    "S": 667,
+    "T": 611,
+    "U": 722,
+    "V": 667,
+    "W": 944,
+    "X": 667,
+    "Y": 667,
+    "Z": 611,
+    "[": 278,
+    "\\": 278,
+    "]": 278,
+    "^": 469,
+    "_": 556,
+    "`": 333,
+    "a": 556,
+    "b": 556,
+    "c": 500,
+    "d": 556,
+    "e": 556,
+    "f": 278,
+    "g": 556,
+    "h": 556,
+    "i": 222,
+    "j": 222,
+    "k": 500,
+    "l": 222,
+    "m": 833,
+    "n": 556,
+    "o": 556,
+    "p": 556,
+    "q": 556,
+    "r": 333,
+    "s": 500,
+    "t": 278,
+    "u": 556,
+    "v": 500,
+    "w": 722,
+    "x": 500,
+    "y": 500,
+    "z": 500,
+    "{": 334,
+    "|": 260,
+    "}": 334,
+    "~": 584,
+}
+
+
+def _glyph_width(ch: str) -> int:
+    """Return the AFM-style advance width for ``ch``.
+
+    Unknown glyphs fall back to ``_DEFAULT_GLYPH_WIDTH`` (a plain
+    lowercase letter). Non-ASCII characters (accented Latin, curly
+    quotes, em-dashes) hit this fallback — close enough for the typical
+    Dutch text we see.
+    """
+    return _GLYPH_WIDTHS.get(ch, _DEFAULT_GLYPH_WIDTH)
+
 
 def _strip_ws(text: str) -> str:
     """Remove every whitespace character from ``text``.
@@ -94,29 +220,42 @@ def count_word_boundary_matches(
 
 
 def _narrow_bbox_to_substring(span: "TextSpan", match_idx: int, match_len: int) -> Bbox:
-    """Proportionally narrow a text span's bbox to the substring range
-    `[match_idx, match_idx + match_len)`.
+    """Narrow a text span's bbox to the substring range
+    ``[match_idx, match_idx + match_len)`` by weighting each character by
+    its expected glyph width.
 
-    pdf.js / PyMuPDF give us only the overall bbox of each text item, not
-    per-glyph positions, so we can't get the exact pixel offset of a
-    substring inside a longer item. We approximate by scaling linearly by
-    character count — a variable-width font means this is off by a few
-    pixels in practice, but that's far better than the alternative of
-    snapping the WHOLE text item's bbox (which, for a sentence-length
-    item, paints an entire paragraph line black when only a name should
-    be redacted).
+    pdf.js / PyMuPDF give us only the overall bbox of each text item,
+    not per-glyph positions. The naive "scale by character count"
+    approximation assumes every glyph is the same width, which for
+    proportional fonts systematically under- or over-shoots: a name like
+    "mevrouw De Vries" (wide m/w/V/D letters) embedded in a sentence
+    with lots of narrow i/t/e letters computes ~12pt short of the true
+    end position, clipping the final 1–2 characters in both the overlay
+    and the exported PDF.
 
-    If the substring covers the entire span we return the span's own
-    bbox verbatim so existing tests stay stable.
+    Weighting by ``_GLYPH_WIDTHS`` restores near-pixel accuracy for the
+    Helvetica/Arial/Nimbus Sans family that dominates government PDFs,
+    and stays well within a few points of truth for other Latin fonts.
+    When the substring covers the entire span we return the span's own
+    bbox verbatim so we don't accumulate rounding error on exact matches.
     """
-    total = len(span.text)
+    total_chars = len(span.text)
     # Degenerate case — no characters to scale against. Return the span's
     # own bbox so the caller gets a non-empty (if approximate) box.
-    if total == 0:
+    if total_chars == 0:
         return Bbox(page=span.page, x0=span.x0, y0=span.y0, x1=span.x1, y1=span.y1)
-    width = span.x1 - span.x0
-    x0 = span.x0 + width * (match_idx / total)
-    x1 = span.x0 + width * ((match_idx + match_len) / total)
+    # Exact-match fast path: avoid floating-point drift when the detection
+    # fills the span — downstream tests rely on this identity.
+    if match_idx == 0 and match_len == total_chars:
+        return Bbox(page=span.page, x0=span.x0, y0=span.y0, x1=span.x1, y1=span.y1)
+
+    widths = [_glyph_width(c) for c in span.text]
+    total_w = sum(widths) or 1
+    pre_w = sum(widths[:match_idx])
+    match_w = sum(widths[match_idx : match_idx + match_len])
+    span_w = span.x1 - span.x0
+    x0 = span.x0 + span_w * pre_w / total_w
+    x1 = span.x0 + span_w * (pre_w + match_w) / total_w
     return Bbox(page=span.page, x0=x0, y0=span.y0, x1=x1, y1=span.y1)
 
 
