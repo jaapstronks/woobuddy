@@ -183,6 +183,7 @@ Don't integrate a payment processor before someone says "take my money." A manua
 | 38 | [Email service (transactional)](38-email-service.md) | P2 | M | Testing & Polish |
 | 42 | [Microsoft SSO & 2FA](42-sso-2fa.md) | P3 (sales-driven) | M | Auth & Billing |
 | 59 | [Zaaksysteem connectors (plugin architecture)](59-zaaksysteem-connectors.md) | P3 (sales-driven) | L | Competitor landscape 2026-04 |
+| 61 | [Direct publish to open.overheid.nl (GPP-publicatiebank)](61-open-overheid-direct-publish.md) | P3 (sales-driven) | L | Transparency framing 2026-04 |
 
 ---
 
