@@ -24,6 +24,7 @@
 				<a href="/terms" class="hover:text-ink">Voorwaarden</a>
 				<a href="/cookies" class="hover:text-ink">Cookies</a>
 				<a href="/verwerkersovereenkomst" class="hover:text-ink">Verwerkersovereenkomst</a>
+				<a href="/roadmap" class="hover:text-ink">Roadmap</a>
 				<a
 					href="https://github.com/jaapstronks/woobuddy"
 					class="hover:text-ink"
