@@ -25,7 +25,7 @@ jobs:
       PUBLIC_API_URL: http://localhost:8000
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v4
         with:
@@ -67,7 +67,7 @@ jobs:
       TEST_DATABASE_URL: postgresql+asyncpg://woobuddy:woobuddy@localhost:5432/woobuddy_test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-python@v5
         with:
