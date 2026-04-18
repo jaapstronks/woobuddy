@@ -29,7 +29,7 @@
 	"dependencies": {
 		"@shoelace-style/shoelace": "^2.20.0",
 		"fflate": "^0.8.2",
-		"lucide-svelte": "^0.503.0",
+		"lucide-svelte": "^1.0.1",
 		"pdfjs-dist": "^4.10.38",
 		"tailwindcss": "^4.0.0",
 		"tesseract.js": "^5.1.1"
