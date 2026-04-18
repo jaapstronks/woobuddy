@@ -21,14 +21,18 @@ class Settings(BaseSettings):
     # in local development if the frontend calls the backend directly.
     proxy_shared_secret: str = ""
 
-    # Brevo (#45 — public lead capture). Contacts submitted through
-    # `POST /api/leads` are pushed straight into Brevo list `brevo_list_id`.
-    # Brevo is the system of record for the audience list; there is no
-    # dual-write to Postgres and no CSV export endpoint. Leave the API key
+    # Brevo (#45 — public lead capture). Every form submission fires a
+    # transactional email to `brevo_notification_email` so the operator
+    # actually reads the message. Newsletter subscription is a separate,
+    # optional opt-in: when the submitter ticks the checkbox we also
+    # push the contact into Brevo list `brevo_list_id`. Leave the API key
     # empty in local development — the endpoint will then return a generic
     # 500 so the form shows a retry rather than silently dropping signups.
     brevo_api_key: str = ""
     brevo_list_id: int = 4
+    brevo_notification_email: str = "jaapstronks@gmail.com"
+    brevo_sender_email: str = "noreply@woobuddy.nl"
+    brevo_sender_name: str = "WOO Buddy"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
