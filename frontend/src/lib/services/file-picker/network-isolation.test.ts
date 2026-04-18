@@ -27,6 +27,17 @@ vi.mock('$env/static/public', () => ({
 	PUBLIC_GOOGLE_PICKER_APP_ID: 'test-google-app'
 }));
 
+vi.mock('$env/dynamic/public', () => ({
+	env: {
+		PUBLIC_API_URL: 'http://woobuddy.invalid',
+		PUBLIC_MS_PICKER_CLIENT_ID: 'test-ms-client',
+		PUBLIC_MS_PICKER_AUTHORITY: 'https://login.microsoftonline.com/common',
+		PUBLIC_GOOGLE_PICKER_CLIENT_ID: 'test-google-client',
+		PUBLIC_GOOGLE_PICKER_API_KEY: 'test-google-key',
+		PUBLIC_GOOGLE_PICKER_APP_ID: 'test-google-app'
+	}
+}));
+
 // Vite-provided glob import of every source file in the picker module
 // so we can scan them as strings without reaching for `node:fs`
 // (which would require @types/node).
