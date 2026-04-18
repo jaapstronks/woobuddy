@@ -338,7 +338,7 @@ export async function deleteCustomTerm(
 }
 
 // ---------------------------------------------------------------------------
-// Leads (#45 — public email capture)
+// Leads (#45 — public contact form)
 // ---------------------------------------------------------------------------
 
 export type LeadSource = 'landing' | 'post-export';
@@ -349,19 +349,21 @@ export interface LeadPayload {
 	organization?: string;
 	message?: string;
 	source: LeadSource;
-	consent: boolean;
+	newsletterOptIn: boolean;
 }
 
 /**
- * Submit the public lead-capture form.
+ * Submit the public contact form.
  *
- * Returns normally on both fresh inserts and duplicate submissions — the
- * backend is deliberately opaque about which of the two happened so the
- * form cannot be used to probe membership of the list.
+ * Every submission triggers a transactional email to the operator. If
+ * `newsletterOptIn` is true, the contact is also added to the Brevo
+ * newsletter list. The backend is deliberately opaque about list-state
+ * so duplicate submissions cannot be used to probe membership.
  */
 export async function submitLead(payload: LeadPayload): Promise<void> {
+	const { newsletterOptIn, ...rest } = payload;
 	await request<{ ok: boolean }>('/api/leads', {
 		method: 'POST',
-		body: JSON.stringify(payload)
+		body: JSON.stringify({ ...rest, newsletter_opt_in: newsletterOptIn })
 	});
 }

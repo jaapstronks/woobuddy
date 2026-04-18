@@ -302,7 +302,12 @@ LeadSourceLiteral = Literal["landing", "post-export"]
 
 
 class LeadCreate(BaseModel):
-    """Payload for the public lead-capture form.
+    """Payload for the public contact form.
+
+    Every submission fires a transactional email to the operator. The
+    newsletter subscription is a separate opt-in: only when
+    `newsletter_opt_in` is true do we also push the contact into the
+    configured Brevo list.
 
     All optional fields are strings rather than nullable types because an
     HTML form sends `""` for empty inputs; the server coerces blanks to
@@ -314,7 +319,7 @@ class LeadCreate(BaseModel):
     organization: str | None = None
     message: str | None = None
     source: LeadSourceLiteral
-    consent: bool
+    newsletter_opt_in: bool = False
 
 
 class LeadResponse(BaseModel):

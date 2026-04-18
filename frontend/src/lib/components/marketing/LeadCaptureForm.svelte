@@ -21,7 +21,7 @@
 	let name = $state('');
 	let organization = $state('');
 	let message = $state('');
-	let consent = $state(false);
+	let newsletterOptIn = $state(false);
 
 	type Status = 'idle' | 'submitting' | 'success' | 'error';
 	let status = $state<Status>('idle');
@@ -31,9 +31,7 @@
 	// this just catches the obviously-wrong cases before a round-trip.
 	const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 	const emailLooksValid = $derived(EMAIL_RE.test(email.trim()));
-	const canSubmit = $derived(
-		status !== 'submitting' && emailLooksValid && consent
-	);
+	const canSubmit = $derived(status !== 'submitting' && emailLooksValid);
 
 	async function handleSubmit(event: Event) {
 		event.preventDefault();
@@ -48,7 +46,7 @@
 				organization: organization.trim() || undefined,
 				message: message.trim() || undefined,
 				source,
-				consent
+				newsletterOptIn
 			});
 			status = 'success';
 		} catch (err) {
@@ -69,10 +67,14 @@
 	>
 		<CheckCircle2 size={20} class="mt-0.5 shrink-0 text-success" />
 		<div>
-			<p class="font-medium text-ink">Dank je — we hebben je aanmelding.</p>
+			<p class="font-medium text-ink">Dank je — je bericht is verstuurd.</p>
 			<p class="mt-1 text-ink-soft">
-				Je hoort van ons zodra er teamfuncties beschikbaar zijn. Geen nieuwsbrief,
-				geen marketingblasts.
+				{#if newsletterOptIn}
+					We nemen zo snel mogelijk contact op. Je ontvangt voortaan ook de
+					nieuwsbrief — je kunt je altijd weer uitschrijven.
+				{:else}
+					We nemen zo snel mogelijk contact op.
+				{/if}
 			</p>
 		</div>
 	</div>
@@ -142,13 +144,13 @@
 		<label class="flex items-start gap-3 text-sm leading-relaxed text-ink-soft">
 			<input
 				type="checkbox"
-				required
-				bind:checked={consent}
+				bind:checked={newsletterOptIn}
 				class="mt-1 h-4 w-4 shrink-0 rounded border-border text-primary focus:ring-2 focus:ring-primary/20"
 			/>
 			<span>
-				Ik wil op de hoogte blijven van updates en teamfuncties. WOO Buddy mag
-				mij hiervoor mailen. Je kunt je altijd weer uitschrijven.
+				Meld me ook aan voor de nieuwsbrief — af en toe een bericht als er iets
+				te melden is over updates of teamfuncties. Je kunt je altijd weer
+				uitschrijven.
 			</span>
 		</label>
 
@@ -171,10 +173,10 @@
 		>
 			{#if status === 'submitting'}
 				<Loader2 size={16} class="animate-spin" />
-				Bezig met opslaan…
+				Bezig met versturen…
 			{:else}
 				<Mail size={16} />
-				Aanmelden
+				Verstuur bericht
 			{/if}
 		</button>
 	</form>
