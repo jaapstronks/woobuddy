@@ -1,0 +1,59 @@
+name: Feature-voorstel
+description: Een idee voor een nieuwe functie of een verbetering van bestaand gedrag.
+title: "[feature] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Bedankt voor het meedenken. Voor grotere voorstellen zien we liever **eerst een [discussion](https://github.com/jaapstronks/woobuddy/discussions)** — dan kunnen we samen aftasten of het past binnen de scope en de client-first architectuur voor we tijd in een issue of PR stoppen.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Voordat je indient
+      options:
+        - label: Ik heb gezocht in bestaande [issues](https://github.com/jaapstronks/woobuddy/issues?q=is%3Aissue) en dit voorstel staat er nog niet.
+          required: true
+        - label: Ik heb de [backlog-index](../blob/main/docs/todo/README.md) bekeken en dit is geen herhaling van een reeds gepland item.
+          required: true
+        - label: Dit voorstel is verenigbaar met de client-first architectuur (PDF's blijven in de browser, server slaat geen inhoud op) of ik heb in de beschrijving uitgelegd waarom een uitzondering nodig is.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Welk probleem los je op?
+      description: Beschrijf het probleem of de gebruikerswens. Wie heeft hier last van, en wanneer?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Voorgestelde oplossing
+      description: Hoe zou dit volgens jou moeten werken? Schetsen, flows of pseudo-code zijn welkom.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatieven die je overwogen hebt
+      description: Optioneel. Welke andere oplossingsrichtingen heb je bekeken, en waarom voldoen die niet?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Raakt dit een detectie-tier?
+      options:
+        - "Nee / niet van toepassing"
+        - "Tier 1 (harde identifiers — BSN, IBAN, etc.)"
+        - "Tier 2 (contextuele persoonsgegevens)"
+        - "Tier 3 (gereserveerd)"
+        - "Review-UX"
+        - "Export / lakking"
+    validations:
+      required: true

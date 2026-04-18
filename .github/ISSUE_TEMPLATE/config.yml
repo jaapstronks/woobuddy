@@ -1,0 +1,12 @@
+# Blank issues are disabled so every new issue uses one of the structured
+# forms. If none of the forms fit, use Discussions first — we can always
+# promote a discussion to an issue later.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Vraag of idee (discussie)
+    url: https://github.com/jaapstronks/woobuddy/discussions
+    about: Open een discussie voor open vragen, ideeën of beslissingen waar je nog niet zeker van bent.
+  - name: Beveiligingsmelding
+    url: https://github.com/jaapstronks/woobuddy/security/advisories/new
+    about: Meld een beveiligingsprobleem privé via GitHub. NIET als publiek issue openen.
