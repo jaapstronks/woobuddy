@@ -48,30 +48,69 @@ class TestSingleItemMatch:
         results = find_span_for_text([page], "Jan de Vries")
         assert len(results) == 1
 
-    def test_substring_match_narrows_bbox_proportionally(self):
+    def test_substring_match_narrows_bbox_by_glyph_weight(self):
         """When the name is embedded in a sentence-length span — which is
         how PyMuPDF commonly serves paragraph text — the bbox must be
         narrowed to (approximately) the name itself, not the whole span.
-        Otherwise redacting a single name blacks out the full line."""
+        Otherwise redacting a single name blacks out the full line.
+
+        The slice is weighted by approximate glyph widths (Helvetica /
+        Arial / Nimbus Sans), which matches proportional Latin fonts to
+        within a couple of points. The older char-count slice clipped
+        the last 1–2 characters of wide-letter names in narrow sentences.
+        """
         sentence = "De heer Van der Berg heeft op 20 februari 2024 gesproken."
         page = _page([TextSpan(text=sentence, page=0, x0=0, y0=10, x1=1000, y1=20)])
         results = find_span_for_text([page], "Van der Berg")
         assert len(results) == 1
         bbox = results[0]
-        # The name starts at character 8 and runs 12 chars. Expect the
-        # bbox to live in roughly that range (0–1000 pixel scale with 57
-        # total chars), which must be far inside the left half of the
-        # sentence and must NOT equal the full-span bbox.
-        total = len(sentence)
-        expected_x0 = 1000 * (8 / total)
-        expected_x1 = 1000 * (20 / total)
-        assert abs(bbox["x0"] - expected_x0) < 0.01
-        assert abs(bbox["x1"] - expected_x1) < 0.01
-        # Sanity: bbox is smaller than the span.
+        # Sanity: the bbox lives in the left-to-center third of the span
+        # (name starts at char 8 of 57), is strictly smaller than the
+        # full span, and strictly larger than the char-count estimate
+        # (glyph weighting lengthens wide-letter slices).
+        naive_x0 = 1000 * (8 / len(sentence))
+        naive_x1 = 1000 * (20 / len(sentence))
+        assert bbox["x0"] > 0
         assert bbox["x1"] - bbox["x0"] < 1000
+        assert bbox["x1"] > naive_x1 - 1  # weighted x1 ≥ naive x1
+        # Loose upper bound: must still be well short of the span end.
+        assert bbox["x1"] < 600
         # Y stays on the line.
         assert bbox["y0"] == 10
         assert bbox["y1"] == 20
+
+    def test_substring_match_exact_span_returns_span_bbox(self):
+        """When the match covers the entire span verbatim, the bbox
+        collapses to the span's own coordinates — no floating-point
+        drift from the glyph-weighted slice."""
+        page = _page([TextSpan(text="Van der Berg", page=0, x0=10, y0=10, x1=100, y1=20)])
+        results = find_span_for_text([page], "Van der Berg")
+        assert len(results) == 1
+        assert results[0]["x0"] == 10
+        assert results[0]["x1"] == 100
+
+    def test_substring_match_covers_wide_letter_name_end(self):
+        """Regression: 'mevrouw De Vries' in a sentence-length span used
+        to clip the final 'es' because the char-count slice weighted
+        narrow trailing letters (i/t/e/h/o) the same as the wide leading
+        m/w/D/V. Glyph-weighting recovers a bbox that fully covers the
+        detection — the symptom the reviewer reports when a redaction
+        bar leaves two letters visible to the right of the blackout.
+        """
+        sentence = (
+            "Ik ontving gisteren onderstaande klacht van mevrouw De Vries uit het "
+            "Morsdistrict. De toon is stevig en"
+        )
+        # Sentence width in the sample PDF where the bug was first seen.
+        page = _page([TextSpan(text=sentence, page=0, x0=70.0, y0=265.0, x1=524.63, y1=279.5)])
+        results = find_span_for_text([page], "mevrouw De Vries")
+        assert len(results) == 1
+        bbox = results[0]
+        # Reference positions came from PyMuPDF's per-glyph rawdict on
+        # the source PDF (Nimbus Sans). Weighted slicing should land
+        # within a couple of points of these truths.
+        assert abs(bbox["x0"] - 265.66) < 2.0
+        assert abs(bbox["x1"] - 347.34) < 2.0
 
 
 # ---------------------------------------------------------------------------
