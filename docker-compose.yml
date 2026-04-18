@@ -31,7 +31,6 @@ services:
     env_file: .env
     environment:
       - DATABASE_URL=postgresql+asyncpg://woobuddy:woobuddy@postgres:5432/woobuddy
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
     depends_on:
       postgres:
         condition: service_healthy

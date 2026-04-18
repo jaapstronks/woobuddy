@@ -5,21 +5,21 @@
 	const steps = [
 		{
 			icon: ScanSearch,
-			title: 'Detectie op je apparaat',
+			title: 'Herkennen in je browser',
 			description:
-				'Je browser leest de PDF en stuurt alleen losse woorden naar een server zonder opslag. Regels en patronen vinden BSN, IBAN, telefoon, e-mail, namen en adressen. Geen AI, geen black box.'
+				'Je browser haalt de tekst zelf uit de PDF. Alleen die tekst gaat kort naar de server, die in een paar seconden BSN\u2019s, IBAN\u2019s, namen en adressen aanwijst — en hem daarna meteen vergeet. Geen AI, geen black box.'
 		},
 		{
 			icon: CheckSquare,
-			title: 'Jij beoordeelt, met snelheidswinst',
+			title: 'Beoordelen met één toets',
 			description:
-				'Harde identifiers (Trap 1) staan direct dicht. Namen en adressen (Trap 2) krijgen een voorstel dat je met één toets bevestigt of afwijst. Dezelfde beslissing geldt voor alle voorkomens.'
+				'Harde identifiers zoals BSN en IBAN staan meteen dicht; daar valt niets over te oordelen. Namen, adressen en andere gevoelige context krijgen een voorstel dat je met één toetsaanslag bevestigt of afwijst. Eén keer beslissen geldt voor alle voorkomens in het document.'
 		},
 		{
 			icon: Download,
-			title: 'Download de gelakte PDF',
+			title: 'Exporteren zonder opslag',
 			description:
-				'Het lakken is onomkeerbaar: de gemarkeerde tekst wordt uit de PDF verwijderd, niet alleen afgedekt. Je document wordt tijdens het lakken in het geheugen verwerkt en direct teruggestuurd — niets blijft achter.'
+				'Voor de export gaat de PDF nog één keer naar de server, wordt daar in het werkgeheugen onomkeerbaar gelakt en direct naar je teruggestuurd. We bewaren niets — geen origineel, geen gelakte versie, geen logregel met inhoud.'
 		}
 	];
 </script>

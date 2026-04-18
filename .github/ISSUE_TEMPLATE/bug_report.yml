@@ -1,0 +1,93 @@
+name: Bug report
+description: Iets werkt niet zoals verwacht in WOO Buddy.
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Bedankt voor het melden. Vul de velden zo volledig mogelijk in — hoe preciezer de reproductie, hoe sneller we het kunnen oplossen.
+
+        **Meld hier geen privacygevoelige documentinhoud.** WOO Buddy slaat geen documenten op, en wij willen ze ook niet in onze issue tracker zien. Anonimiseer screenshots en PDF-fragmenten voor je ze plakt.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Voordat je indient
+      description: Kruis aan wat je gecheckt hebt.
+      options:
+        - label: Ik heb gezocht in bestaande [issues](https://github.com/jaapstronks/woobuddy/issues?q=is%3Aissue) en dit lijkt nieuw.
+          required: true
+        - label: Ik heb geen privacygevoelige inhoud in deze melding geplakt.
+          required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Waar heb je het gezien?
+      options:
+        - "Gehoste versie (woobuddy.nl)"
+        - "Self-host via Docker Compose"
+        - "Self-host bare-metal (uvicorn + npm run dev)"
+        - "Anders / weet ik niet"
+    validations:
+      required: true
+
+  - type: input
+    id: commit
+    attributes:
+      label: Versie / commit-hash
+      description: "Voor self-host: `git rev-parse --short HEAD`. Voor gehost: datum + tijd van het bezoek."
+      placeholder: "bv. 449fb39 of 2026-04-18 14:02"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: Wat ging er mis?
+      description: Een korte beschrijving van het onverwachte gedrag.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproductiestappen
+      description: Stappen waarmee iemand anders het probleem kan nabouwen.
+      placeholder: |
+        1. Ga naar /try
+        2. Upload een PDF met ...
+        3. Klik op ...
+        4. Zie dat ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Wat had je verwacht?
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots of console-output
+      description: Optioneel. Anonimiseer eerst. Voor JS-fouten in de browser console, plak de stacktrace in een code block.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser (alleen als frontend-bug)
+      options:
+        - "N.v.t. (backend / API / Docker)"
+        - "Chrome"
+        - "Safari"
+        - "Firefox"
+        - "Edge"
+        - "Anders"
+    validations:
+      required: false

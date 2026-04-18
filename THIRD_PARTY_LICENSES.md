@@ -30,8 +30,7 @@ WOO Buddy is licensed under the MIT License. This file documents the licenses of
 
 | Component | License | Note |
 |-----------|---------|------|
-| PostgreSQL | PostgreSQL License (BSD-like) | |
-| MinIO | AGPL-3.0 | Used as a standalone service (not embedded). Network use does not trigger AGPL copyleft for WOO Buddy's code. |
+| PostgreSQL | PostgreSQL License (BSD-like) | Metadata only — WOO Buddy never stores document content. |
 
 ## Data Sources
 
@@ -53,4 +52,3 @@ for reference — fully open).
 - **PyMuPDF (AGPL-3.0)**: WOO Buddy uses PyMuPDF as an unmodified pip dependency. If you modify PyMuPDF source code or distribute WOO Buddy as a combined work, AGPL-3.0 terms apply. A commercial license is available from Artifex Software for organizations that cannot comply with AGPL.
 - **Deduce (LGPL-3.0)**: Compatible with MIT when used as a standard pip dependency. The LGPL requires that users can re-link against a different version of Deduce, which pip install satisfies by default.
 - **Meertens Voornamenbank**: The Meertens Instituut requests attribution for published use of their data: *"Meld bij presentatie elders dat de gegevens afkomstig zijn uit de Nederlandse Voornamenbank van het Meertens Instituut KNAW (met link www.meertens.knaw.nl/nvb)."* This notice satisfies that requirement; any UI that visibly surfaces detections based on first-name lookups should link back to the Voornamenbank.
-- **MinIO (AGPL-3.0)**: Runs as a separate network service. WOO Buddy communicates with it via the S3 API. This does not create a combined/derivative work under AGPL.
