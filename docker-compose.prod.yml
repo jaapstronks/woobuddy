@@ -38,6 +38,14 @@ services:
     restart: unless-stopped
     expose:
       - "3000"
+    # Runtime env for $env/dynamic/public — adapter-node reads process env at
+    # request time, so these land in the browser bundle without a rebuild.
+    # All three are public URLs, not secrets, so they live in the compose
+    # file instead of /opt/woobuddy/.env.
+    environment:
+      PUBLIC_PLAUSIBLE_DOMAIN: woobuddy.nl
+      PUBLIC_PLAUSIBLE_SRC: https://analytics.woobuddy.nl/js/script.manual.js
+      PUBLIC_PLAUSIBLE_API: https://analytics.woobuddy.nl/api/event
     depends_on:
       api:
         condition: service_healthy
