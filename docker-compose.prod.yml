@@ -53,8 +53,13 @@ services:
     # Lets docker-rollout wait for a new replica to be serving traffic
     # before it retires the old one. busybox wget lives in the
     # node:22-alpine base image, so no extra install.
+    #
+    # Target 127.0.0.1 rather than `localhost`: Alpine's musl getent
+    # returns ::1 first, adapter-node only binds IPv4, and busybox wget
+    # doesn't fall back to the next address — so `localhost` yields
+    # "Connection refused" even though the server is healthy.
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
       interval: 10s
       timeout: 5s
       retries: 5
