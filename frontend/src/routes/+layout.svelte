@@ -13,15 +13,17 @@
 	// collapses /review/<uuid> into /review/:docId so one row per document
 	// doesn't explode the Top Pages view.
 	onMount(() => {
-		if (!analyticsEnabled()) return;
+		const src = env.PUBLIC_PLAUSIBLE_SRC;
+		const domain = env.PUBLIC_PLAUSIBLE_DOMAIN;
+		if (!analyticsEnabled() || !src || !domain) return;
 		if (document.querySelector('script[data-plausible]')) {
 			pageview();
 			return;
 		}
 		const script = document.createElement('script');
 		script.defer = true;
-		script.src = env.PUBLIC_PLAUSIBLE_SRC;
-		script.setAttribute('data-domain', env.PUBLIC_PLAUSIBLE_DOMAIN);
+		script.src = src;
+		script.setAttribute('data-domain', domain);
 		script.setAttribute('data-plausible', 'true');
 		script.addEventListener('load', () => pageview());
 		document.head.appendChild(script);
