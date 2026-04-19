@@ -113,7 +113,7 @@ Once the core loop works, make it feel great **and** get it in front of real use
 | 24 | ~~[Mobile responsive polish](done/24-mobile-responsive.md)~~ | P3 | S | Testing & Polish |
 | 39 | [Deployment setup](39-deployment.md) | P1 | M | Testing & Polish |
 | 40 | ~~[Legal pages & SEO](done/40-legal-seo.md)~~ | P1 | S | Testing & Polish |
-| 41 | [Analytics (Plausible)](41-analytics.md) | P1 | S | Testing & Polish |
+| 41 | ~~[Analytics (Plausible, self-hosted)](done/41-analytics.md)~~ | P1 | S | Testing & Polish |
 | 43 | [Open source release & self-host](43-open-source-release.md) | P1 | M | Distribution strategy 2026-04 |
 | 44 | ~~[Sample documents on landing page](done/44-sample-documents-landing.md)~~ | P1 | S | Distribution strategy 2026-04 |
 | 45 | ~~[Lead capture email form](done/45-lead-capture.md)~~ | P1 | S | GTM plan 2026-04 |
