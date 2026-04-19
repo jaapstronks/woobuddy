@@ -121,7 +121,13 @@ describe('ingestFile — OCR decision branching (#49)', () => {
 		// Storing the OCR extraction means a reload on the review page
 		// can skip re-OCRing the scan.
 		expect(mocks.storeExtraction).toHaveBeenCalledOnce();
-		expect(result).toEqual({ kind: 'ready', documentId: 'doc-1', pages: expect.any(Array) });
+		expect(result).toEqual({
+			kind: 'ready',
+			documentId: 'doc-1',
+			pages: expect.any(Array),
+			pageCount: 3,
+			viaOcr: true
+		});
 		if (result.kind === 'ready') {
 			expect(result.pages).toHaveLength(3);
 		}

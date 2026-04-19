@@ -106,8 +106,14 @@ export interface UploadFlowHandlers {
 }
 
 export type IngestResult =
-	| { kind: 'ready'; documentId: string; pages: PageExtraction[] }
-	| { kind: 'declined-ocr'; documentId: string };
+	| {
+			kind: 'ready';
+			documentId: string;
+			pages: PageExtraction[];
+			pageCount: number;
+			viaOcr: boolean;
+	  }
+	| { kind: 'declined-ocr'; documentId: string; pageCount: number; viaOcr: false };
 
 const OCR_STEP_LABEL = 'Tekst herkennen (OCR, in je browser)';
 
@@ -163,7 +169,12 @@ export async function ingestFile(
 			handlers.onStep('register');
 			const doc = await registerDocument(file.name, totalPages);
 			await storePdf(doc.id, file.name, bytes);
-			return { kind: 'declined-ocr', documentId: doc.id };
+			return {
+				kind: 'declined-ocr',
+				documentId: doc.id,
+				pageCount: totalPages,
+				viaOcr: false
+			};
 		}
 
 		// Accept path: re-use the extract step's slot in the step list,
@@ -193,7 +204,13 @@ export async function ingestFile(
 		await storeExtraction(doc.id, extraction);
 	}
 
-	return { kind: 'ready', documentId: doc.id, pages: extraction.pages };
+	return {
+		kind: 'ready',
+		documentId: doc.id,
+		pages: extraction.pages,
+		pageCount: extraction.pageCount,
+		viaOcr
+	};
 }
 
 /**
