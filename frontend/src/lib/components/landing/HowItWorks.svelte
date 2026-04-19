@@ -7,19 +7,19 @@
 			icon: ScanSearch,
 			title: 'Herkennen in je browser',
 			description:
-				'Je browser haalt de tekst zelf uit de PDF. Alleen die tekst gaat kort naar de server, die in een paar seconden BSN\u2019s, IBAN\u2019s, namen en adressen aanwijst — en hem daarna meteen vergeet. Geen AI, geen black box.'
+				'Je browser leest de tekst zelf uit de PDF. Alleen die tekst gaat even naar de server: binnen enkele seconden wijst die BSN\u2019s, IBAN\u2019s, namen en adressen aan, en meteen daarna wordt de tekst weer weggegooid. Geen AI, geen black box.'
 		},
 		{
 			icon: CheckSquare,
 			title: 'Beoordelen met één toets',
 			description:
-				'Harde identifiers zoals BSN en IBAN staan meteen dicht; daar valt niets over te oordelen. Namen, adressen en andere gevoelige context krijgen een voorstel dat je met één toetsaanslag bevestigt of afwijst. Eén keer beslissen geldt voor alle voorkomens in het document.'
+				'Harde persoonsgegevens zoals BSN en IBAN worden meteen gelakt; daar valt niets over te oordelen. Voor namen, adressen en andere gevoelige context krijg je een voorstel dat je met één toetsaanslag bevestigt of afwijst. Eén beslissing geldt meteen voor elke plek waar dezelfde naam of hetzelfde adres in het document terugkomt.'
 		},
 		{
 			icon: Download,
 			title: 'Exporteren zonder opslag',
 			description:
-				'Voor de export gaat de PDF nog één keer naar de server, wordt daar in het werkgeheugen onomkeerbaar gelakt en direct naar je teruggestuurd. We bewaren niets — geen origineel, geen gelakte versie, geen logregel met inhoud.'
+				'Bij het exporteren gaat de PDF nog één keer naar de server, wordt daar in het werkgeheugen onomkeerbaar gelakt en direct weer naar jou teruggestuurd. We bewaren niets — geen origineel, geen gelakte versie, geen logregel met inhoud.'
 		}
 	];
 </script>
@@ -32,8 +32,9 @@
 				Drie stappen. Je document blijft van jou.
 			</h2>
 			<p class="mt-6 text-lg leading-relaxed text-ink-soft">
-				WOO Buddy haalt de mechanische arbeid weg, niet het oordeel. Jij ziet alles, jij
-				bevestigt alles, jij zet je handtekening onder het besluit.
+				WOO Buddy neemt je het monnikenwerk uit handen, niet de beoordeling. Je ziet
+				elk voorstel, je bevestigt elke beslissing, en de verantwoordelijkheid voor
+				het besluit blijft bij jou.
 			</p>
 		</div>
 
