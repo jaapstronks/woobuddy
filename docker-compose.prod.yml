@@ -43,6 +43,10 @@ services:
     # All three are public URLs, not secrets, so they live in the compose
     # file instead of /opt/woobuddy/.env.
     environment:
+      # Enables the marketing landing + hosted-only routes (legal pages,
+      # roadmap). Forks leave this unset and get the neutral self-host
+      # landing. See frontend/src/lib/config/site.ts.
+      PUBLIC_SITE_MODE: hosted
       PUBLIC_PLAUSIBLE_DOMAIN: woobuddy.nl
       PUBLIC_PLAUSIBLE_SRC: https://analytics.woobuddy.nl/js/script.manual.js
       PUBLIC_PLAUSIBLE_API: https://analytics.woobuddy.nl/api/event
