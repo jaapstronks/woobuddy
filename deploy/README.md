@@ -7,8 +7,9 @@ How the hosted instance at <https://woobuddy.nl> is built and updated. Today thi
 - **Provider:** Hetzner Cloud, location `fsn1` (Falkenstein, DE)
 - **Server:** `woobuddy-prod`, type `cx23`, Ubuntu 24.04 — ~€5/month gross
 - **DNS:** `woobuddy.nl` and `www.woobuddy.nl` A-records via TransIP, 300s TTL
-- **Reverse proxy / TLS:** Caddy 2 with automatic Let's Encrypt
+- **Reverse proxy / TLS:** Caddy 2 with automatic Let's Encrypt, `dynamic a` upstreams + active health checks so it load-balances across rolling replicas
 - **Stack:** `docker-compose.prod.yml` — `caddy` + `frontend` (SvelteKit/node) + `api` (FastAPI) + `postgres:16-alpine`
+- **Rolling updates:** [`docker rollout`](https://github.com/Wowu/docker-rollout) CLI plugin handles zero-downtime replacement of the `frontend` and `api` services (scales up new, waits for health, retires old)
 - **App home on the box:** `/opt/woobuddy`
 - **Persistent volumes:** `pgdata` (Postgres), `caddy_data` (LE certs), `caddy_config`
 - **No document storage:** PDFs never reach disk on the server. Only `Document` and `Detection` metadata rows live in Postgres.
@@ -59,7 +60,13 @@ op run --env-file=.env -- ./deploy/deploy.sh
 2. Polls SSH on port 22 until reachable.
 3. Rsyncs the repo to `/opt/woobuddy` (excluding `node_modules`, `.venv`, `.git`, `docs/`, etc.).
 4. Writes `/opt/woobuddy/.env` containing **only** `DBASE_PASSWORD`.
-5. SSHes in and runs `/opt/woobuddy/deploy/install.sh`, which `docker compose up -d --build`s the stack and waits for `/api/health` to go green.
+5. SSHes in and runs `/opt/woobuddy/deploy/install.sh`, which builds the new images, rolls `api` and `frontend` one replica at a time via `docker rollout`, and `caddy reload`s gracefully so any Caddyfile edits land without dropping connections. On a fresh box (no containers yet) it falls back to `docker compose up -d`.
+
+### Migration discipline
+
+Because `docker rollout` keeps the old replica serving traffic until the new one is healthy, old and new code run against the same Postgres simultaneously for a few seconds per deploy. Alembic migrations therefore need to be **backward-compatible across one release**: follow the expand/contract pattern (add columns/tables nullable first, backfill and flip constraints in a follow-up release, drop dead columns in a third). A release that renames or drops a column in a single migration will break whichever replica hasn't been rolled yet.
+
+If you ever need a breaking migration, the safe workaround is one manual deploy: scale the rolling services down to 1 with `docker compose -f docker-compose.prod.yml up -d --no-deps --scale frontend=1 --scale api=1 api frontend` before running `deploy.sh` — that reintroduces the brief downtime window in exchange for not having to straddle two schemas.
 
 Verify after:
 

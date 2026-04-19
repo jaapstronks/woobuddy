@@ -50,6 +50,15 @@ services:
       PUBLIC_PLAUSIBLE_DOMAIN: woobuddy.nl
       PUBLIC_PLAUSIBLE_SRC: https://analytics.woobuddy.nl/js/script.manual.js
       PUBLIC_PLAUSIBLE_API: https://analytics.woobuddy.nl/api/event
+    # Lets docker-rollout wait for a new replica to be serving traffic
+    # before it retires the old one. busybox wget lives in the
+    # node:22-alpine base image, so no extra install.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     depends_on:
       api:
         condition: service_healthy

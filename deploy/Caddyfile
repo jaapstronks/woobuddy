@@ -9,6 +9,14 @@
 # start; Caddy persists them in the `caddy_data` named volume. The ACME
 # email is set so LE can reach us about expirations if auto-renewal ever
 # breaks.
+#
+# Zero-downtime deploys: during a `docker rollout` of `frontend` or `api`
+# the service briefly has two replicas running behind its Compose DNS
+# name. Both upstream blocks below resolve that DNS name on a short
+# interval (`dynamic a`) and run an active health probe so Caddy
+# includes the new replica as soon as it's ready and drops the old one
+# the moment Docker terminates it. 127.0.0.11 is Docker's embedded DNS
+# resolver — mandatory inside the Compose network.
 
 {
 	email jaap@ciiic.nl
@@ -28,16 +36,39 @@ woobuddy.nl {
 		request_body {
 			max_size 50MB
 		}
-		reverse_proxy api:8000 {
+		reverse_proxy {
 			# `handle_path` strips the matched prefix — put it back so FastAPI
 			# sees the original /api/... path that its routers expect.
 			rewrite /api{uri}
+			dynamic a {
+				name api
+				port 8000
+				refresh 5s
+				resolvers 127.0.0.11
+			}
+			lb_policy round_robin
+			health_uri /api/health
+			health_interval 5s
+			health_timeout 3s
+			fail_duration 15s
 		}
 	}
 
 	# Everything else → SvelteKit
 	handle {
-		reverse_proxy frontend:3000
+		reverse_proxy {
+			dynamic a {
+				name frontend
+				port 3000
+				refresh 5s
+				resolvers 127.0.0.11
+			}
+			lb_policy round_robin
+			health_uri /health
+			health_interval 5s
+			health_timeout 3s
+			fail_duration 15s
+		}
 	}
 
 	# Strict transport security — one year, include subdomains, preload-safe.
