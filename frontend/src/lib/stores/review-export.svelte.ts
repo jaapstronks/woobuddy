@@ -15,6 +15,8 @@
 import { exportRedactedPdf, downloadBlob } from '$lib/services/export-service';
 import { buildDebugExport, downloadDebugExport } from '$lib/services/debug-export';
 import type { Detection, Document } from '$lib/types';
+import { track } from '$lib/analytics/plausible';
+import { bucketPages, bucketRedactions } from '$lib/analytics/events';
 
 let exporting = $state(false);
 let exportError = $state<string | null>(null);
@@ -24,15 +26,29 @@ export interface RunExportArgs {
 	docId: string;
 	pdfBytes: ArrayBuffer;
 	filename: string;
+	/** Number of non-rejected detections at export time — bucketed for analytics. */
+	confirmedCount: number;
+	/** Page count of the exported document — bucketed for analytics. */
+	pageCount: number;
 }
 
-async function runExport({ docId, pdfBytes, filename }: RunExportArgs): Promise<void> {
+async function runExport({
+	docId,
+	pdfBytes,
+	filename,
+	confirmedCount,
+	pageCount
+}: RunExportArgs): Promise<void> {
 	exporting = true;
 	exportError = null;
 	try {
 		const redacted = await exportRedactedPdf(docId, pdfBytes);
 		downloadBlob(redacted, `gelakt_${filename}`);
 		showPostExportLead = true;
+		track('export_completed', {
+			redaction_bucket: bucketRedactions(confirmedCount),
+			page_bucket: bucketPages(pageCount)
+		});
 	} catch (e) {
 		exportError = e instanceof Error ? e.message : 'Export mislukt';
 	} finally {

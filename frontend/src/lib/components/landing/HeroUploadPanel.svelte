@@ -17,6 +17,20 @@
 	} from '$lib/services/upload-flow';
 	import type { PageExtraction } from '$lib/types';
 	import { SAMPLES, type SampleDoc } from '$lib/samples';
+	import { track } from '$lib/analytics/plausible';
+	import { bucketPages } from '$lib/analytics/events';
+
+	function sourceTypeOf(file: File): string {
+		const ext = file.name.toLowerCase().split('.').pop() ?? '';
+		if (file.type === 'application/pdf' || ext === 'pdf') return 'pdf';
+		if (file.type.startsWith('image/')) return 'image';
+		if (ext === 'txt') return 'txt';
+		if (ext === 'docx') return 'docx';
+		if (ext === 'msg') return 'msg';
+		if (ext === 'eml') return 'eml';
+		if (ext === 'zip') return 'zip';
+		return 'unknown';
+	}
 
 	// Hydrate the interactive upload UI on the client only. The landing page is
 	// SSR-rendered for SEO, so until onMount fires we show a static placeholder
@@ -120,11 +134,21 @@
 				// drop them into the review screen where manual area
 				// selection is their redaction tool.
 				steps = allDone();
+				track('document_converted', {
+					source_type: sourceTypeOf(files[0]),
+					page_bucket: bucketPages(result.pageCount),
+					used_ocr: false
+				});
 				await goto(`/review/${result.documentId}`);
 				return;
 			}
 			pendingDocId = result.documentId;
 			pendingPages = result.pages;
+			track('document_converted', {
+				source_type: sourceTypeOf(files[0]),
+				page_bucket: bucketPages(result.pageCount),
+				used_ocr: result.viaOcr
+			});
 			await tryAnalyze();
 		} catch (e) {
 			uploadError = describeError(e);

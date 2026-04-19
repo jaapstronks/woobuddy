@@ -221,7 +221,17 @@
 			return;
 		}
 		const filename = reviewStore.document?.filename ?? 'document.pdf';
-		await reviewExportStore.runExport({ docId, pdfBytes: pdfData, filename });
+		const confirmedCount = detectionStore.all.filter(
+			(d) => d.review_status !== 'rejected'
+		).length;
+		const pageCount = reviewStore.document?.page_count ?? 0;
+		await reviewExportStore.runExport({
+			docId,
+			pdfBytes: pdfData,
+			filename,
+			confirmedCount,
+			pageCount
+		});
 	}
 
 	// Progress data

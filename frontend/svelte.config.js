@@ -50,7 +50,12 @@ const config = {
 					'https://cdn.jsdelivr.net',
 					'https://alcdn.msauth.net',
 					'https://apis.google.com',
-					'https://accounts.google.com'
+					'https://accounts.google.com',
+					// Plausible self-hosted tracker script (#41). Domain matches
+					// PUBLIC_PLAUSIBLE_SRC; when analytics is disabled in an
+					// environment (empty PUBLIC_PLAUSIBLE_DOMAIN) the script is
+					// never injected, so allowing it here is harmless.
+					'https://analytics.woobuddy.nl'
 				],
 				'style-src': ['self', 'unsafe-inline', 'https://fonts.googleapis.com', 'https://cdn.jsdelivr.net'],
 				'font-src': ['self', 'https://fonts.gstatic.com', 'https://cdn.jsdelivr.net', 'data:'],
@@ -86,7 +91,10 @@ const config = {
 					'https://www.googleapis.com',
 					'https://content.googleapis.com',
 					'https://docs.google.com',
-					'https://*.googleusercontent.com'
+					'https://*.googleusercontent.com',
+					// Plausible event endpoint (#41). Same self-hosted origin as
+					// the tracker script above.
+					'https://analytics.woobuddy.nl'
 				],
 				// Both pickers render their UI in an iframe we embed. The
 				// Microsoft picker lives on the user's SharePoint/OneDrive

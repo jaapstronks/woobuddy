@@ -29,6 +29,7 @@ import type {
 	ExtractionResult
 } from '$lib/types';
 import { confidenceToLevel } from '$lib/utils/tiers';
+import { track } from '$lib/analytics/plausible';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -228,9 +229,21 @@ function selectPrevious() {
 }
 
 async function review(id: string, data: UpdateDetectionRequest) {
+	const before = byId[id];
 	try {
 		const updated = await updateDetection(id, data);
 		mergeServerUpdate(id, updated, /* preferUpdatedText */ true);
+
+		// Analytics (#41). Only fire for terminal review states — "edited"
+		// and "pending" are intermediate and would inflate event volume
+		// without a clear product question to answer. Props are coarse
+		// (tier + entity class) — never entity_text.
+		if (before && (data.review_status === 'accepted' || data.review_status === 'rejected')) {
+			track(
+				data.review_status === 'accepted' ? 'redaction_confirmed' : 'redaction_rejected',
+				{ tier: `tier${before.tier}`, entity_type: before.entity_type }
+			);
+		}
 	} catch (e) {
 		error = e instanceof Error ? e.message : 'Bijwerken mislukt';
 	}
