@@ -104,11 +104,16 @@ is_running() {
 if is_running frontend && is_running api; then
 	log "Rolling stateless services (zero-downtime)"
 
-	# Caddy + Postgres first. `up -d` is a no-op when nothing changed and
-	# recreates the Caddy container if its compose config changed. A
-	# bind-mounted Caddyfile edit still needs the graceful reload below,
-	# so we run it either way.
-	docker compose -f "${COMPOSE_FILE}" up -d caddy postgres
+	# Caddy + Postgres first. `--no-recreate` is load-bearing: without it,
+	# compose walks `depends_on` and recreates api + frontend inline when
+	# their compose config changed (e.g. a healthcheck tweak), killing
+	# the old containers *before* `docker rollout` can scale up
+	# replacements — exactly the downtime window we're trying to avoid.
+	# The Caddyfile is bind-mounted and gets applied by the
+	# `caddy reload` below; caddy image changes are rare and can be
+	# handled by a targeted `--force-recreate caddy` on the (hopefully
+	# never) day they happen.
+	docker compose -f "${COMPOSE_FILE}" up -d --no-recreate caddy postgres
 
 	# Roll api before frontend: the frontend only calls the api via Caddy
 	# (same-origin), so draining frontend first would still leave old
