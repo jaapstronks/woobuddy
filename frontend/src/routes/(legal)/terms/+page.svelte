@@ -19,7 +19,7 @@
 
 <h2>1. Wie zijn wij?</h2>
 <p>
-	WOO Buddy wordt aangeboden door CIIIC (Jaap Stronks), handelend onder de naam WOO Buddy. Contact:
+	WOO Buddy wordt aangeboden door Jaap Stronks en Jeroen Hammer, handelend onder de naam WOO Buddy. Contact:
 	<a href="mailto:hallo@woobuddy.nl">hallo@woobuddy.nl</a>.
 </p>
 

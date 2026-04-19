@@ -27,7 +27,7 @@
 
 <h2>1. Wie is verantwoordelijk?</h2>
 <p>
-	WOO Buddy wordt aangeboden door CIIIC (Jaap Stronks), gevestigd in Nederland. Voor vragen over
+	WOO Buddy wordt aangeboden door Jaap Stronks en Jeroen Hammer, gevestigd in Nederland. Voor vragen over
 	privacy kun je mailen naar
 	<a href="mailto:privacy@woobuddy.nl">privacy@woobuddy.nl</a>.
 </p>

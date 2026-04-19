@@ -44,34 +44,50 @@ describe('findTextForBboxes', () => {
 	it('slices a line-wide item proportionally when the bbox is narrower', () => {
 		// Simulates the "W. de Groot" regression. pdf.js emits the whole
 		// line as one text item; the backend has narrowed the bbox down
-		// to cover just the name. The resolver must return *only* that
-		// substring, not the full line.
-		const line = 'de familie El Khatib (huisnummer 22). Ook de heer W. de Groot, bewoner van nummer 26, heeft';
-		// Make the line 930 units wide so each character is ~10 units
-		// wide. That lets us pick a bbox that maps cleanly to character
-		// indices for an assertion.
-		const itemX0 = 0;
-		const itemX1 = line.length * 10;
-		const ext = makeExtraction([[{ text: line, x0: itemX0, x1: itemX1 }]]);
-
-		// "W. de Groot" starts at char index 50 and ends at 61.
-		const nameStart = line.indexOf('W. de Groot');
-		const nameEnd = nameStart + 'W. de Groot'.length;
-		const bbox = box(0, nameStart * 10, nameEnd * 10);
+		// to cover just the name using Helvetica AFM widths, and the
+		// resolver must invert that with the same weighting. Char-count
+		// linear slicing clipped the first glyph of names preceded by
+		// glyph-wide prefixes ("W. de Groot" ← "Ook de heer "). Pixel
+		// positions below come from the AFM table in bbox-text-resolver.
+		const line =
+			'de familie El Khatib (huisnummer 22). Ook de heer W. de Groot, bewoner van nummer 26, heeft';
+		const itemWidth = 42518; // AFM sum of the whole line (1/1000 em units)
+		const nameX0 = 22731; // AFM sum of "de familie … Ook de heer "
+		const nameX1 = 28122; // + AFM sum of "W. de Groot"
+		const ext = makeExtraction([[{ text: line, x0: 0, x1: itemWidth }]]);
+		const bbox = box(0, nameX0, nameX1);
 
 		const text = findTextForBboxes([bbox], ext);
 		expect(text).toBe('W. de Groot');
 	});
 
-	it('slices an item when the bbox covers a substring near the start', () => {
-		const line = 'mevrouw T. Bakker (huisnummer 18)';
-		const itemX0 = 0;
-		const itemX1 = line.length * 10;
-		const ext = makeExtraction([[{ text: line, x0: itemX0, x1: itemX1 }]]);
+	it('keeps the leading initial of names preceded by wider glyphs', () => {
+		// Regression: in the demo-video fixture the detector found
+		// "P. Hoogvliet" inside the line-wide pdf.js item
+		// "Wethouder P. Hoogvliet neemt het dossier in behandeling.".
+		// With char-count linear slicing the resolver landed one glyph
+		// past the "P" (the "Wethouder" prefix is full of wide glyphs:
+		// W, d, u, o) and the sidebar card showed ". Hoogvliet".
+		const line = 'Wethouder P. Hoogvliet neemt het dossier in behandeling.';
+		const itemWidth = 25846; // AFM sum of the whole line
+		const nameX0 = 5169; // AFM sum of "Wethouder "
+		const nameX1 = 10560; // + AFM sum of "P. Hoogvliet"
+		const ext = makeExtraction([[{ text: line, x0: 0, x1: itemWidth }]]);
+		const bbox = box(0, nameX0, nameX1);
 
-		const nameStart = line.indexOf('T. Bakker');
-		const nameEnd = nameStart + 'T. Bakker'.length;
-		const bbox = box(0, nameStart * 10, nameEnd * 10);
+		const text = findTextForBboxes([bbox], ext);
+		expect(text).toBe('P. Hoogvliet');
+	});
+
+	it('slices an item when the bbox covers a substring near the start', () => {
+		// "mevrouw T. Bakker (huisnummer 18)" — AFM positions for the
+		// "T. Bakker" substring so the slicer exercises the AFM path.
+		const line = 'mevrouw T. Bakker (huisnummer 18)';
+		const itemWidth = 16488;
+		const nameX0 = 4334; // AFM sum of "mevrouw "
+		const nameX1 = 8613; // + AFM sum of "T. Bakker"
+		const ext = makeExtraction([[{ text: line, x0: 0, x1: itemWidth }]]);
+		const bbox = box(0, nameX0, nameX1);
 
 		const text = findTextForBboxes([bbox], ext);
 		expect(text).toBe('T. Bakker');

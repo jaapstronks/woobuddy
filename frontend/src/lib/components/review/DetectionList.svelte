@@ -93,18 +93,28 @@
 		return multiSelectedIds.includes(id);
 	}
 
-	// Group detections by tier. Area redactions (#07) are pulled out into
-	// their own group — they can ride on any Woo article (so any tier) but
-	// share a common "manually drawn rectangle, no text" shape that the
-	// tier-specific cards can't render cleanly.
-	const grouped = $derived.by(() => {
-		const areas = detections.filter((d) => d.entity_type === 'area');
-		const rest = detections.filter((d) => d.entity_type !== 'area');
-		const tier1 = rest.filter((d) => d.tier === '1');
-		const tier2 = rest.filter((d) => d.tier === '2');
-		const tier3 = rest.filter((d) => d.tier === '3');
-		return { areas, tier1, tier2, tier3 };
-	});
+	// Sort by reading order: page, then top-to-bottom (y0), then
+	// left-to-right (x0). The sidebar should track the reviewer's eye as
+	// they read the PDF — the top-bar filters (tier / status / type) take
+	// care of "only show Trap 2" or "only pending" views, so grouping by
+	// tier in the sidebar is redundant and hides the spatial relationship
+	// between detections. Rows without a bbox sort to the end defensively
+	// (every detection should have one, but the sort must be total).
+	function readingOrderKey(det: Detection): [number, number, number] {
+		const bbox = det.bounding_boxes?.[0];
+		if (!bbox) return [Infinity, Infinity, Infinity];
+		return [bbox.page, bbox.y0, bbox.x0];
+	}
+
+	const orderedDetections = $derived(
+		[...detections].sort((a, b) => {
+			const [ap, ay, ax] = readingOrderKey(a);
+			const [bp, by, bx] = readingOrderKey(b);
+			if (ap !== bp) return ap - bp;
+			if (ay !== by) return ay - by;
+			return ax - bx;
+		})
+	);
 
 	// #20 — group visible detections by the structure span they fall inside
 	// so the sidebar can render a "sweep this block" chip per email-header /
@@ -202,175 +212,96 @@
      gives the selection effect a scoped root so `querySelector` can't
      accidentally match PdfViewer overlay elements (which also carry
      `data-detection-id`). -->
-<div bind:this={rootEl} class="space-y-4">
-	<!-- Handmatige gebieden (#07) -->
-	{#if grouped.areas.length > 0}
-		<div>
-			<h3 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-neutral">
-				<span class="h-2 w-2 rounded-full bg-gray-900"></span>
-				Handmatig gebied ({grouped.areas.length})
-			</h3>
-			<div class="space-y-1">
-				{#each grouped.areas as det (det.id)}
-					<button
-						data-detection-id={det.id}
-						class="w-full text-left"
-						class:ring-2={det.id === selectedId}
-						class:ring-primary={det.id === selectedId}
-						class:rounded-lg={det.id === selectedId}
-						class:outline-2={isMultiSelected(det.id)}
-						class:outline-warning={isMultiSelected(det.id)}
-						onclick={(e: MouseEvent) => handleCardClick(e, det.id)}
+<div bind:this={rootEl} class="space-y-2">
+	<!-- #20 — sweep-block chips. One per structure span that contains at
+	     least one pending detection. Hoisted to the top of the flat list
+	     because they are document-level actions that apply to a whole
+	     block, not a single row. The chip count reflects *pending* rows
+	     only — decisions the reviewer already made are skipped server-
+	     side and must not appear in the count. -->
+	{#if onSweepBlock}
+		{@const sweepable = spanGroups.filter((g) => g.pendingDetections.length > 0)}
+		{#if sweepable.length > 0}
+			<div class="flex flex-wrap gap-1.5 pb-1">
+				{#each sweepable as group (group.key)}
+					<sl-button
+						size="small"
+						variant="warning"
+						onclick={(e: Event) => {
+							e.stopPropagation();
+							onSweepBlock?.(group.key);
+						}}
 					>
-						<div class="rounded-lg border border-gray-200 bg-gray-50 p-3 transition-colors hover:bg-gray-100">
-							<div class="flex items-start justify-between gap-2">
-								<div class="min-w-0 flex-1">
-									<div class="flex items-center gap-2">
-										<span class="inline-block rounded bg-gray-900 px-1.5 py-0.5 text-xs text-white">
-											gebied
-										</span>
-										{#if det.woo_article}
-											<span class="text-xs text-neutral">Art. {det.woo_article}</span>
-										{/if}
-									</div>
-									<p class="mt-1 text-sm text-gray-700">
-										Handmatig gebied — pagina {areaPageLabel(det)}
-									</p>
-								</div>
-								<sl-button
-									size="small"
-									variant="default"
-									onclick={(e: Event) => {
-										e.stopPropagation();
-										onReject(det.id);
-									}}
-								>
-									Ontlakken
-								</sl-button>
+						{sweepBlockLabel(group.span.kind)} ({group.pendingDetections.length})
+					</sl-button>
+				{/each}
+			</div>
+		{/if}
+	{/if}
+
+	{#each orderedDetections as det (det.id)}
+		<button
+			data-detection-id={det.id}
+			class="w-full text-left"
+			class:ring-2={det.id === selectedId}
+			class:ring-primary={det.id === selectedId}
+			class:rounded-lg={det.id === selectedId}
+			class:outline-2={isMultiSelected(det.id)}
+			class:outline-warning={isMultiSelected(det.id)}
+			onclick={(e: MouseEvent) => handleCardClick(e, det.id)}
+		>
+			{#if det.entity_type === 'area'}
+				<div class="rounded-lg border border-gray-200 bg-gray-50 p-3 transition-colors hover:bg-gray-100">
+					<div class="flex items-start justify-between gap-2">
+						<div class="min-w-0 flex-1">
+							<div class="flex items-center gap-2">
+								<span class="inline-block rounded bg-gray-900 px-1.5 py-0.5 text-xs text-white">
+									gebied
+								</span>
+								{#if det.woo_article}
+									<span class="text-xs text-neutral">Art. {det.woo_article}</span>
+								{/if}
 							</div>
+							<p class="mt-1 text-sm text-gray-700">
+								Handmatig gebied — pagina {areaPageLabel(det)}
+							</p>
 						</div>
-					</button>
-				{/each}
-			</div>
-		</div>
-	{/if}
-
-	<!-- Tier 1 -->
-	{#if grouped.tier1.length > 0}
-		<div>
-			<h3 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-neutral">
-				<span class="h-2 w-2 rounded-full bg-gray-700"></span>
-				Trap 1 — Auto-gelakt ({grouped.tier1.length})
-			</h3>
-			<div class="space-y-1">
-				{#each grouped.tier1 as det (det.id)}
-					<button
-						data-detection-id={det.id}
-						class="w-full text-left"
-						class:ring-2={det.id === selectedId}
-						class:ring-primary={det.id === selectedId}
-						class:rounded-lg={det.id === selectedId}
-						class:outline-2={isMultiSelected(det.id)}
-						class:outline-warning={isMultiSelected(det.id)}
-						onclick={(e: MouseEvent) => handleCardClick(e, det.id)}
-					>
-						<Tier1Card detection={det} onUnredact={onReject} onRedact={onAccept} />
-					</button>
-				{/each}
-			</div>
-		</div>
-	{/if}
-
-	<!-- Tier 2 -->
-	{#if grouped.tier2.length > 0}
-		<div>
-			<h3 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-neutral">
-				<span class="h-2 w-2 rounded-full bg-warning"></span>
-				Trap 2 — Beoordelen ({grouped.tier2.length})
-			</h3>
-			<!-- #20 — sweep-block chips. One per structure span that contains at
-			     least one pending detection. The chip count reflects *pending*
-			     rows only — decisions the reviewer already made are skipped
-			     server-side and must not appear in the count, otherwise the
-			     reviewer expects N accepts and gets N-K. -->
-			{#if onSweepBlock}
-				{@const sweepable = spanGroups.filter((g) => g.pendingDetections.length > 0)}
-				{#if sweepable.length > 0}
-					<div class="mb-2 flex flex-wrap gap-1.5">
-						{#each sweepable as group (group.key)}
-							<sl-button
-								size="small"
-								variant="warning"
-								onclick={(e: Event) => {
-									e.stopPropagation();
-									onSweepBlock?.(group.key);
-								}}
-							>
-								{sweepBlockLabel(group.span.kind)} ({group.pendingDetections.length})
-							</sl-button>
-						{/each}
+						<sl-button
+							size="small"
+							variant="default"
+							onclick={(e: Event) => {
+								e.stopPropagation();
+								onReject(det.id);
+							}}
+						>
+							Ontlakken
+						</sl-button>
 					</div>
-				{/if}
+				</div>
+			{:else if det.tier === '1'}
+				<Tier1Card detection={det} onUnredact={onReject} onRedact={onAccept} />
+			{:else if det.tier === '2'}
+				<Tier2Card
+					detection={det}
+					sameNameCount={sameNameCount(det)}
+					{onAccept}
+					{onReject}
+					{onChangeArticle}
+					{onSetSubjectRole}
+					{onSameNameSweep}
+				/>
+			{:else if det.tier === '3'}
+				<Tier3Panel
+					detection={det}
+					onRedact={onRedactWithArticle}
+					onKeep={onReject}
+					{onDefer}
+					{onReopen}
+					{onSaveMotivation}
+				/>
 			{/if}
-			<div class="space-y-2">
-				{#each grouped.tier2 as det (det.id)}
-					<button
-						data-detection-id={det.id}
-						class="w-full text-left"
-						class:ring-2={det.id === selectedId}
-						class:ring-primary={det.id === selectedId}
-						class:rounded-lg={det.id === selectedId}
-						class:outline-2={isMultiSelected(det.id)}
-						class:outline-warning={isMultiSelected(det.id)}
-						onclick={(e: MouseEvent) => handleCardClick(e, det.id)}
-					>
-						<Tier2Card
-							detection={det}
-							sameNameCount={sameNameCount(det)}
-							{onAccept}
-							{onReject}
-							{onChangeArticle}
-							{onSetSubjectRole}
-							{onSameNameSweep}
-						/>
-					</button>
-				{/each}
-			</div>
-		</div>
-	{/if}
-
-	<!-- Tier 3 -->
-	{#if grouped.tier3.length > 0}
-		<div>
-			<h3 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-neutral">
-				<span class="h-2 w-2 rounded-full bg-primary"></span>
-				Trap 3 — Analyse ({grouped.tier3.length})
-			</h3>
-			<div class="space-y-3">
-				{#each grouped.tier3 as det (det.id)}
-					<button
-						data-detection-id={det.id}
-						class="w-full text-left"
-						class:ring-2={det.id === selectedId}
-						class:ring-primary={det.id === selectedId}
-						class:rounded-lg={det.id === selectedId}
-						class:outline-2={isMultiSelected(det.id)}
-						class:outline-warning={isMultiSelected(det.id)}
-						onclick={(e: MouseEvent) => handleCardClick(e, det.id)}
-					>
-						<Tier3Panel
-							detection={det}
-							onRedact={onRedactWithArticle}
-							onKeep={onReject}
-							{onDefer}
-							{onReopen}
-							{onSaveMotivation}
-						/>
-					</button>
-				{/each}
-			</div>
-		</div>
-	{/if}
+		</button>
+	{/each}
 
 	{#if detections.length === 0}
 		<div class="flex h-32 items-center justify-center text-sm text-neutral">
