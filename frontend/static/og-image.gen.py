@@ -223,7 +223,7 @@ def main() -> None:
 
     # --- Bottom bullet row -------------------------------------------------
     bullet_font = load_font(FONT_HELVETICA_NEUE, 22, index=HN_MEDIUM)
-    bullets = ["Geen upload", "Geen AI", "Geen trackers"]
+    bullets = ["Geen upload", "Geen AI", "Geen cookies"]
     bullet_y = HEIGHT - 78
     x_cursor = 84
     sep = "  ·  "

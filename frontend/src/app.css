@@ -6,7 +6,8 @@
  * Adjacent to Dutch civic design (NL Design System / GOV.UK), but visibly
  * independent. Sober, restrained, accessible. Deep teal primary instead of
  * Rijksoverheid blue. System fonts only — no third-party font requests, so
- * the "no trackers, no third parties" claim on the landing page is honest.
+ * the "cookieless, geen derden" claim on the landing page stays honest even
+ * with self-hosted Plausible in the mix.
  * --------------------------------------------------------------------------- */
 
 :root {

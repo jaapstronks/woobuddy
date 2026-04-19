@@ -8,7 +8,7 @@
 	const chips = [
 		{ icon: Lock, label: 'Geen byte verlaat je computer' },
 		{ icon: CircleSlash, label: 'Geen AI of LLM in de pijplijn' },
-		{ icon: EyeOff, label: 'Geen trackers, geen cookies' },
+		{ icon: EyeOff, label: 'Geen cookies, geen fingerprinting' },
 		...(cloudPickEnabled
 			? [{ icon: Cloud, label: 'Direct uit SharePoint of Drive — zonder tussenstop' }]
 			: [])

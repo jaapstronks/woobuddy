@@ -9,7 +9,7 @@
 				<Logo size="small" />
 				<p class="mt-3 max-w-sm text-xs leading-relaxed text-ink-mute">
 					Privacyvriendelijk lakgereedschap voor Woo-documenten. Werkt in je browser. Geen
-					upload, geen AI, geen trackers.
+					upload, geen AI, geen advertentietrackers.
 				</p>
 				<p class="mt-3 max-w-sm text-xs leading-relaxed text-ink-mute">
 					WOO Buddy gebruikt alleen functionele cookies.

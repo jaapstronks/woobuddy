@@ -10,7 +10,7 @@
 	<title>WOO Buddy — Woo-documenten lakken in je browser, zonder upload</title>
 	<meta
 		name="description"
-		content="WOO Buddy herkent BSN's, namen, adressen en andere persoonsgegevens in Woo-documenten en helpt je ze in een paar klikken weg te lakken. Draait volledig in je browser. Geen upload, geen AI, geen trackers."
+		content="WOO Buddy herkent BSN's, namen, adressen en andere persoonsgegevens in Woo-documenten en helpt je ze in een paar klikken weg te lakken. Draait volledig in je browser. Geen upload, geen AI, geen advertentietrackers."
 	/>
 	<link rel="canonical" href="https://woobuddy.nl/" />
 	<meta property="og:url" content="https://woobuddy.nl/" />
@@ -29,7 +29,7 @@
 				operatingSystem: 'Any (web browser)',
 				inLanguage: 'nl-NL',
 				description:
-					'WOO Buddy lakt Woo-documenten volledig in de browser. Herkent BSN\\u2019s, namen, adressen en andere persoonsgegevens. Geen upload, geen AI, geen trackers.',
+					'WOO Buddy lakt Woo-documenten volledig in de browser. Herkent BSN\\u2019s, namen, adressen en andere persoonsgegevens. Geen upload, geen AI, geen advertentietrackers.',
 				browserRequirements: 'Requires a modern browser with JavaScript enabled',
 				offers: {
 					'@type': 'Offer',
