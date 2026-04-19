@@ -2,7 +2,7 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
-	import { PUBLIC_PLAUSIBLE_DOMAIN, PUBLIC_PLAUSIBLE_SRC } from '$env/static/public';
+	import { env } from '$env/dynamic/public';
 	import { pageview, isEnabled as analyticsEnabled } from '$lib/analytics/plausible';
 
 	let { children } = $props();
@@ -20,8 +20,8 @@
 		}
 		const script = document.createElement('script');
 		script.defer = true;
-		script.src = PUBLIC_PLAUSIBLE_SRC;
-		script.setAttribute('data-domain', PUBLIC_PLAUSIBLE_DOMAIN);
+		script.src = env.PUBLIC_PLAUSIBLE_SRC;
+		script.setAttribute('data-domain', env.PUBLIC_PLAUSIBLE_DOMAIN);
 		script.setAttribute('data-plausible', 'true');
 		script.addEventListener('load', () => pageview());
 		document.head.appendChild(script);

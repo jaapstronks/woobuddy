@@ -15,7 +15,7 @@
  * could fingerprint a specific document, or any user-identifying data.
  */
 
-import { PUBLIC_PLAUSIBLE_DOMAIN } from '$env/static/public';
+import { env } from '$env/dynamic/public';
 import { browser } from '$app/environment';
 import type { PlausibleEventName, PlausibleEventProps } from './events';
 
@@ -31,7 +31,7 @@ declare global {
 }
 
 export function isEnabled(): boolean {
-	return browser && !!PUBLIC_PLAUSIBLE_DOMAIN;
+	return browser && !!env.PUBLIC_PLAUSIBLE_DOMAIN;
 }
 
 /**
