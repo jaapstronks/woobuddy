@@ -129,6 +129,22 @@ Two supported workflows, two different host ports:
 - **Backend type check**: `cd backend && source .venv/bin/activate && mypy app/`
 - **Backend tests**: `cd backend && source .venv/bin/activate && pytest`
 
+## Hero demo video
+
+The landing page Hero (`frontend/src/lib/components/landing/Hero.svelte`) plays `frontend/static/woobuddy-demo.mp4`. When replacing the clip, record a raw MP4 and compress it with this recipe before committing — the raw ScreenFlow/QuickTime export is typically 5–10× bigger than needed and will inflate the bundle:
+
+```bash
+ffmpeg -y -i <raw-input>.mp4 \
+  -vcodec libx264 -crf 30 -preset slow \
+  -movflags +faststart -an \
+  frontend/static/woobuddy-demo.mp4
+```
+
+- `-crf 30 -preset slow` hits ~500–700 KB for typical screencast content (large flat areas compress well). Drop to `-crf 28` if quality looks soft.
+- `-movflags +faststart` puts the moov atom at the front so the video starts playing before it's fully downloaded.
+- `-an` strips audio — the Hero video is muted and autoplayed.
+- Overwrite the existing `woobuddy-demo.mp4` and delete the raw source; Hero already points at `/woobuddy-demo.mp4` so no code changes are needed.
+
 ## Todo backlog (`docs/todo/`)
 
 The project backlog lives in `docs/todo/`. Read `docs/todo/README.md` for the full index with priorities, sizes, phases, and implementation order.

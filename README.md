@@ -83,7 +83,9 @@ docker compose down -v
 
 ### In productie zetten
 
-Er is een afzonderlijke `docker-compose.prod.yml` met Caddy als reverse proxy (HTTPS via Let's Encrypt) en een deploy-script in [`deploy/`](deploy/) dat een fresh Hetzner Ubuntu 24.04 VPS provisioneert. Lees [`deploy/install.sh`](deploy/install.sh) voor de precieze stappen — het is bewust klein en transparant.
+De gehoste instantie op <https://woobuddy.nl> draait op een Hetzner cx23 in Falkenstein, met Caddy als reverse proxy (HTTPS via Let's Encrypt) en de stack uit [`docker-compose.prod.yml`](docker-compose.prod.yml). Provisioning, deploy en operatie zijn samen ~250 regels shell — bewust klein en transparant.
+
+Volledige operator-documentatie (provision → deploy → install, secrets, rollback, backups, en een eerlijke afweging of we dit zouden moeten automatiseren): zie [`deploy/README.md`](deploy/README.md).
 
 ---
 

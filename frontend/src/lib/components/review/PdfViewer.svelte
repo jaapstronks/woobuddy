@@ -479,8 +479,14 @@
 	}
 </script>
 
+<!-- No `overflow` here: the toolbar below uses `position: sticky` and
+     needs the outer `pdfScrollEl` (in +page.svelte) as its scroll
+     ancestor. An `overflow: auto` on this wrapper would trap the sticky
+     inside a non-scrolling container and silently break it. Horizontal
+     overflow from a wide PDF falls through to `pdfScrollEl`, which is
+     already `overflow-auto`. -->
 <div
-	class="relative overflow-auto rounded-lg border border-gray-200 bg-white"
+	class="relative rounded-lg border border-gray-200 bg-white"
 >
 	<PdfViewerToolbar
 		{mode}

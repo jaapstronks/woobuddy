@@ -107,6 +107,13 @@ const config = {
 				'form-action': ['self']
 			}
 		}
+	},
+	vitePlugin: {
+		inspector: {
+			toggleKeyCombo: 'meta-shift',
+			showToggleButton: 'always',
+			toggleButtonPos: 'bottom-right'
+		}
 	}
 };
 

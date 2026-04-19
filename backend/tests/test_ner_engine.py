@@ -601,6 +601,18 @@ class TestTier2Deduce:
         score = score_person_candidate("Qwerty Xylofoon", lists)
         assert score.is_plausible is False
 
+    def test_leading_role_noun_stripped(self):
+        """Sentence-initial role nouns ('Klaagster', 'Verdachte', …) that
+        Deduce absorbs into a person span should be trimmed off."""
+        text = "Klaagster Jan de Vries belde gisteravond in paniek."
+        results = detect_tier2(text)
+        person_results = [r for r in results if r.entity_type == "persoon"]
+        assert len(person_results) >= 1
+        for r in person_results:
+            assert not r.text.lower().startswith("klaagster"), (
+                f"leading 'Klaagster' should be stripped, got {r.text!r}"
+            )
+
 
 # ---------------------------------------------------------------------------
 # Tier 2: huisnummer / residence-cued "nummer N" regex (#51)

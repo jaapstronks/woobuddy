@@ -110,9 +110,12 @@ def _get_trailing_titles() -> _TrailingTitleVocab:
 
 
 # Leading non-name words to strip from person spans — section headings,
-# greeting words, and connectors Deduce absorbs into the span.
+# greeting words, connectors, and Dutch administrative/legal role nouns
+# Deduce absorbs into the span when they appear capitalized at the start
+# of a sentence directly before a name ("Klaagster Jolanda Klaverstein").
 _LEADING_STRIP_WORDS: frozenset[str] = frozenset(
     {
+        # Section headings / greetings / connectors
         "rondvraag",
         "toelichting",
         "bijlage",
@@ -123,6 +126,33 @@ _LEADING_STRIP_WORDS: frozenset[str] = frozenset(
         "hallo",
         "hi",
         "collega",
+        # Administrative roles (WOO / klacht / bezwaar context)
+        "klaagster",
+        "klager",
+        "aanvrager",
+        "aanvraagster",
+        "verzoeker",
+        "verzoekster",
+        "bewoner",
+        "bewoonster",
+        "inspreker",
+        "inspreekster",
+        "betrokkene",
+        "belanghebbende",
+        "bezwaarmaker",
+        "indiener",
+        "melder",
+        "meldster",
+        # Legal-procedure roles (criminal/civil)
+        "verdachte",
+        "gedaagde",
+        "eiser",
+        "eiseres",
+        "appellant",
+        "gedupeerde",
+        "slachtoffer",
+        "benadeelde",
+        "getuige",
     }
 )
 

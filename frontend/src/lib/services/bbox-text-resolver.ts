@@ -49,6 +49,39 @@ const CONTAINED_ITEM_TOLERANCE = 1.5;
 const TOUCHING_GAP = 1.5;
 const SAME_LINE_Y_TOLERANCE = 2;
 
+// Helvetica/Arial AFM advance widths in 1/1000 em. Mirrors the backend's
+// `_GLYPH_WIDTHS` table in `span_resolver.py` so that the client's
+// x-to-character mapping agrees with the bbox narrowing the backend just
+// did. Without AFM weighting a linear-by-char-count mapping clips the
+// first character of names like "P. Hoogvliet" inside a line-wide
+// pdf.js item ("Wethouder P. Hoogvliet …"): "Wethouder" is full of wide
+// glyphs (W, d, u, o) and narrow glyphs (t, e, r), which pushes the
+// perceived start of "P." past the true pixel boundary and the slicer
+// lands on the "." instead. Values outside this table fall back to
+// `DEFAULT_GLYPH_WIDTH`, matching the backend's behavior for non-ASCII
+// glyphs.
+const DEFAULT_GLYPH_WIDTH = 500;
+const GLYPH_WIDTHS: Record<string, number> = {
+	' ': 278, '!': 278, '"': 355, '#': 556, '$': 556, '%': 889, '&': 667,
+	"'": 191, '(': 333, ')': 333, '*': 389, '+': 584, ',': 278, '-': 333,
+	'.': 278, '/': 278,
+	'0': 556, '1': 556, '2': 556, '3': 556, '4': 556, '5': 556, '6': 556,
+	'7': 556, '8': 556, '9': 556,
+	':': 278, ';': 278, '<': 584, '=': 584, '>': 584, '?': 556, '@': 1015,
+	A: 667, B: 667, C: 722, D: 722, E: 667, F: 611, G: 778, H: 722, I: 278,
+	J: 500, K: 667, L: 556, M: 833, N: 722, O: 778, P: 667, Q: 778, R: 722,
+	S: 667, T: 611, U: 722, V: 667, W: 944, X: 667, Y: 667, Z: 611,
+	'[': 278, '\\': 278, ']': 278, '^': 469, '_': 556, '`': 333,
+	a: 556, b: 556, c: 500, d: 556, e: 556, f: 278, g: 556, h: 556, i: 222,
+	j: 222, k: 500, l: 222, m: 833, n: 556, o: 556, p: 556, q: 556, r: 333,
+	s: 500, t: 278, u: 556, v: 500, w: 722, x: 500, y: 500, z: 500,
+	'{': 334, '|': 260, '}': 334, '~': 584
+};
+
+function glyphWidth(ch: string): number {
+	return GLYPH_WIDTHS[ch] ?? DEFAULT_GLYPH_WIDTH;
+}
+
 function overlapsVertically(bbox: BoundingBox, item: ExtractedTextItem): boolean {
 	const itemCenterY = (item.y0 + item.y1) / 2;
 	return itemCenterY >= bbox.y0 && itemCenterY <= bbox.y1;
@@ -60,12 +93,15 @@ function overlapsHorizontally(bbox: BoundingBox, item: ExtractedTextItem): boole
 
 /**
  * Return the substring of `item.text` that corresponds to the portion
- * of the item sitting inside `bbox`, using linear x-to-character mapping.
+ * of the item sitting inside `bbox`.
  *
  * If the item is fully contained within the bbox (within a small
- * tolerance), the entire text is returned. If only part of the item
- * overlaps, the proportional slice is returned. A zero-width item (or
- * one with no characters) returns the full text as a safe fallback.
+ * tolerance), the entire text is returned. Otherwise the item's
+ * characters are weighted by Helvetica AFM advance widths and the
+ * slice is chosen so the pixel range [bbox.x0, bbox.x1] lines up with
+ * whole characters — the same weighting the backend uses in
+ * `_narrow_bbox_to_substring` when it computed this bbox in the first
+ * place.
  */
 function sliceItemTextByBbox(bbox: BoundingBox, item: ExtractedTextItem): string {
 	const itemWidth = item.x1 - item.x0;
@@ -80,12 +116,51 @@ function sliceItemTextByBbox(bbox: BoundingBox, item: ExtractedTextItem): string
 	const overlapX1 = Math.min(item.x1, bbox.x1);
 	if (overlapX1 <= overlapX0) return '';
 
-	const startFrac = (overlapX0 - item.x0) / itemWidth;
-	const endFrac = (overlapX1 - item.x0) / itemWidth;
-	const startIdx = Math.max(0, Math.floor(startFrac * item.text.length));
-	const endIdx = Math.min(item.text.length, Math.ceil(endFrac * item.text.length));
+	// AFM-weighted cumulative x positions in item-local coordinates.
+	// `cumulative[i]` is the pixel offset (from `item.x0`) at the left
+	// edge of character `i`; `cumulative[text.length]` is the right
+	// edge of the last character, i.e. `itemWidth`.
+	const chars = Array.from(item.text);
+	let totalAfm = 0;
+	for (const ch of chars) totalAfm += glyphWidth(ch);
+	if (totalAfm <= 0) return item.text;
+	const scale = itemWidth / totalAfm;
+
+	const cumulative = new Array<number>(chars.length + 1);
+	cumulative[0] = 0;
+	let acc = 0;
+	for (let i = 0; i < chars.length; i++) {
+		acc += glyphWidth(chars[i]) * scale;
+		cumulative[i + 1] = acc;
+	}
+
+	const targetStart = overlapX0 - item.x0;
+	const targetEnd = overlapX1 - item.x0;
+
+	// Snap the slice to character boundaries by midpoint: a char is
+	// included if its midpoint lies inside [targetStart, targetEnd].
+	// This avoids clipping a glyph whose left edge sits a hair before
+	// `targetStart` (the "P. Hoogvliet" case) or whose right edge
+	// spills a hair past `targetEnd`.
+	let startIdx = chars.length;
+	for (let i = 0; i < chars.length; i++) {
+		const mid = (cumulative[i] + cumulative[i + 1]) / 2;
+		if (mid >= targetStart) {
+			startIdx = i;
+			break;
+		}
+	}
+	let endIdx = 0;
+	for (let i = chars.length - 1; i >= 0; i--) {
+		const mid = (cumulative[i] + cumulative[i + 1]) / 2;
+		if (mid <= targetEnd) {
+			endIdx = i + 1;
+			break;
+		}
+	}
+
 	if (endIdx <= startIdx) return '';
-	return item.text.slice(startIdx, endIdx).trim();
+	return chars.slice(startIdx, endIdx).join('').trim();
 }
 
 /**

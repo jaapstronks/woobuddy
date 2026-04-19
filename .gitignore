@@ -25,6 +25,9 @@ backend/dist/
 *~
 .DS_Store
 
+# Claude Code local state (per-project scratch)
+.claude/
+
 # Docker
 docker-compose.override.yml
 
