@@ -129,6 +129,87 @@ Two supported workflows, two different host ports:
 - **Backend type check**: `cd backend && source .venv/bin/activate && mypy app/`
 - **Backend tests**: `cd backend && source .venv/bin/activate && pytest`
 
+## Branching, commits, and pull requests
+
+This repo uses a **PR-only workflow**. The `main` branch is protected — direct pushes are blocked by a GitHub ruleset. Every change goes through a feature branch and a pull request.
+
+### Protection rules in effect on `main`
+
+- No direct pushes (PR required, 0 approvals, but the workflow gates the merge).
+- No force pushes, no branch deletion, **linear history only** (no merge commits).
+- Required status checks: `Frontend tests` and `Backend tests` must be green and the branch must be up to date with `main`.
+- All review threads must be resolved before merging.
+- Squash-and-merge is the **only** enabled merge style (configured at repo level). Merged feature branches are auto-deleted.
+- The repo owner has an emergency bypass on their admin role. **This is for genuine hotfixes only — Claude must never use it autonomously, even when asked to "just push to main".** If a user asks Claude to bypass, Claude explains the rule, asks for explicit confirmation, and prefers opening a PR.
+
+### Branch naming
+
+- `kebab-case`, prefixed by type: `feat/`, `fix/`, `refactor/`, `docs/`, `chore/`, `test/`, `perf/`.
+- Examples: `feat/page-completeness-review`, `fix/csp-blocked-fetch`, `docs/branch-protection-and-pr-rules`.
+- One branch = one logical change. Don't pile unrelated work onto a branch because it's already open.
+
+### Commit message rules (Conventional Commits)
+
+Every commit message has the form:
+
+```
+<type>(<scope>): <subject>
+
+<body — optional, wrapped at ~72 cols, explains *why*>
+```
+
+- **type**: `feat` (new feature), `fix` (bug fix), `refactor` (no behavior change), `docs`, `chore` (tooling/build), `test`, `perf`, `style`.
+- **scope**: optional, lowercase, names the affected area: `review`, `pdf-viewer`, `backend`, `ci`, `auth`, etc.
+- **subject**: imperative mood ("add", not "added" or "adds"), no trailing period, ≤ 72 chars.
+- **body** (when present): explains *why* the change is needed and what trade-offs were made. Never restate the diff.
+- One logical change per commit. Don't bundle unrelated work.
+- Banned: `wip`, `fix`, `stuff`, `update`, `address feedback`, `pr review`, etc. as standalone messages.
+
+Good: `feat(review): jump-to-next-detection keyboard shortcut`
+Good: `fix(pdf-viewer): clamp area-select bbox to page bounds when dragging past edge`
+Bad: `Updated PdfViewer.svelte`
+Bad: `wip`
+
+### Pull request rules
+
+- **Title**: same format as a commit subject (Conventional Commit, ≤ 72 chars). The PR title becomes the squash-merge commit on `main`, so it must be self-explanatory.
+- **Description**: use this template:
+
+  ```
+  ## Summary
+  - one or two bullets on what changes
+
+  ## Why
+  - what problem this solves / what user value it adds
+
+  ## Test plan
+  - [ ] specific manual or automated checks the reviewer should run
+  ```
+
+- **Size**: aim for under ~400 lines changed. Bigger PRs should usually be split.
+- **CI must be green** before merging. Both `Frontend tests` and `Backend tests` are required.
+- **All review threads resolved** before merging.
+- **Rebase, don't merge.** If `main` has moved, `git fetch origin && git rebase origin/main` on the feature branch — never merge `main` into the feature branch (linear history will reject it).
+
+### How Claude should work under these rules
+
+When asked to commit and push:
+
+1. Confirm there's a clean branching plan. Never commit to `main`. If currently on `main`, create a feature branch first (`git checkout -b <type>/<slug>`).
+2. Write commits that follow the Conventional Commit format above. If the work spans unrelated changes, split them into separate commits.
+3. Push the branch with `-u`, then open a PR via `gh pr create` using the template above.
+4. Report the PR URL.
+5. **Do not merge automatically.** The user merges. (Auto-merge is enabled, so `gh pr merge --auto --squash` is fine if the user explicitly asks.)
+6. If a user asks Claude to push directly to `main` or use the admin bypass, Claude explains the rule first and asks for explicit confirmation before doing anything destructive. Default answer: "let's open a PR instead".
+
+### When a rule gets violated
+
+Whether it's Claude, Jaap, Jeroen, or a future contributor — when a rule above gets bent, default to a short, specific coaching reply rather than a rule citation:
+
+- Explain **why** the rule exists in one sentence, not just that it was broken.
+- Show what a fix looks like based on the actual diff/branch in front of you — a concrete rewrite beats a link.
+- Offer to do the fix (amend the message, rebase, split the PR), then stop. One explanation, one example, one offer.
+
 ## Hero demo video
 
 The landing page Hero (`frontend/src/lib/components/landing/Hero.svelte`) plays `frontend/static/woobuddy-demo.mp4`. When replacing the clip, record a raw MP4 and compress it with this recipe before committing — the raw ScreenFlow/QuickTime export is typically 5–10× bigger than needed and will inflate the bundle:
