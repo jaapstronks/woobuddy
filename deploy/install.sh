@@ -115,8 +115,17 @@ if is_running frontend && is_running api; then
 	# frontend pods making calls against whichever api is up. Rolling
 	# api first means by the time we touch the frontend, every frontend
 	# replica — old and new — is talking to a fresh api.
-	docker rollout -f "${COMPOSE_FILE}" api
-	docker rollout -f "${COMPOSE_FILE}" frontend
+	#
+	# -t 180 overrides docker-rollout's 60s default: Deduce NER rebuilds
+	# its Dutch-name lookup structures on first boot (~90s) before the
+	# FastAPI lifespan finishes and /api/health starts returning 200.
+	# The compose healthcheck already has `start_period: 90s`, but
+	# docker-rollout polls `State.Health.Status` on its own clock and
+	# would otherwise give up before Deduce is ready. 180s leaves room.
+	# Frontend boots in seconds, but the same timeout is harmless — a
+	# healthy container rolls instantly; the cap only bounds rollback.
+	docker rollout -f "${COMPOSE_FILE}" -t 180 api
+	docker rollout -f "${COMPOSE_FILE}" -t 180 frontend
 
 	# Graceful Caddy reload in case the Caddyfile changed on disk. The
 	# bind mount means new contents are already visible inside the
