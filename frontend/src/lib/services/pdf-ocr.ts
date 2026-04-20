@@ -113,11 +113,8 @@ export async function runOcr(
 			const canvas = document.createElement('canvas');
 			canvas.width = Math.ceil(renderViewport.width);
 			canvas.height = Math.ceil(renderViewport.height);
-			const ctx = canvas.getContext('2d');
-			if (!ctx) {
-				throw new OcrError('Kon geen canvas aanmaken voor OCR.');
-			}
-			await page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
+			// pdfjs v5 takes the canvas directly and manages its own 2d context.
+			await page.render({ canvas, viewport: renderViewport }).promise;
 
 			// v6 moved non-text output behind an opt-in; v7 finished the
 			// migration by removing top-level `words`/`lines` entirely.
