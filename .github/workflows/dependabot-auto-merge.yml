@@ -22,6 +22,14 @@ jobs:
         uses: dependabot/fetch-metadata@v3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          # v3 verifies the HEAD commit's GPG signature by default. That check
+          # fails on any Dependabot branch a human has rebased locally (the
+          # rebase rewrites the committer, stripping Dependabot's signature).
+          # The `if:` guard above already restricts this workflow to PRs
+          # *opened* by Dependabot, so skipping the signature check here only
+          # widens the legitimate cases — human-fixed Dependabot branches
+          # still auto-merge once CI is green.
+          skip-commit-verification: true
 
       - name: Enable auto-merge for patch and minor updates
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor'
