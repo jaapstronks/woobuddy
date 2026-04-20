@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { Lock, CircleSlash, Github } from 'lucide-svelte';
+	import { Lock, CircleSlash } from 'lucide-svelte';
+	import GithubIcon from '$lib/components/ui/GithubIcon.svelte';
 
 	const chips = [
 		{ icon: Lock, label: 'PDF blijft op je apparaat' },
 		{ icon: CircleSlash, label: 'Geen LLM in de pijplijn' },
-		{ icon: Github, label: 'MIT open source' }
+		{ icon: GithubIcon, label: 'MIT open source' }
 	];
 </script>
 

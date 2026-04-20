@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { Github, ArrowUpRight } from 'lucide-svelte';
+	import { ArrowUpRight } from 'lucide-svelte';
 	import { reveal } from '$lib/actions/reveal';
 	import LeadCaptureForm from '$lib/components/marketing/LeadCaptureForm.svelte';
+	import GithubIcon from '$lib/components/ui/GithubIcon.svelte';
 </script>
 
 <section id="privacy" class="px-6 py-24">
@@ -25,7 +26,7 @@
 					rel="noopener noreferrer"
 					class="inline-flex items-center gap-2 rounded-md border border-ink bg-ink px-5 py-3 text-sm font-medium text-bg transition-colors hover:bg-primary hover:border-primary"
 				>
-					<Github size={16} />
+					<GithubIcon size={16} />
 					Bekijk op GitHub
 					<ArrowUpRight size={14} />
 				</a>
