@@ -119,25 +119,35 @@ export async function runOcr(
 			}
 			await page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
 
-			const { data } = await worker.recognize(canvas);
+			// v6 moved non-text output behind an opt-in; v7 finished the
+			// migration by removing top-level `words`/`lines` entirely.
+			// Passing `{ blocks: true }` gets us the full
+			// block → paragraph → line → word tree we flatten below.
+			const { data } = await worker.recognize(canvas, {}, { blocks: true });
 
 			// Tesseract returns per-word bboxes in canvas pixels with
 			// top-left origin — exactly the coordinate space we want for
 			// the rest of the pipeline, just scaled. Divide by
 			// RENDER_SCALE to get PDF points.
 			const textItems: ExtractedTextItem[] = [];
-			for (const word of data.words ?? []) {
-				const text = (word.text ?? '').trim();
-				if (!text) continue;
-				const bbox = word.bbox;
-				if (!bbox) continue;
-				textItems.push({
-					text,
-					x0: bbox.x0 / RENDER_SCALE,
-					y0: bbox.y0 / RENDER_SCALE,
-					x1: bbox.x1 / RENDER_SCALE,
-					y1: bbox.y1 / RENDER_SCALE
-				});
+			for (const block of data.blocks ?? []) {
+				for (const paragraph of block.paragraphs) {
+					for (const line of paragraph.lines) {
+						for (const word of line.words) {
+							const text = (word.text ?? '').trim();
+							if (!text) continue;
+							const bbox = word.bbox;
+							if (!bbox) continue;
+							textItems.push({
+								text,
+								x0: bbox.x0 / RENDER_SCALE,
+								y0: bbox.y0 / RENDER_SCALE,
+								x1: bbox.x1 / RENDER_SCALE,
+								y1: bbox.y1 / RENDER_SCALE
+							});
+						}
+					}
+				}
 			}
 
 			// Re-assemble the page full-text using the same
