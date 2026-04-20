@@ -66,8 +66,8 @@ export async function renderPdfPage({
 	const offscreen = document.createElement('canvas');
 	offscreen.width = viewport.width;
 	offscreen.height = viewport.height;
-	const offCtx = offscreen.getContext('2d')!;
-	await page.render({ canvasContext: offCtx, viewport }).promise;
+	// pdfjs v5 takes the canvas directly and manages its own 2d context.
+	await page.render({ canvas: offscreen, viewport }).promise;
 
 	canvas.width = viewport.width;
 	canvas.height = viewport.height;
