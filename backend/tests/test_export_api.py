@@ -19,6 +19,7 @@ fixture byte string so no on-disk sample is needed.
 
 from __future__ import annotations
 
+import io
 import logging
 import uuid
 from collections.abc import Iterator
@@ -114,9 +115,7 @@ async def test_non_pdf_magic_is_rejected_before_fitz(
 
 
 @pytest.mark.asyncio
-async def test_oversized_payload_returns_413(
-    client: AsyncClient, doc_with_pdf: Document
-) -> None:
+async def test_oversized_payload_returns_413(client: AsyncClient, doc_with_pdf: Document) -> None:
     """>50 MB must 413 without loading PyMuPDF. We build the payload by
     prepending the PDF magic to junk so the size check fires before the
     magic check, matching the endpoint's check order."""
@@ -131,9 +130,7 @@ async def test_oversized_payload_returns_413(
 
 
 @pytest.mark.asyncio
-async def test_unknown_document_returns_404(
-    client: AsyncClient, sample_pdf: bytes
-) -> None:
+async def test_unknown_document_returns_404(client: AsyncClient, sample_pdf: bytes) -> None:
     bogus_id = uuid.uuid4()
     resp = await client.post(
         f"/api/documents/{bogus_id}/export/redact-stream",
@@ -149,11 +146,16 @@ async def test_unknown_document_returns_404(
 
 
 @pytest.mark.asyncio
-async def test_no_accepted_detections_returns_original(
+async def test_no_accepted_detections_still_post_processed(
     client: AsyncClient, doc_with_pdf: Document, sample_pdf: bytes
 ) -> None:
-    """Short-circuit path: no accepted detections means nothing to redact
-    and the endpoint streams the original bytes straight back."""
+    """No-redaction case still gets the accessibility pass.
+
+    Earlier versions short-circuited and streamed the input bytes back
+    untouched. Todo #48 changed that: every export gets `/Lang (nl-NL)`
+    and XMP metadata so DMSes and screen readers behave, regardless of
+    whether anything was actually redacted. The original sentinel text
+    must still be intact — post-processing is metadata only on this path."""
     resp = await client.post(
         f"/api/documents/{doc_with_pdf.id}/export/redact-stream",
         content=sample_pdf,
@@ -161,10 +163,23 @@ async def test_no_accepted_detections_returns_original(
     )
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("application/pdf")
-    assert resp.content == sample_pdf
 
     disp = resp.headers["content-disposition"]
     assert f'filename="gelakt_{doc_with_pdf.filename}"' in disp
+
+    # Sentinel text is preserved (no redactions ran).
+    out = fitz.open(stream=resp.content, filetype="pdf")
+    assert "Sentinel content" in out[0].get_text()
+    out.close()
+
+    # Catalog now carries /Lang nl-NL — verified via pikepdf.
+    import pikepdf
+
+    pdf = pikepdf.open(io.BytesIO(resp.content))
+    try:
+        assert str(pdf.Root.get("/Lang")) == "nl-NL"
+    finally:
+        pdf.close()
 
 
 @pytest.mark.asyncio
@@ -193,9 +208,7 @@ async def test_accepted_detection_actually_redacts_content(
         confidence=1.0,
         woo_article="5.1.2e",
         review_status="accepted",
-        bounding_boxes=[
-            {"page": 0, "x0": 40.0, "y0": 90.0, "x1": 260.0, "y1": 115.0}
-        ],
+        bounding_boxes=[{"page": 0, "x0": 40.0, "y0": 90.0, "x1": 260.0, "y1": 115.0}],
         reasoning="test",
         source="manual",
     )
@@ -234,9 +247,7 @@ async def test_only_accepted_and_auto_accepted_are_redacted(
             confidence=1.0,
             woo_article="5.1.2e",
             review_status=status,
-            bounding_boxes=[
-                {"page": 0, "x0": 0.0, "y0": 0.0, "x1": 300.0, "y1": 200.0}
-            ],
+            bounding_boxes=[{"page": 0, "x0": 0.0, "y0": 0.0, "x1": 300.0, "y1": 200.0}],
             reasoning=f"status={status}",
             source="manual",
         )
@@ -249,8 +260,14 @@ async def test_only_accepted_and_auto_accepted_are_redacted(
         headers={"Content-Type": "application/pdf"},
     )
     assert resp.status_code == 200
-    # Nothing eligible → bytes are returned unchanged.
-    assert resp.content == sample_pdf
+    # Nothing eligible → no redactions ran, but the post-processing
+    # accessibility pass still adds /Lang and XMP. The sentinel text in
+    # the source must still be present — this guards against pending /
+    # rejected / deferred / edited detections accidentally bleeding
+    # through into a redaction.
+    out = fitz.open(stream=resp.content, filetype="pdf")
+    assert "Sentinel content" in out[0].get_text()
+    out.close()
 
 
 # ---------------------------------------------------------------------------
@@ -288,3 +305,42 @@ async def test_pdf_body_never_appears_in_logs(
     # The sentinel lives inside the PDF stream; if the body were logged,
     # the marker would appear. Byte-count metadata is fine.
     assert "SentinelPDFBodyMarker9z1k" not in combined
+
+
+@pytest.mark.asyncio
+async def test_export_title_header_never_logged(
+    client: AsyncClient,
+    doc_with_pdf: Document,
+    sample_pdf: bytes,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The user-supplied PDF title (X-Export-Title header) ends up in
+    XMP metadata and must NOT appear in any log line. Reviewers may put
+    zaaknummers, person names, or other privacy-sensitive context into
+    that field — leaking it into structured logs would be a regression
+    against the client-first architecture (only metadata, never content
+    or reviewer-typed strings)."""
+    sentinel = "ExportTitleSentinelXyz9k2"
+    with caplog.at_level(logging.DEBUG):
+        resp = await client.post(
+            f"/api/documents/{doc_with_pdf.id}/export/redact-stream",
+            content=sample_pdf,
+            headers={
+                "Content-Type": "application/pdf",
+                "X-Export-Title": sentinel,
+            },
+        )
+    assert resp.status_code == 200
+
+    # The title must appear in the response (it's in the XMP block).
+    import pikepdf as _pikepdf
+
+    pdf = _pikepdf.open(io.BytesIO(resp.content))
+    try:
+        with pdf.open_metadata() as meta:
+            assert meta["dc:title"] == sentinel
+    finally:
+        pdf.close()
+
+    combined = "\n".join(record.getMessage() for record in caplog.records)
+    assert sentinel not in combined

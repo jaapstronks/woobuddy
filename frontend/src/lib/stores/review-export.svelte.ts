@@ -21,6 +21,11 @@ import { bucketPages, bucketRedactions } from '$lib/analytics/events';
 let exporting = $state(false);
 let exportError = $state<string | null>(null);
 let showPostExportLead = $state(false);
+// Inline accessibility-confirmation banner that appears once after a
+// successful export. Communicates the PDF/A-2b + Dutch language tag
+// guarantee so the work the post-processing pipeline does is visible.
+// Auto-dismisses on the next export run.
+let showAccessibilityBanner = $state(false);
 
 export interface RunExportArgs {
 	docId: string;
@@ -30,6 +35,12 @@ export interface RunExportArgs {
 	confirmedCount: number;
 	/** Page count of the exported document — bucketed for analytics. */
 	pageCount: number;
+	/**
+	 * Optional reviewer-typed title that ends up in the XMP `dc:title`
+	 * field. Falls back to no title (i.e. DMSes show the filename) when
+	 * blank or omitted.
+	 */
+	title?: string;
 }
 
 async function runExport({
@@ -37,14 +48,17 @@ async function runExport({
 	pdfBytes,
 	filename,
 	confirmedCount,
-	pageCount
+	pageCount,
+	title
 }: RunExportArgs): Promise<void> {
 	exporting = true;
 	exportError = null;
+	showAccessibilityBanner = false;
 	try {
-		const redacted = await exportRedactedPdf(docId, pdfBytes);
+		const redacted = await exportRedactedPdf(docId, pdfBytes, { title });
 		downloadBlob(redacted, `gelakt_${filename}`);
 		showPostExportLead = true;
+		showAccessibilityBanner = true;
 		track('export_completed', {
 			redaction_bucket: bucketRedactions(confirmedCount),
 			page_bucket: bucketPages(pageCount)
@@ -70,6 +84,10 @@ function setPostExportLead(next: boolean): void {
 	showPostExportLead = next;
 }
 
+function setAccessibilityBanner(next: boolean): void {
+	showAccessibilityBanner = next;
+}
+
 function setError(message: string | null): void {
 	exportError = message;
 }
@@ -82,6 +100,7 @@ function reset(): void {
 	exporting = false;
 	exportError = null;
 	showPostExportLead = false;
+	showAccessibilityBanner = false;
 }
 
 export const reviewExportStore = {
@@ -94,9 +113,13 @@ export const reviewExportStore = {
 	get showPostExportLead() {
 		return showPostExportLead;
 	},
+	get showAccessibilityBanner() {
+		return showAccessibilityBanner;
+	},
 	runExport,
 	runDebugExport,
 	setPostExportLead,
+	setAccessibilityBanner,
 	setError,
 	clearError,
 	reset

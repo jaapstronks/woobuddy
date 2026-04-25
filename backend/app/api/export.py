@@ -17,6 +17,7 @@ from app.db.session import get_db
 from app.logging_config import get_logger
 from app.models.schemas import Detection
 from app.security import limiter, verify_proxy_secret
+from app.services.pdf_accessibility import post_process_for_accessibility
 from app.services.pdf_engine import PdfValidationError, apply_redactions
 
 logger = get_logger(__name__)
@@ -29,6 +30,11 @@ MAX_PDF_SIZE = 50 * 1024 * 1024  # 50 MB
 # error messages clean and prevents obscure exception text from being
 # returned to clients.
 _PDF_MAGIC = b"%PDF-"
+# Hard ceiling on the user-supplied PDF title that ends up in XMP
+# metadata. Long enough to fit any sensible Dutch besluit name, short
+# enough that even an accidental paste of the document body gets cut off
+# before it leaks into the metadata.
+_MAX_TITLE_LEN = 200
 
 
 def _build_redactions(detections: list[Detection]) -> list[dict]:
@@ -49,6 +55,21 @@ def _build_redactions(detections: list[Detection]) -> list[dict]:
                 }
             )
     return redactions
+
+
+def _read_title_header(request: Request) -> str | None:
+    """Pull the optional PDF title out of the `X-Export-Title` header.
+
+    A header (rather than a query parameter) keeps the title out of
+    access logs and out of any URL captured by the proxy. Empty / blank
+    titles return None so we skip writing a blank `dc:title` to the XMP
+    block.
+    """
+    raw = request.headers.get("x-export-title", "")
+    title = raw.strip()
+    if not title:
+        return None
+    return title[:_MAX_TITLE_LEN]
 
 
 @router.post(
@@ -96,23 +117,20 @@ async def redact_stream(
         )
     )
     detections = list(det_result.scalars().all())
-
-    if not detections:
-        logger.info(
-            "export.generated",
-            document_id=str(document_id),
-            detection_count=0,
-            redaction_count=0,
-        )
-        return StreamingResponse(
-            io.BytesIO(pdf_bytes),
-            media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="gelakt_{doc.filename}"'},
-        )
-
     redactions = _build_redactions(detections)
+
+    title = _read_title_header(request)
+
     try:
-        redacted_bytes = apply_redactions(pdf_bytes, redactions)
+        redacted_bytes = apply_redactions(pdf_bytes, redactions) if redactions else pdf_bytes
+        # Accessibility post-processing runs on every export — even when
+        # there are no redactions we still want /Lang and XMP set so the
+        # exported PDF behaves correctly in screen readers and DMSes.
+        final_bytes = post_process_for_accessibility(
+            redacted_bytes,
+            redactions=redactions,
+            title=title,
+        )
     except PdfValidationError:
         # Raised when PyMuPDF refuses the stream (corrupt / not a PDF even
         # though it passed the magic-byte check). Never echo parser output:
@@ -128,10 +146,15 @@ async def redact_stream(
         document_id=str(document_id),
         detection_count=len(detections),
         redaction_count=len(redactions),
+        # Title strings are deliberately not logged — they can contain
+        # zaaknummers, person names, or other privacy-sensitive context
+        # that the reviewer typed into the export field. Only a boolean
+        # signal that someone *did* set a title is safe.
+        title_set=title is not None,
     )
 
     return StreamingResponse(
-        io.BytesIO(redacted_bytes),
+        io.BytesIO(final_bytes),
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="gelakt_{doc.filename}"'},
     )

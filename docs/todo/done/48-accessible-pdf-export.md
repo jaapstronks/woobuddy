@@ -6,6 +6,53 @@
 - **Depends on:** Nothing
 - **Blocks:** Nothing
 
+## Status when shipped (2026-04-25)
+
+Tier 1 + Tier 2 landed in full. Tier 3 (PDF/UA-1) and Tier 4
+(machine-readable inventory) remain explicitly deferred per the original
+plan.
+
+**Shipped:**
+
+- `/Lang (nl-NL)` on the document catalog (`add_language_tag`)
+- XMP metadata: `dc:title` (user-editable, blank by default),
+  `dc:language`, `dc:description` (auto-generated from the redaction
+  articles + export date), `pdf:Producer`, `xmp:CreatorTool`,
+  `xmp:CreateDate`, `xmp:ModifyDate` (`write_xmp_metadata`).
+- Accessible Square annotation per redacted rectangle with `/Contents`
+  and `/Alt` set to a Dutch screen-reader label like "Gelakt — Artikel
+  5.1.2e — Persoonlijke levenssfeer". The 6pt white-on-black overlay
+  text in `pdf_engine.apply_redactions` was removed; the painted black
+  rectangle is now the visual and the annotation is the accessible
+  layer.
+- Outline / bookmark preservation through the post-processing chain,
+  pinned by a fixture-based regression test.
+- PDF/A-2b conversion via Ghostscript subprocess with graceful fallback:
+  if `gs` is missing on PATH, the export still succeeds with an
+  `export.pdfa.ghostscript_missing` warning log and a non-PDF/A output.
+- Optional `X-Export-Title` header for the reviewer-typed title; capped
+  at 200 chars; never logged.
+- Frontend: pre-export `sl-dialog` with the optional title field, plus a
+  one-shot success banner ("Uw PDF is geëxporteerd met Nederlandse
+  taaltag, XMP-metadata en toegankelijke lak-markeringen…").
+- Landing page chip: "Geëxporteerde PDF's zijn voorgelezen-toegankelijk".
+- New module `backend/app/services/pdf_accessibility.py` and tests
+  `backend/tests/test_pdf_accessibility.py`. Existing
+  `tests/test_export_api.py` updated for the new contract: every export
+  now carries `/Lang` + XMP, even when no detections were redacted.
+
+**Deferred / not shipped:**
+
+- veraPDF CI validation. Adding the veraPDF CLI as a test dependency
+  would require either bundling a Java runtime in CI or shelling out to
+  a network-installed JAR — neither pulls its weight given that the
+  unit tests assert the catalog and XMP invariants directly. Revisit if
+  a real PDF/A non-conformance bug ships and we need the regression net.
+- PDF/UA-1 full structure-tree conformance — same reasoning as the
+  original todo. Revisit once #46 is producing tagged source PDFs.
+- Tier 4 machine-readable redaction inventory as a PDF/A-3 attachment —
+  not implemented; needs Tier 3 plumbing to be useful.
+
 ## Why
 
 Dutch government content falls under **digitoegankelijk.nl / EN 301 549 / WCAG 2.1 AA**, and published PDFs are expected to conform to PDF/UA-1 and PDF/A for archival. Most gelakte Woo besluiten in the wild fail this hard — they are visual-only PDFs with no language tag, no structure, and black rectangles that give screen reader users nothing but a gap in the text.

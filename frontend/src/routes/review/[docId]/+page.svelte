@@ -2,6 +2,8 @@
 	import '@shoelace-style/shoelace/dist/components/button/button.js';
 	import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 	import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
+	import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
+	import '@shoelace-style/shoelace/dist/components/input/input.js';
 
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -215,7 +217,23 @@
 		reviewExportStore.runDebugExport(reviewStore.document, detectionStore.all, docId);
 	}
 
-	async function handleExport() {
+	// Optional XMP `dc:title` for the exported PDF. Default blank so the
+	// reviewer never accidentally leaks the source filename into metadata
+	// — `dc:title` is shown by DMS systems and read aloud by screen
+	// readers. The dialog confirms the export and lets the reviewer set
+	// or skip the title in one place.
+	let exportDialogOpen = $state(false);
+	let exportTitle = $state('');
+
+	function openExportDialog(): void {
+		if (!pdfData) {
+			reviewExportStore.setError('Geen PDF beschikbaar om te exporteren.');
+			return;
+		}
+		exportDialogOpen = true;
+	}
+
+	async function handleExport(): Promise<void> {
 		if (!pdfData) {
 			reviewExportStore.setError('Geen PDF beschikbaar om te exporteren.');
 			return;
@@ -225,12 +243,14 @@
 			(d) => d.review_status !== 'rejected'
 		).length;
 		const pageCount = reviewStore.document?.page_count ?? 0;
+		exportDialogOpen = false;
 		await reviewExportStore.runExport({
 			docId,
 			pdfBytes: pdfData,
 			filename,
 			confirmedCount,
-			pageCount
+			pageCount,
+			title: exportTitle
 		});
 	}
 
@@ -545,7 +565,7 @@
 		<sl-button
 			size="small"
 			variant="primary"
-			onclick={handleExport}
+			onclick={openExportDialog}
 			disabled={reviewExportStore.exporting || !pdfData}
 		>
 			{#if reviewExportStore.exporting}
@@ -604,6 +624,28 @@
 				>
 					<RotateCw size={14} />
 					Opnieuw proberen
+				</button>
+			</div>
+		{/if}
+		{#if reviewExportStore.showAccessibilityBanner}
+			<!-- #48 — confirms the accessibility guarantees of the export
+			     so the work the post-processing pipeline does is visible
+			     to the reviewer. Auto-clears on the next export run. -->
+			<div
+				class="mx-4 mt-3 flex items-start justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800"
+			>
+				<span>
+					Uw PDF is geëxporteerd met Nederlandse taaltag, XMP-metadata en
+					toegankelijke lak-markeringen. Schermlezers lezen voortaan voor
+					welk Woo-artikel een passage is gelakt.
+				</span>
+				<button
+					type="button"
+					onclick={() => reviewExportStore.setAccessibilityBanner(false)}
+					class="shrink-0 rounded-md p-1 text-emerald-700 hover:bg-emerald-100"
+					aria-label="Sluiten"
+				>
+					<X size={16} />
 				</button>
 			</div>
 		{/if}
@@ -887,6 +929,48 @@
 			</div>
 		</div>
 	{/if}
+
+	<!-- #48 — pre-export dialog. The reviewer can optionally type a PDF
+	     title (XMP `dc:title`) before confirming the export. Default is
+	     blank so the source filename never silently leaks into metadata,
+	     but a placeholder hints at what to type. -->
+	<sl-dialog
+		label="Gelakte PDF exporteren"
+		open={exportDialogOpen}
+		onsl-after-hide={() => {
+			exportDialogOpen = false;
+		}}
+	>
+		<p class="mb-3 text-sm text-ink-soft">
+			De geëxporteerde PDF krijgt een Nederlandse taaltag, XMP-metadata en
+			toegankelijke lak-markeringen. Schermlezers lezen dan voor welk
+			Woo-artikel een passage is gelakt.
+		</p>
+		<sl-input
+			label="PDF-titel (optioneel)"
+			help-text="Komt in de PDF-eigenschappen terecht; zichtbaar in DMS-systemen en schermlezers."
+			placeholder="Bijv. 'Besluit Woo-verzoek 2026-0123'"
+			value={exportTitle}
+			onsl-input={(e: Event) => {
+				exportTitle = (e.target as HTMLInputElement).value;
+			}}
+			maxlength="200"
+		></sl-input>
+		<div slot="footer" class="flex justify-end gap-2">
+			<sl-button
+				variant="text"
+				onclick={() => {
+					exportDialogOpen = false;
+				}}
+			>
+				Annuleren
+			</sl-button>
+			<sl-button variant="primary" onclick={handleExport}>
+				<span slot="prefix"><Download size={14} /></span>
+				Exporteren
+			</sl-button>
+		</div>
+	</sl-dialog>
 
 	<!-- Manual text-selection redaction overlays. Rendered at the root so
 	     they escape `overflow: hidden` on the PDF scroller. -->

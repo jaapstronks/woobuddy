@@ -10,6 +10,8 @@ dependencies = [
     "uvicorn[standard]>=0.34.0",
     # PDF processing
     "pymupdf>=1.25.0",
+    # PDF post-processing (language tag, XMP metadata, accessible annotations)
+    "pikepdf>=10.0.0",
     # Dutch NER / de-identification
     "deduce>=3.0.0",
     # HTTP client (used by the Brevo leads integration)
