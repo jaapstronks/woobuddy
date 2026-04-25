@@ -1,0 +1,8 @@
+{
+	"diwoo_metadata_schema_version": "0.9.8",
+	"diwoo_metadata_schema_url": "https://standaarden.overheid.nl/diwoo/metadata/doc/0.9.8",
+	"informatiecategorieen_lijst_uri": "https://identifier.overheid.nl/tooi/set/scw_woo_informatiecategorieen/3",
+	"formatlijst_lijst_uri": "https://identifier.overheid.nl/tooi/set/scw_formats/1",
+	"last_bumped_at": "2026-04-25",
+	"bumped_by": "scripts/bump-tooi-lists.mjs"
+}

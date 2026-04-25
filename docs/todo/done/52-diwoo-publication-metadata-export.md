@@ -1,10 +1,37 @@
 # 52 — DiWoo / TOOI publication metadata export
 
+- **Status:** Done (single-document scope, see "Built vs deferred" below)
 - **Priority:** P2
 - **Size:** M (1–3 days)
 - **Source:** Competitor landscape 2026-04 — Novadoc/EntrD close the loop to open.overheid.nl; we don't
 - **Depends on:** #19 (redaction log) — already done
 - **Blocks:** Nothing, but strongly complements #31 (redaction inventory CSV)
+
+## Built vs deferred
+
+**What shipped:**
+
+- Toolbar button "Met publicatiemetadata" in `/review/[docId]` next to the existing "Gelakte PDF" export, opens a Shoelace dialog (`PublicationExportDialog.svelte`).
+- Dialog collects: `officieleTitel` (defaults to filename), `identifier`, `informatiecategorie` (TOOI dropdown), `opsteller`/organisatie, optional `omschrijving`. Required fields gate the submit button.
+- Auto-filled fields surfaced in the dialog so the reviewer knows what's in the bundle: `creatiedatum` (from document), `bestandsformaat=application/pdf`, `language=nld`, `documenthandeling=anonimiseren` for this export.
+- Bundle (zip via fflate, fully client-side) contains:
+  - `redacted.pdf` — existing redact-stream endpoint output, called once per export
+  - `metadata.xml` — DiWoo v0.9.8 with every required element (`classificatiecollectie`, `creatiedatum`, `format`, `geldigheid`, `language`, `opsteller`, `publisher`, `verantwoordelijke`, `titelcollectie/officieleTitel`) plus optional `documenthandelingen` and `identifiers`/`omschrijvingen` when provided
+  - `metadata.json` — GPP-Woo publicatiebank `Publication` + `Document` envelope, both starting `publicatiestatus=concept`
+  - `redaction-log.csv` — accepted detections only, columns: #, pagina, type, trap, woo_artikel, grond, status, bron, beoordeeld_op, bbox_count, motivatie. No entity text (client-first)
+  - `README.txt` — Dutch explanation, what each file is, how to feed it into GPP-publicatiebank or another Woo platform
+- Vendored TOOI value lists in `frontend/static/diwoo-tooi-lists/`: `informatiecategorieen.json` (18 statutory items from `scw_woo_informatiecategorieen/3`), `formatlijst.json`, `version.json`. `organisaties.json` is a deliberate stub — see file note.
+- `scripts/bump-tooi-lists.mjs` refreshes the lists from standaarden.overheid.nl. Supports `--check` for CI.
+- Plausible event `publication_export_completed` (same shape as `export_completed`) so dashboard can compare adoption.
+- Tests: `xml.test.ts`, `json.test.ts`, `csv.test.ts`, `bundle.test.ts` — every required DiWoo element, every required GPP-Woo field, CSV column order + escaping, zip round-trip and PDF byte preservation.
+
+**Deliberately deferred (document when picked up later):**
+
+- **Runtime XSD validation in the browser** — the spec listed `xmllint-wasm` as one option. Validation in the dialog is form-level (required-field gating) rather than full-XSD; the cost of shipping a ~2 MB WASM blob outweighs the marginal correctness gain when fixture tests already enforce structural compliance. Add it back if a real reviewer-side bug surfaces.
+- **TOOI organisaties value list** — full register has tens of thousands of entries and would either bloat the bundle or need lazy loading + a search UX. V1 keeps `opsteller` / `verantwoordelijke` as free text; revisit when org context lands (post-#33 / #32).
+- **Documentsoort / thema / trefwoord pickers** — DiWoo v0.9.8 requires 1+ in each of these. The serializer fills sensible defaults (documentsoort=besluit, thema=primary informatiecategorie label, trefwoord=derived from title) so the schema is satisfied without burdening V1's small dialog. Promote to dropdowns if downstream platforms reject the defaults.
+- **POSTing the bundle directly to a publicatiebank instance** — out of scope per the original todo. The bundle is a one-way file export.
+- **Multi-document / dossier sitemap** — V1 is single-document, matching the rest of the app.
 
 ## Why
 

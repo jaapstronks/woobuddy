@@ -1,0 +1,5 @@
+{
+	"$schema": "https://standaarden.overheid.nl/diwoo/metadata/doc/0.9.8",
+	"_note": "Deliberate stub. The full TOOI organisaties register has tens of thousands of entries (rwc_overheidsorganisatie_compleet + rwc_zbo_compleet + rwp_overige_overheidsorganisaties_peildatum) and is too large to ship as a synchronous bundle. The publication-export dialog accepts free-text for opsteller / verantwoordelijke at V1 — when post-auth org context exists (#33), this list should be lazy-loaded against the resolver at https://identifier.overheid.nl/tooi/.",
+	"items": []
+}

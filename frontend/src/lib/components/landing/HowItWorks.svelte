@@ -19,7 +19,7 @@
 			icon: Download,
 			title: 'Exporteren zonder opslag',
 			description:
-				'Bij het exporteren gaat de PDF nog één keer naar de server, wordt daar in het werkgeheugen onomkeerbaar gelakt en direct weer naar jou teruggestuurd. We bewaren niets — geen origineel, geen gelakte versie, geen logregel met inhoud.'
+				'Bij het exporteren gaat de PDF nog één keer naar de server, wordt daar in het werkgeheugen onomkeerbaar gelakt en direct weer naar jou teruggestuurd. We bewaren niets — geen origineel, geen gelakte versie, geen logregel met inhoud. Optioneel als publicatieklare DiWoo-bundel inclusief metadata en lakkenoverzicht — direct in te lezen door GPP-Woo of een ander Woo-platform.'
 		}
 	];
 </script>

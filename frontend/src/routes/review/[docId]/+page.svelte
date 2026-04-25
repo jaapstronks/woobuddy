@@ -64,6 +64,9 @@
 		pickPdfFile
 	} from '$lib/services/review-pdf-loader';
 	import { reviewExportStore } from '$lib/stores/review-export.svelte';
+	import PublicationExportDialog from '$lib/components/review/PublicationExportDialog.svelte';
+	import { loadTooiVersion } from '$lib/services/diwoo';
+	import type { PublicationMetadataInput } from '$lib/services/diwoo';
 	import type { WooArticleCode, EntityType, DetectionTier } from '$lib/types';
 	import {
 		ArrowLeft,
@@ -71,6 +74,7 @@
 		PanelRightOpen,
 		Download,
 		FileJson,
+		Package,
 		RotateCw,
 		Undo2,
 		Redo2,
@@ -251,6 +255,39 @@
 			confirmedCount,
 			pageCount,
 			title: exportTitle
+		});
+	}
+
+	// #52 — DiWoo / GPP-Woo publication-export bundle. The toolbar
+	// button opens the dedicated dialog; submitting it builds and
+	// downloads a zip with the redacted PDF, metadata.xml, metadata.json,
+	// redaction-log.csv, and a Dutch readme. We re-use the same
+	// redact-stream endpoint as the plain PDF export, so this adds no
+	// new server route.
+	function handleOpenPublicationDialog() {
+		if (!pdfData) {
+			reviewExportStore.setError('Geen PDF beschikbaar om te exporteren.');
+			return;
+		}
+		reviewExportStore.openPublicationDialog();
+	}
+
+	async function handlePublicationSubmit(input: PublicationMetadataInput): Promise<void> {
+		if (!pdfData) return;
+		const confirmedCount = detectionStore.all.filter(
+			(d) => d.review_status !== 'rejected'
+		).length;
+		const pageCount = reviewStore.document?.page_count ?? 0;
+		const version = await loadTooiVersion();
+		await reviewExportStore.runPublicationExport({
+			docId,
+			pdfBytes: pdfData,
+			document: reviewStore.document,
+			detections: detectionStore.all,
+			input,
+			tooiSchemaVersion: version.diwoo_metadata_schema_version,
+			confirmedCount,
+			pageCount
 		});
 	}
 
@@ -562,11 +599,27 @@
 				<FileJson size={14} />
 			</sl-button>
 		</sl-tooltip>
+		<sl-tooltip content="Exporteer een DiWoo-conforme zip met de gelakte PDF, metadata.xml, metadata.json en lakkenoverzicht. Geschikt voor publicatie via GPP-Woo of een ander Woo-platform.">
+			<sl-button
+				size="small"
+				variant="default"
+				onclick={handleOpenPublicationDialog}
+				disabled={reviewExportStore.publicationBundling || reviewExportStore.exporting || !pdfData}
+			>
+				{#if reviewExportStore.publicationBundling}
+					<sl-spinner slot="prefix" style="font-size: 1rem;"></sl-spinner>
+					Bundelen...
+				{:else}
+					<span slot="prefix"><Package size={14} /></span>
+					Met publicatiemetadata
+				{/if}
+			</sl-button>
+		</sl-tooltip>
 		<sl-button
 			size="small"
 			variant="primary"
 			onclick={openExportDialog}
-			disabled={reviewExportStore.exporting || !pdfData}
+			disabled={reviewExportStore.exporting || reviewExportStore.publicationBundling || !pdfData}
 		>
 			{#if reviewExportStore.exporting}
 				<sl-spinner slot="prefix" style="font-size: 1rem; --indicator-color: white;"></sl-spinner>
@@ -971,6 +1024,15 @@
 			</sl-button>
 		</div>
 	</sl-dialog>
+
+	<!-- #52 — DiWoo / GPP-Woo publication-export dialog. -->
+	<PublicationExportDialog
+		open={reviewExportStore.publicationDialogOpen}
+		document={reviewStore.document}
+		busy={reviewExportStore.publicationBundling}
+		onCancel={() => reviewExportStore.closePublicationDialog()}
+		onSubmit={handlePublicationSubmit}
+	/>
 
 	<!-- Manual text-selection redaction overlays. Rendered at the root so
 	     they escape `overflow: hidden` on the PDF scroller. -->
