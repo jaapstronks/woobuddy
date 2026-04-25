@@ -80,18 +80,28 @@ export type EntityType =
 export type ConfidenceLevel = 'high' | 'medium' | 'low';
 
 // ---------------------------------------------------------------------------
-// Tier 2 person-role classification (#15)
+// Tier 2 reden-voor-niet-lakken (#15, extended for false positives)
 //
-// Reviewer-assigned label that distinguishes the three person categories a
-// Tier 2 detection can fall into. The role is orthogonal to the redact/keep
-// decision: Lakken/Niet lakken is the reviewer's binary choice, and the
-// role annotates *why*. On the Niet-lakken path the card asks for a role
-// to justify keeping the text visible (typically Ambtenaar or
-// Publiek functionaris). Setting a role does NOT flip `review_status` —
-// the buttons are the single source of truth for that.
+// Reviewer-assigned label captured on the Niet-lakken path. The field
+// originally classified the *person* (burger / ambtenaar / publiek
+// functionaris), but in practice the most common reason a reviewer chooses
+// Niet lakken is that the detection isn't a person at all — typically a
+// CBS-surname collision with a Dutch noun ("Engels", "Bos", "Visser"), a
+// place name, or an organisation. `geen_persoon` captures that signal so
+// we can distinguish "keep visible because of role" from "keep visible
+// because the detector misfired".
+//
+// The role is orthogonal to the redact/keep decision: Lakken/Niet lakken is
+// the reviewer's binary choice, and the role annotates *why*. Setting a
+// role does NOT flip `review_status` — the buttons are the single source
+// of truth for that.
 // ---------------------------------------------------------------------------
 
-export type SubjectRole = 'burger' | 'ambtenaar' | 'publiek_functionaris';
+export type SubjectRole =
+	| 'burger'
+	| 'ambtenaar'
+	| 'publiek_functionaris'
+	| 'geen_persoon';
 
 // ---------------------------------------------------------------------------
 // Detection source — where did this row come from?

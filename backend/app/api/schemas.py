@@ -39,7 +39,7 @@ class BoundingBoxResponse(BaseModel):
     y1: float
 
 
-SubjectRoleLiteral = Literal["burger", "ambtenaar", "publiek_functionaris"]
+SubjectRoleLiteral = Literal["burger", "ambtenaar", "publiek_functionaris", "geen_persoon"]
 
 
 class DetectionUpdate(BaseModel):

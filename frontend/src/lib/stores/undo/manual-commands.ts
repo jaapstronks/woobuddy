@@ -212,7 +212,9 @@ export class SetSubjectRoleCommand implements Command {
 				? 'Markeer als publiek functionaris'
 				: nextRole === 'burger'
 					? 'Markeer als burger'
-					: 'Markeer als ambtenaar';
+					: nextRole === 'geen_persoon'
+						? 'Markeer als geen persoon'
+						: 'Markeer als ambtenaar';
 	}
 
 	get affectedDetectionIds(): string[] {
