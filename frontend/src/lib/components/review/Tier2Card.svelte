@@ -203,7 +203,10 @@
 	{#if isRejected && showRoleChips}
 		<!-- Niet lakken → reason. Burger is deliberately omitted: if the
 		     subject is an ordinary citizen, the correct action is to
-		     redact, not to classify + keep visible. -->
+		     redact, not to classify + keep visible. "Geen persoon" covers
+		     false positives — CBS-surname collisions with Dutch words like
+		     "Engels", place names, organisations — which in practice are
+		     the most common reason a reviewer keeps a Tier 2 hit visible. -->
 		<div class="mt-3">
 			<div class="mb-1 text-[11px] font-medium text-gray-700">Reden om niet te lakken</div>
 			<sl-button-group label="Reden om niet te lakken">
@@ -220,6 +223,13 @@
 					onclick={(e: Event) => handleRoleClick('publiek_functionaris', e)}
 				>
 					Publiek functionaris
+				</sl-button>
+				<sl-button
+					size="small"
+					variant={detection.subject_role === 'geen_persoon' ? 'primary' : 'default'}
+					onclick={(e: Event) => handleRoleClick('geen_persoon', e)}
+				>
+					Geen persoon
 				</sl-button>
 			</sl-button-group>
 		</div>
