@@ -190,11 +190,7 @@ def _parse_date_match(match: re.Match[str]) -> datetime | None:
     """Turn a regex match from `_DATE_PATTERNS` into a datetime, or None."""
     try:
         groups = match.groups()
-        if (
-            len(groups) == 3
-            and isinstance(groups[1], str)
-            and groups[1].lower() in _DUTCH_MONTHS
-        ):
+        if len(groups) == 3 and isinstance(groups[1], str) and groups[1].lower() in _DUTCH_MONTHS:
             day = int(groups[0])
             month = _DUTCH_MONTHS[groups[1].lower()]
             year = int(groups[2])
@@ -302,7 +298,14 @@ def apply_redactions(
     Each item in `redactions` should have:
         page: int
         x0, y0, x1, y1: float (bounding box)
-        woo_article: str (optional, shown as overlay text)
+        woo_article: str (optional, kept for downstream metadata)
+
+    The painted rectangle is opaque and unlabeled by design — earlier
+    versions burned a 6pt white-on-black article reference into the box,
+    which screen readers cannot read because it is a vector drawing, not
+    text. The article reference is now attached as an accessible
+    annotation in `pdf_accessibility.add_accessible_redaction_annots`,
+    which runs as a post-processing step on the export endpoint.
 
     This operation is IRREVERSIBLE. Always call on a copy, never the original.
     """
@@ -314,15 +317,7 @@ def apply_redactions(
             continue
         page = doc[page_num]
         rect = fitz.Rect(r["x0"], r["y0"], r["x1"], r["y1"])
-        article_text = r.get("woo_article", "")
-
-        page.add_redact_annot(
-            rect,
-            text=article_text,
-            fontsize=6,
-            fill=redaction_color,
-            text_color=(1, 1, 1),  # white text on dark background
-        )
+        page.add_redact_annot(rect, fill=redaction_color)
 
     for page in doc:
         page.apply_redactions()
