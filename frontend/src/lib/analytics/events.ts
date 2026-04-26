@@ -40,6 +40,13 @@ export type PlausibleEventProps = {
 	redaction_confirmed: RedactionReviewProps;
 	redaction_rejected: RedactionReviewProps;
 	export_completed: ExportCompletedProps;
+	/**
+	 * #52 — DiWoo / GPP-Woo publication-export bundle. Same shape as the
+	 * plain export so the dashboard can compare adoption (how many
+	 * reviewers click through to publication-ready output) without
+	 * differentiating on document size.
+	 */
+	publication_export_completed: ExportCompletedProps;
 };
 
 export type PlausibleEventName = keyof PlausibleEventProps;

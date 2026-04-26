@@ -14,6 +14,11 @@
 
 import { exportRedactedPdf, downloadBlob } from '$lib/services/export-service';
 import { buildDebugExport, downloadDebugExport } from '$lib/services/debug-export';
+import {
+	buildPublicationBundle,
+	deriveBundleFilename,
+	type PublicationMetadataInput
+} from '$lib/services/diwoo';
 import type { Detection, Document } from '$lib/types';
 import { track } from '$lib/analytics/plausible';
 import { bucketPages, bucketRedactions } from '$lib/analytics/events';
@@ -21,6 +26,12 @@ import { bucketPages, bucketRedactions } from '$lib/analytics/events';
 let exporting = $state(false);
 let exportError = $state<string | null>(null);
 let showPostExportLead = $state(false);
+// #52 — separate state for the publication-export bundle: the dialog
+// open/close flag is decoupled from the simple-export busy flag so the
+// reviewer can dismiss the dialog without affecting the inline retry
+// banner from a previous failed plain-PDF export.
+let publicationDialogOpen = $state(false);
+let publicationBundling = $state(false);
 // Inline accessibility-confirmation banner that appears once after a
 // successful export. Communicates the PDF/A-2b + Dutch language tag
 // guarantee so the work the post-processing pipeline does is visible.
@@ -101,6 +112,67 @@ function reset(): void {
 	exportError = null;
 	showPostExportLead = false;
 	showAccessibilityBanner = false;
+	publicationDialogOpen = false;
+	publicationBundling = false;
+}
+
+function openPublicationDialog(): void {
+	exportError = null;
+	publicationDialogOpen = true;
+}
+
+function closePublicationDialog(): void {
+	if (publicationBundling) return;
+	publicationDialogOpen = false;
+}
+
+export interface RunPublicationExportArgs {
+	docId: string;
+	pdfBytes: ArrayBuffer;
+	document: Document | null;
+	detections: Detection[];
+	input: PublicationMetadataInput;
+	tooiSchemaVersion: string;
+	confirmedCount: number;
+	pageCount: number;
+}
+
+/**
+ * #52 — Publication-export bundle. Re-uses the existing redact-stream
+ * endpoint for the gelakte PDF and assembles the DiWoo + GPP-Woo
+ * artifacts client-side.
+ */
+async function runPublicationExport(args: RunPublicationExportArgs): Promise<void> {
+	publicationBundling = true;
+	exportError = null;
+	try {
+		const redactedBlob = await exportRedactedPdf(args.docId, args.pdfBytes, {
+			title: args.input.officieleTitel
+		});
+		const redactedBytes = new Uint8Array(await redactedBlob.arrayBuffer());
+		const inputWithSize: PublicationMetadataInput = {
+			...args.input,
+			bestandsomvang: redactedBytes.byteLength
+		};
+		const bundle = buildPublicationBundle({
+			input: inputWithSize,
+			redactedPdf: redactedBytes,
+			detections: args.detections,
+			tooiSchemaVersion: args.tooiSchemaVersion
+		});
+		const filename = deriveBundleFilename(args.document, bundle.exportedAt);
+		downloadBlob(bundle.blob, filename);
+		publicationDialogOpen = false;
+		showPostExportLead = true;
+		track('publication_export_completed', {
+			redaction_bucket: bucketRedactions(args.confirmedCount),
+			page_bucket: bucketPages(args.pageCount)
+		});
+	} catch (e) {
+		exportError = e instanceof Error ? e.message : 'Bundel-export mislukt';
+	} finally {
+		publicationBundling = false;
+	}
 }
 
 export const reviewExportStore = {
@@ -116,8 +188,17 @@ export const reviewExportStore = {
 	get showAccessibilityBanner() {
 		return showAccessibilityBanner;
 	},
+	get publicationDialogOpen() {
+		return publicationDialogOpen;
+	},
+	get publicationBundling() {
+		return publicationBundling;
+	},
 	runExport,
 	runDebugExport,
+	runPublicationExport,
+	openPublicationDialog,
+	closePublicationDialog,
 	setPostExportLead,
 	setAccessibilityBanner,
 	setError,

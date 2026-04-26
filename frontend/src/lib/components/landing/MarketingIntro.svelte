@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Lock, EyeOff, CircleSlash, Cloud, Accessibility } from 'lucide-svelte';
+	import { Lock, EyeOff, CircleSlash, Cloud, Accessibility, Package } from 'lucide-svelte';
 	import { anyPickerEnabled } from '$lib/config/file-picker';
 
 	const cloudPickEnabled = anyPickerEnabled();
@@ -9,6 +9,7 @@
 		{ icon: CircleSlash, label: 'Geen AI of LLM in de pijplijn' },
 		{ icon: EyeOff, label: 'Geen cookies, geen fingerprinting' },
 		{ icon: Accessibility, label: 'Geëxporteerde PDF’s zijn voorgelezen-toegankelijk' },
+		{ icon: Package, label: 'Publicatieklaar volgens de DiWoo-standaard' },
 		...(cloudPickEnabled
 			? [{ icon: Cloud, label: 'Direct uit SharePoint of Drive — zonder tussenstop' }]
 			: [])

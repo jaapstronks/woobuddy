@@ -1,0 +1,11 @@
+{
+	"$schema": "https://standaarden.overheid.nl/diwoo/metadata/doc/0.9.8",
+	"lijst_uri": "https://identifier.overheid.nl/tooi/set/scw_formats/1",
+	"items": [
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_a51e85ac", "label": "application/pdf", "description": "PDF document" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_efb73487", "label": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "description": "Word document (.docx)" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_4cd2dac9", "label": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "description": "Excel spreadsheet (.xlsx)" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_0e3b9b03", "label": "text/plain", "description": "Plain text" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_25e22c25", "label": "text/html", "description": "HTML document" }
+	]
+}

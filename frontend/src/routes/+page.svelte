@@ -47,6 +47,7 @@
 						'Regex + NER detectie van BSN, IBAN, telefoonnummers, namen en adressen',
 						'Publiek-functionaris filter',
 						'Export als gelakt PDF',
+						'Publicatieklare DiWoo-bundel (metadata.xml + GPP-Woo metadata.json + lakkenoverzicht)',
 						'Open source (MIT)'
 					]
 				},

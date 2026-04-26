@@ -1,0 +1,24 @@
+{
+	"$schema": "https://standaarden.overheid.nl/diwoo/metadata/doc/0.9.8",
+	"lijst_uri": "https://identifier.overheid.nl/tooi/set/scw_woo_informatiecategorieen/3",
+	"items": [
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_139c6280", "label": "wet of algemeen verbindend voorschrift" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_aab6bfc7", "label": "overig besluit van algemene strekking" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_759721e2", "label": "ontwerp van wet- en regelgeving met adviesaanvraag" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_40a05794", "label": "organisatie en werkwijze" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_89ee6784", "label": "bereikbaarheidsgegevens" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_8c840238", "label": "bij vertegenwoordigend orgaan ingekomen stuk" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_c76862ab", "label": "vergaderstuk Staten-Generaal" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_db4862c3", "label": "vergaderstuk decentrale overheid" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_3a248e3a", "label": "agenda of besluitenlijst bestuurscollege" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_99a836c7", "label": "advies" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_8fc2335c", "label": "convenant" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_c6cd1213", "label": "jaarplan of jaarverslag" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_cf268088", "label": "subsidieverplichting anders dan met beschikking" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_3baef532", "label": "Woo-verzoek of -besluit" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_fdaee95e", "label": "onderzoeksrapport" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_46a81018", "label": "beschikking" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_a870c43d", "label": "klachtoordeel" },
+		{ "uri": "https://identifier.overheid.nl/tooi/def/thes/kern/c_816e508d", "label": "inspanningsverplichting art 3.1 Woo" }
+	]
+}
