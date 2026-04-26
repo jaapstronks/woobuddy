@@ -26,14 +26,18 @@ Plausible Community Edition (AGPL, free), self-hosted on a shared VPS, using a *
   - `redaction_confirmed` / `redaction_rejected` — fires in `detectionStore.review()` only when the reviewer's action transitions to a terminal state. Props: `tier`, `entity_type`. Never entity text.
   - `export_completed` — fires in `reviewExportStore.runExport()` after a successful redacted-PDF download. Props: `redaction_bucket`, `page_bucket`.
 
-## Scope (ops — to be completed out of tree)
+## Scope (ops — done out of tree)
 
-- [ ] Provision a small VPS (Scaleway PLAY2-NANO or equivalent, ~€5–€8/mo, EU region).
-- [ ] Stand up Plausible Community Edition via the official `docker-compose.yml` (Plausible + Postgres + ClickHouse), behind Caddy/Traefik for automatic TLS.
-- [ ] Configure `analytics.woobuddy.nl` as a CNAME/A record pointing at the VPS. Same pattern for `analytics.ciiic.nl` and any other site sharing the instance.
-- [ ] Add `woobuddy.nl` as a site in the Plausible UI. Set up four goals matching the event names above.
-- [ ] Set `PUBLIC_PLAUSIBLE_DOMAIN=woobuddy.nl` in the production `.env` and deploy. Verify a pageview + one of each custom event land in the dashboard.
-- [ ] Soften the "geen trackers" copy on the landing page, Hero chip, Footer, meta/OG descriptions, and `og-image.gen.py` in the **same** PR that enables `PUBLIC_PLAUSIBLE_DOMAIN` in production. Suggested replacements: `Geen cookies, geen fingerprinting` / `Geen advertentietrackers` / `Cookieloos bezoekers­tellen`. The cookies page already mentions Plausible correctly.
+The ops scope landed via the shared Plausible instance at `../plausible` (CIIICnl/plausible on GitHub), which serves both `analytics.ciiic.nl` and `analytics.woobuddy.nl` from one VPS. The pattern intentionally lets a future host migration be a DNS flip, not a code change in this repo.
+
+- [x] VPS provisioned and running Plausible CE + Postgres + ClickHouse behind Caddy (see `../plausible/docker-compose.yml` + `Caddyfile`).
+- [x] `analytics.woobuddy.nl` resolves to the shared VPS (Caddy block in `../plausible/Caddyfile`, A record verified live).
+- [x] `PUBLIC_PLAUSIBLE_DOMAIN=woobuddy.nl` (+ `_SRC`, `_API`) wired in `docker-compose.prod.yml` and deployed; production HTML serves the env values and CSP allows `analytics.woobuddy.nl`.
+- [x] "Geen trackers" copy softened — landing/`MarketingIntro.svelte` says "Geen cookies, geen fingerprinting"; cookies and roadmap pages mention Plausible correctly.
+
+Remaining is a one-time admin-UI check (5 minutes, can't be verified from outside the dashboard):
+
+- [ ] In the Plausible admin UI: confirm `woobuddy.nl` is registered as a site, the four goals exist (`document_converted`, `redaction_confirmed`, `redaction_rejected`, `export_completed`), and a real pageview + at least one of each custom event has landed.
 
 ## Privacy posture
 
