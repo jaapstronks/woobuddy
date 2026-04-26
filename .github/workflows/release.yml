@@ -30,6 +30,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # QEMU registers binfmt handlers so the amd64 GitHub-hosted runner can
+      # also build the arm64 image. Without this the linux/arm64 leg of the
+      # platforms matrix below fails with "exec format error".
+      - uses: docker/setup-qemu-action@v3
+
       - uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
@@ -56,6 +61,11 @@ jobs:
         with:
           context: ${{ matrix.context }}
           push: true
+          # linux/arm64 covers Apple Silicon dev laptops and arm64 cloud
+          # instances (Hetzner CAX, AWS Graviton, etc.) that increasingly
+          # dominate the self-host audience. The arm64 leg builds under QEMU
+          # emulation on the amd64 runner, ~2x slower but still under 5 min.
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.image }}
