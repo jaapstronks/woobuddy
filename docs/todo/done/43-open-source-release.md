@@ -4,6 +4,7 @@
 - **Size:** S (half a day)
 - **Source:** Distribution & pricing strategy 2026-04
 - **Status:** Done — v0.1.0 shipped 2026-04-26.
+- **Notion:** [Ship #43 — release v0.1.0 (gitleaks audit, tag, GHCR images)](https://www.notion.so/34d11fb08c9e81889799cbdc060920cf)
 
 ## Outcome
 
