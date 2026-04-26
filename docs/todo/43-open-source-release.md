@@ -21,15 +21,15 @@ The bulk of #43 landed during the public-flip prep:
 
 ### Secrets/PII history audit
 
-- [ ] Run `gitleaks detect --source . --log-opts="--all"` on the full history and confirm clean. The repo is already public, so a finding here is a "rotate + scrub" event, not a "delay launch" event — but we should know.
+- [x] Run `gitleaks detect --source . --log-opts="--all"` on the full history and confirm clean. The repo is already public, so a finding here is a "rotate + scrub" event, not a "delay launch" event — but we should know. _(Clean across all 40 commits, 2026-04-26.)_
 
 ### Release process
 
-- [ ] Tag `v0.1.0` on `main` once the audit is clean
-- [ ] Add a release workflow in `.github/workflows/` that on tag push:
+- [ ] Tag `v0.1.0` on `main` once the rest of this list is merged
+- [x] Add a release workflow in `.github/workflows/` that on tag push:
   - Builds and pushes `ghcr.io/jaapstronks/woobuddy-api` and `ghcr.io/jaapstronks/woobuddy-frontend`
   - Creates a GitHub Release with a changelog generated from conventional commits since the previous tag
-- [ ] Document the upgrade path between minor versions in `deploy/README.md` (one paragraph: pull, `docker compose up --build`, watch for breaking-change notes in release notes)
+- [x] Document the upgrade path between minor versions in `deploy/README.md` (one paragraph: pull, `docker compose up --build`, watch for breaking-change notes in release notes)
 
 ## Acceptance Criteria
 
