@@ -77,6 +77,10 @@ curl -fsS https://woobuddy.nl/api/health
 
 A first-Caddy-boot TLS cert can take ~30s. After that, the deploy is live.
 
+## Upgrading between releases
+
+Self-hosters who want to pin a specific version instead of tracking `main` should follow tagged releases. Each `vX.Y.Z` tag publishes images to GHCR (`ghcr.io/jaapstronks/woobuddy-api:vX.Y.Z`, `ghcr.io/jaapstronks/woobuddy-frontend:vX.Y.Z`) and a [GitHub Release](https://github.com/jaapstronks/woobuddy/releases) with the changelog. To upgrade from a checkout: `git fetch --tags && git checkout vX.Y.Z && docker compose -f docker-compose.prod.yml up -d --build`. To upgrade from prebuilt images: bump the `:vX.Y.Z` tag in your compose override and `docker compose pull && docker compose up -d`. Either way, **read the release notes before you upgrade** — minor versions follow the expand/contract migration rules above (backward-compatible across one release), but breaking schema changes are called out explicitly and may need a manual `alembic upgrade head` on a stopped service.
+
 ## First-time provisioning (almost never)
 
 Only needed when standing up a new VPS or rotating the IP/host. Costs money — `provision.sh` creates a real cx23 server and updates real DNS records.
