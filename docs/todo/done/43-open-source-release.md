@@ -3,7 +3,22 @@
 - **Priority:** P1
 - **Size:** S (half a day)
 - **Source:** Distribution & pricing strategy 2026-04
-- **Status:** Most of the original scope shipped before the public flip. What's left is the release-engineering tail.
+- **Status:** Done — v0.1.0 shipped 2026-04-26.
+
+## Outcome
+
+`v0.1.0` is live on GitHub and on GHCR.
+
+- Tag: [`v0.1.0`](https://github.com/jaapstronks/woobuddy/releases/tag/v0.1.0) on commit `19613ea`.
+- Multi-arch images (linux/amd64 + linux/arm64), pullable anonymously: `ghcr.io/jaapstronks/woobuddy-api:v0.1.0`, `ghcr.io/jaapstronks/woobuddy-frontend:v0.1.0`. `:latest` points at the same digests.
+- Release workflow (`.github/workflows/release.yml`) fires on every `v*` tag push: matrix-builds both images, picks up `:latest` for stable tags only, publishes a GitHub Release with auto-generated PR-title notes.
+- Self-hosters can now pin a specific version. Upgrade flow documented in `deploy/README.md` ("Upgrading between releases").
+- Validated via `v0.1.0-rc1` (caught the amd64-only manifest gap), then `v0.1.0-rc2` (multi-arch fix verified), then the real `v0.1.0` against the same `19613ea`.
+
+Known limitations carried forward (not v0.1.0 blockers):
+
+- `PUBLIC_API_URL` is baked into the frontend image at build time (`http://localhost:8000` default). Self-hosters with a custom hostname currently still rebuild from source. Moving to `$env/dynamic/public` is a v0.1.x follow-up.
+- No SBOM publishing or signed images yet. cosign + SLSA provenance are a v0.2 follow-up if a paying Team or Enterprise customer asks for it.
 
 ## What's already done
 
@@ -25,7 +40,7 @@ The bulk of #43 landed during the public-flip prep:
 
 ### Release process
 
-- [ ] Tag `v0.1.0` on `main` once the rest of this list is merged
+- [x] Tag `v0.1.0` on `main` once the rest of this list is merged _(tagged 2026-04-26 against `19613ea`; multi-arch images and Release published.)_
 - [x] Add a release workflow in `.github/workflows/` that on tag push:
   - Builds and pushes `ghcr.io/jaapstronks/woobuddy-api` and `ghcr.io/jaapstronks/woobuddy-frontend`
   - Creates a GitHub Release with a changelog generated from conventional commits since the previous tag
