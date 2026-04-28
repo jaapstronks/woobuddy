@@ -4,6 +4,7 @@
 - **Size:** L
 - **Depends on:** 32 (authentication)
 - **Blocks:** the trust claim in `#00` for unauthenticated users
+- **Notion:** [Ship #50 — anonymous /api/analyze no server persistence](https://www.notion.so/34d11fb08c9e81c3b0afe4cd328e0088)
 
 ## Why
 
