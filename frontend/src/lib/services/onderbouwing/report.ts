@@ -28,6 +28,7 @@ import {
 	articlesForToelichting,
 	type ReportRow
 } from './summary';
+import { StructureBuilder, mountOutline, type OutlineEntry } from './structure';
 import type { OnderbouwingInput } from './types';
 
 // ---------------------------------------------------------------------------
@@ -80,15 +81,24 @@ interface Layout {
 	doc: PDFDocument;
 	pages: PDFPage[];
 	page: PDFPage;
+	pageIndex: number;
 	cursorY: number;
 	fonts: Fonts;
 	footerText: string;
+	structure: StructureBuilder;
+	/**
+	 * Captured page indices for top-level outline entries
+	 * (Voorblad, Samenvatting, Tabel, Bijlage A). Filled as each
+	 * section starts so /Outlines points at the right page.
+	 */
+	outline: OutlineEntry[];
 }
 
 function newPage(layout: Layout): void {
 	const page = layout.doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
 	layout.pages.push(page);
 	layout.page = page;
+	layout.pageIndex = layout.pages.length - 1;
 	layout.cursorY = PAGE_HEIGHT - MARGIN_TOP;
 }
 
@@ -129,6 +139,16 @@ function widthOf(font: PDFFont, text: string, size: number): number {
 	return font.widthOfTextAtSize(sanitizeForWinAnsi(text), size);
 }
 
+/**
+ * Raw text drawing primitive. Does NOT wrap the operation in a
+ * marked-content sequence — callers must use either {@link drawTaggedText}
+ * (logical content) or {@link drawArtifact} (decorative content). PDF/UA
+ * (Matterhorn 14-001) requires every content-stream op to be one or
+ * the other.
+ *
+ * Kept separate from the wrappers so the actual `page.drawText` call
+ * lives in a single, easy-to-audit place.
+ */
 function drawText(
 	layout: Layout,
 	text: string,
@@ -150,6 +170,37 @@ function drawText(
 		size,
 		color
 	});
+}
+
+/**
+ * Draw text inside a marked-content sequence linked to the
+ * currently-open structure element. Use for headings, paragraphs,
+ * table cells — anything a screen reader should announce.
+ */
+function drawTaggedText(
+	layout: Layout,
+	text: string,
+	options: {
+		x: number;
+		y: number;
+		font?: PDFFont;
+		size?: number;
+		color?: RGB;
+	}
+): void {
+	layout.structure.tag(layout.page, layout.pageIndex, () => {
+		drawText(layout, text, options);
+	});
+}
+
+/**
+ * Wrap one or more drawing operations as a PDF artifact (decorative,
+ * ignored by AT). Used for footer page numbers, divider lines, table
+ * row backgrounds — anything that exists for sighted layout reasons
+ * only.
+ */
+function drawArtifact(layout: Layout, draw: () => void): void {
+	layout.structure.artifact(layout.page, draw);
 }
 
 /**
@@ -184,6 +235,13 @@ function wrapText(
 	return lines;
 }
 
+/**
+ * Word-wrap and draw each resulting line as its own marked-content
+ * sequence. Marked-content sequences cannot span pages, so a paragraph
+ * that overflows is automatically split across pages with one MCID
+ * per visible line — the parent `P` (or `TD`, etc.) structure element
+ * accumulates MCID leaves on each page it touches.
+ */
 function drawWrapped(
 	layout: Layout,
 	text: string,
@@ -202,7 +260,7 @@ function drawWrapped(
 	const lines = wrapText(font, text, options.maxWidth, size);
 	for (const line of lines) {
 		ensureSpace(layout, lineHeight);
-		drawText(layout, line, {
+		drawTaggedText(layout, line, {
 			x: options.x,
 			y: layout.cursorY,
 			size,
@@ -216,11 +274,13 @@ function drawWrapped(
 function drawDivider(layout: Layout): void {
 	ensureSpace(layout, 8);
 	moveDown(layout, 4);
-	layout.page.drawLine({
-		start: { x: MARGIN_X, y: layout.cursorY },
-		end: { x: MARGIN_X + CONTENT_WIDTH, y: layout.cursorY },
-		thickness: 0.5,
-		color: COLOR_DIVIDER
+	drawArtifact(layout, () => {
+		layout.page.drawLine({
+			start: { x: MARGIN_X, y: layout.cursorY },
+			end: { x: MARGIN_X + CONTENT_WIDTH, y: layout.cursorY },
+			thickness: 0.5,
+			color: COLOR_DIVIDER
+		});
 	});
 	moveDown(layout, 8);
 }
@@ -249,15 +309,19 @@ function drawCoverSection(
 	pageCount: number,
 	stamps: { utc: string; ams: string }
 ): void {
-	drawText(layout, 'Onderbouwing van redacties', {
+	layout.structure.beginElement('H1');
+	drawTaggedText(layout, 'Onderbouwing van redacties', {
 		x: MARGIN_X,
 		y: layout.cursorY,
 		size: 22,
 		font: layout.fonts.bold,
 		color: COLOR_INK
 	});
+	layout.structure.endElement();
 	moveDown(layout, 28);
-	drawText(
+
+	layout.structure.beginElement('P');
+	drawTaggedText(
 		layout,
 		'Bijlage bij het Woo-besluit. Per gelakte passage de juridische grond en motivering.',
 		{
@@ -267,6 +331,7 @@ function drawCoverSection(
 			color: COLOR_INK_SOFT
 		}
 	);
+	layout.structure.endElement();
 	moveDown(layout, 22);
 
 	const rows: Array<[string, string]> = [
@@ -287,6 +352,12 @@ function drawCoverSection(
 	drawKeyValueTable(layout, rows, { keyWidth: 130, lineGap: 6 });
 }
 
+/**
+ * Draw a label/value list as a structured `Table` so screen readers
+ * announce each row as "label: value" instead of two disconnected
+ * sentences. The visual layout is unchanged — this only affects the
+ * structure tree.
+ */
 function drawKeyValueTable(
 	layout: Layout,
 	rows: Array<[string, string]>,
@@ -294,38 +365,52 @@ function drawKeyValueTable(
 ): void {
 	const valueX = MARGIN_X + options.keyWidth + 8;
 	const valueWidth = CONTENT_WIDTH - options.keyWidth - 8;
+	layout.structure.beginElement('Table');
 	for (const [key, value] of rows) {
 		const valueLines = wrapText(layout.fonts.regular, value, valueWidth, 10);
 		const blockHeight = Math.max(1, valueLines.length) * 14 + options.lineGap;
 		ensureSpace(layout, blockHeight);
-		drawText(layout, key, {
+		layout.structure.beginElement('TR');
+
+		layout.structure.beginElement('TH');
+		drawTaggedText(layout, key, {
 			x: MARGIN_X,
 			y: layout.cursorY,
 			size: 10,
 			font: layout.fonts.bold,
 			color: COLOR_INK
 		});
+		layout.structure.endElement();
+
+		layout.structure.beginElement('TD');
 		valueLines.forEach((line, i) => {
-			drawText(layout, line, {
+			drawTaggedText(layout, line, {
 				x: valueX,
 				y: layout.cursorY - i * 14,
 				size: 10,
 				color: COLOR_INK_SOFT
 			});
 		});
+		layout.structure.endElement();
+
+		layout.structure.endElement();
 		moveDown(layout, valueLines.length * 14 + options.lineGap);
 	}
+	layout.structure.endElement();
 }
 
 function drawProvenanceSection(layout: Layout, input: OnderbouwingInput): void {
 	drawSectionHeading(layout, 'Provenance');
+	layout.structure.beginElement('P');
 	drawWrapped(
 		layout,
 		'Onderstaande SHA-256 hashes laten zich onafhankelijk verifi\u00ebren tegen de PDF-bestanden in uw dossier. Zo kunt u maanden later vaststellen dat dit rapport hoort bij precies die documenten.',
 		{ x: MARGIN_X, maxWidth: CONTENT_WIDTH, color: COLOR_INK_SOFT }
 	);
+	layout.structure.endElement();
 	moveDown(layout, 6);
 
+	layout.structure.beginElement('Table');
 	drawHashRow(layout, 'Bron-PDF (origineel)', input.hashes.originalSha256);
 	if (input.hashes.redactedSha256) {
 		drawHashRow(layout, 'Gelakte PDF', input.hashes.redactedSha256);
@@ -337,6 +422,7 @@ function drawProvenanceSection(layout: Layout, input: OnderbouwingInput): void {
 		);
 	}
 	drawHashRow(layout, 'WOO Buddy versie', `WOO Buddy (${input.buildCommit})`);
+	layout.structure.endElement();
 }
 
 function drawHashRow(layout: Layout, label: string, value: string): void {
@@ -346,15 +432,21 @@ function drawHashRow(layout: Layout, label: string, value: string): void {
 	const lines = wrapText(layout.fonts.regular, value, valueWidth, 9);
 	const blockHeight = lines.length * 12 + 4;
 	ensureSpace(layout, blockHeight);
-	drawText(layout, label, {
+	layout.structure.beginElement('TR');
+
+	layout.structure.beginElement('TH');
+	drawTaggedText(layout, label, {
 		x: MARGIN_X,
 		y: layout.cursorY,
 		size: 10,
 		font: layout.fonts.bold,
 		color: COLOR_INK
 	});
+	layout.structure.endElement();
+
+	layout.structure.beginElement('TD');
 	lines.forEach((line, i) => {
-		drawText(layout, line, {
+		drawTaggedText(layout, line, {
 			x: valueX,
 			y: layout.cursorY - i * 12,
 			size: 9,
@@ -362,6 +454,9 @@ function drawHashRow(layout: Layout, label: string, value: string): void {
 			font: layout.fonts.regular
 		});
 	});
+	layout.structure.endElement();
+
+	layout.structure.endElement();
 	moveDown(layout, blockHeight);
 }
 
@@ -369,29 +464,35 @@ function drawNotesSection(layout: Layout, opmerkingen: string): void {
 	const text = opmerkingen.trim();
 	if (!text) return;
 	drawSectionHeading(layout, 'Opmerkingen');
+	layout.structure.beginElement('P');
 	drawWrapped(layout, text, {
 		x: MARGIN_X,
 		maxWidth: CONTENT_WIDTH,
 		color: COLOR_INK_SOFT
 	});
+	layout.structure.endElement();
 }
 
 function drawSectionHeading(layout: Layout, title: string): void {
 	moveDown(layout, 4);
 	ensureSpace(layout, 28);
-	drawText(layout, title, {
+	layout.structure.beginElement('H2');
+	drawTaggedText(layout, title, {
 		x: MARGIN_X,
 		y: layout.cursorY,
 		size: 13,
 		font: layout.fonts.bold,
 		color: COLOR_INK
 	});
+	layout.structure.endElement();
 	moveDown(layout, 8);
-	layout.page.drawLine({
-		start: { x: MARGIN_X, y: layout.cursorY + 2 },
-		end: { x: MARGIN_X + CONTENT_WIDTH, y: layout.cursorY + 2 },
-		thickness: 0.5,
-		color: COLOR_DIVIDER
+	drawArtifact(layout, () => {
+		layout.page.drawLine({
+			start: { x: MARGIN_X, y: layout.cursorY + 2 },
+			end: { x: MARGIN_X + CONTENT_WIDTH, y: layout.cursorY + 2 },
+			thickness: 0.5,
+			color: COLOR_DIVIDER
+		});
 	});
 	moveDown(layout, 10);
 }
@@ -403,23 +504,32 @@ function drawSummarySection(
 	drawSectionHeading(layout, 'Samenvatting');
 	const tierLine = `Trap 1: ${summary.byTier['1']}   |   Trap 2: ${summary.byTier['2']}   |   Trap 3: ${summary.byTier['3']}`;
 	const sourceLine = `Auto: ${summary.bySource.auto}   |   Handmatig: ${summary.bySource.handmatig}`;
+	layout.structure.beginElement('P');
 	drawWrapped(layout, `Totaal aantal redacties: ${summary.total}`, {
 		x: MARGIN_X,
 		maxWidth: CONTENT_WIDTH,
 		font: layout.fonts.bold
 	});
+	layout.structure.endElement();
+	layout.structure.beginElement('P');
 	drawWrapped(layout, tierLine, { x: MARGIN_X, maxWidth: CONTENT_WIDTH, color: COLOR_INK_SOFT });
+	layout.structure.endElement();
+	layout.structure.beginElement('P');
 	drawWrapped(layout, sourceLine, { x: MARGIN_X, maxWidth: CONTENT_WIDTH, color: COLOR_INK_SOFT });
+	layout.structure.endElement();
 
 	moveDown(layout, 4);
 	drawSubHeading(layout, 'Per Woo-artikel');
 	if (summary.byArticle.length === 0) {
+		layout.structure.beginElement('P');
 		drawWrapped(layout, '(geen artikel-gekoppelde redacties)', {
 			x: MARGIN_X,
 			maxWidth: CONTENT_WIDTH,
 			color: COLOR_INK_MUTE
 		});
+		layout.structure.endElement();
 	} else {
+		layout.structure.beginElement('Table');
 		for (const item of summary.byArticle) {
 			const article = WOO_ARTICLES[item.code];
 			const ground = article ? article.ground : '';
@@ -429,58 +539,79 @@ function drawSummarySection(
 				String(item.count)
 			);
 		}
+		layout.structure.endElement();
 	}
 
 	moveDown(layout, 4);
 	drawSubHeading(layout, 'Per type');
 	if (summary.byEntityType.length === 0) {
+		layout.structure.beginElement('P');
 		drawWrapped(layout, '(geen redacties)', {
 			x: MARGIN_X,
 			maxWidth: CONTENT_WIDTH,
 			color: COLOR_INK_MUTE
 		});
+		layout.structure.endElement();
 	} else {
+		layout.structure.beginElement('Table');
 		for (const item of summary.byEntityType) {
 			drawTwoColumnRow(layout, item.label, String(item.count));
 		}
+		layout.structure.endElement();
 	}
 }
 
 function drawSubHeading(layout: Layout, text: string): void {
 	moveDown(layout, 4);
 	ensureSpace(layout, 18);
-	drawText(layout, text, {
+	layout.structure.beginElement('H3');
+	drawTaggedText(layout, text, {
 		x: MARGIN_X,
 		y: layout.cursorY,
 		size: 11,
 		font: layout.fonts.bold,
 		color: COLOR_INK
 	});
+	layout.structure.endElement();
 	moveDown(layout, 14);
 }
 
+/**
+ * One row of the summary's labeled-count list. Caller wraps multiple
+ * rows in a parent `Table` element. Each row produces one `TR` with
+ * a `TH` (label) and a `TD` (count).
+ */
 function drawTwoColumnRow(layout: Layout, left: string, right: string): void {
 	const rightWidth = 60;
 	const leftWidth = CONTENT_WIDTH - rightWidth - 8;
 	const lines = wrapText(layout.fonts.regular, left, leftWidth, 10);
 	const blockHeight = lines.length * 13 + 2;
 	ensureSpace(layout, blockHeight);
+	layout.structure.beginElement('TR');
+
+	layout.structure.beginElement('TH');
 	lines.forEach((line, i) => {
-		drawText(layout, line, {
+		drawTaggedText(layout, line, {
 			x: MARGIN_X,
 			y: layout.cursorY - i * 13,
 			size: 10,
 			color: COLOR_INK_SOFT
 		});
 	});
+	layout.structure.endElement();
+
+	layout.structure.beginElement('TD');
 	const rightX = MARGIN_X + CONTENT_WIDTH - widthOf(layout.fonts.bold, right, 10);
-	drawText(layout, right, {
+	drawTaggedText(layout, right, {
 		x: rightX,
 		y: layout.cursorY,
 		size: 10,
 		font: layout.fonts.bold,
 		color: COLOR_INK
 	});
+	layout.structure.endElement();
+
+	layout.structure.endElement();
 	moveDown(layout, blockHeight);
 }
 
@@ -497,15 +628,25 @@ function computeColumnWidths(): number[] {
 	return TABLE_COLUMNS.map((c) => (c.width > 0 ? c.width : flex));
 }
 
+/**
+ * Draw the per-redactie table header. The column-header background
+ * and underline are decorative (artifact); each header label is
+ * tagged as a TH so screen readers can announce "Pagina, header" when
+ * the cursor lands on a data cell in that column.
+ *
+ * Caller is responsible for the surrounding `TR` open/close.
+ */
 function drawTableHeader(layout: Layout, widths: number[]): void {
 	const headerHeight = 22;
 	ensureSpace(layout, headerHeight + 6);
-	layout.page.drawRectangle({
-		x: MARGIN_X,
-		y: layout.cursorY - headerHeight + 6,
-		width: CONTENT_WIDTH,
-		height: headerHeight,
-		color: COLOR_TABLE_HEADER_BG
+	drawArtifact(layout, () => {
+		layout.page.drawRectangle({
+			x: MARGIN_X,
+			y: layout.cursorY - headerHeight + 6,
+			width: CONTENT_WIDTH,
+			height: headerHeight,
+			color: COLOR_TABLE_HEADER_BG
+		});
 	});
 	let x = MARGIN_X + 6;
 	for (let i = 0; i < TABLE_COLUMNS.length; i++) {
@@ -515,20 +656,24 @@ function drawTableHeader(layout: Layout, widths: number[]): void {
 		const textWidth = widthOf(layout.fonts.bold, text, 9);
 		const textX =
 			col.align === 'right' ? x + w - textWidth - 12 : x;
-		drawText(layout, text, {
+		layout.structure.beginElement('TH');
+		drawTaggedText(layout, text, {
 			x: textX,
 			y: layout.cursorY - 8,
 			size: 9,
 			font: layout.fonts.bold,
 			color: COLOR_INK
 		});
+		layout.structure.endElement();
 		x += w;
 	}
-	layout.page.drawLine({
-		start: { x: MARGIN_X, y: layout.cursorY - headerHeight + 6 },
-		end: { x: MARGIN_X + CONTENT_WIDTH, y: layout.cursorY - headerHeight + 6 },
-		thickness: 0.5,
-		color: COLOR_DIVIDER
+	drawArtifact(layout, () => {
+		layout.page.drawLine({
+			start: { x: MARGIN_X, y: layout.cursorY - headerHeight + 6 },
+			end: { x: MARGIN_X + CONTENT_WIDTH, y: layout.cursorY - headerHeight + 6 },
+			thickness: 0.5,
+			color: COLOR_DIVIDER
+		});
 	});
 	moveDown(layout, headerHeight);
 }
@@ -536,16 +681,25 @@ function drawTableHeader(layout: Layout, widths: number[]): void {
 function drawTableSection(layout: Layout, rows: ReportRow[]): void {
 	drawSectionHeading(layout, 'Per-redactie tabel');
 	if (rows.length === 0) {
+		layout.structure.beginElement('P');
 		drawWrapped(
 			layout,
 			'Geen geaccepteerde redacties \u2014 dit rapport vat een lege onderbouwing samen.',
 			{ x: MARGIN_X, maxWidth: CONTENT_WIDTH, color: COLOR_INK_MUTE }
 		);
+		layout.structure.endElement();
 		return;
 	}
 
 	const widths = computeColumnWidths();
+	// The Table wraps both the header row and the data rows, so the
+	// table-spanning structure is preserved across page breaks (each
+	// TR becomes a child of the same Table even when split across
+	// pages, with MCID leaves on whichever pages they land on).
+	layout.structure.beginElement('Table');
+	layout.structure.beginElement('TR');
 	drawTableHeader(layout, widths);
+	layout.structure.endElement();
 
 	const cellPadX = 6;
 	const cellPadY = 4;
@@ -565,16 +719,20 @@ function drawTableSection(layout: Layout, rows: ReportRow[]): void {
 		);
 		if (layout.cursorY - cellHeight < MARGIN_BOTTOM) {
 			newPage(layout);
+			layout.structure.beginElement('TR');
 			drawTableHeader(layout, widths);
+			layout.structure.endElement();
 		}
 
 		if (idx % 2 === 1) {
-			layout.page.drawRectangle({
-				x: MARGIN_X,
-				y: layout.cursorY - cellHeight + cellPadY,
-				width: CONTENT_WIDTH,
-				height: cellHeight,
-				color: COLOR_TABLE_ROW_ALT
+			drawArtifact(layout, () => {
+				layout.page.drawRectangle({
+					x: MARGIN_X,
+					y: layout.cursorY - cellHeight + cellPadY,
+					width: CONTENT_WIDTH,
+					height: cellHeight,
+					color: COLOR_TABLE_ROW_ALT
+				});
 			});
 		}
 
@@ -590,39 +748,56 @@ function drawTableSection(layout: Layout, rows: ReportRow[]): void {
 			{ text: row.source === 'auto' ? 'Auto' : 'Handmatig', align: 'left' }
 		];
 
+		layout.structure.beginElement('TR');
+
 		for (let i = 0; i < cells.length; i++) {
 			const w = widths[i];
 			const cell = cells[i];
 			const textWidth = widthOf(layout.fonts.regular, cell.text, fontSize);
 			const textX =
 				cell.align === 'right' ? x + w - textWidth - cellPadX * 2 : x;
-			drawText(layout, cell.text, {
+			layout.structure.beginElement('TD');
+			drawTaggedText(layout, cell.text, {
 				x: textX,
 				y: cellTopY,
 				size: fontSize,
 				color: COLOR_INK
 			});
+			layout.structure.endElement();
 			x += w;
 		}
 
+		layout.structure.beginElement('TD');
 		motivationLines.forEach((line, i) => {
-			drawText(layout, line, {
+			drawTaggedText(layout, line, {
 				x: x,
 				y: cellTopY - i * lineHeight,
 				size: fontSize,
 				color: COLOR_INK_SOFT
 			});
 		});
+		layout.structure.endElement();
 
-		layout.page.drawLine({
-			start: { x: MARGIN_X, y: layout.cursorY - cellHeight + cellPadY },
-			end: { x: MARGIN_X + CONTENT_WIDTH, y: layout.cursorY - cellHeight + cellPadY },
-			thickness: 0.25,
-			color: COLOR_DIVIDER
+		layout.structure.endElement();
+
+		drawArtifact(layout, () => {
+			layout.page.drawLine({
+				start: {
+					x: MARGIN_X,
+					y: layout.cursorY - cellHeight + cellPadY
+				},
+				end: {
+					x: MARGIN_X + CONTENT_WIDTH,
+					y: layout.cursorY - cellHeight + cellPadY
+				},
+				thickness: 0.25,
+				color: COLOR_DIVIDER
+			});
 		});
 
 		moveDown(layout, cellHeight);
 	});
+	layout.structure.endElement();
 }
 
 // ---------------------------------------------------------------------------
@@ -633,31 +808,37 @@ function drawToelichtingSection(layout: Layout, rows: ReportRow[]): void {
 	const articleCodes = articlesForToelichting(rows);
 	drawSectionHeading(layout, 'Bijlage A \u2014 Toelichting per Woo-grond');
 	if (articleCodes.length === 0) {
+		layout.structure.beginElement('P');
 		drawWrapped(
 			layout,
 			'Er zijn geen Woo-artikelen aan deze redacties gekoppeld; deze bijlage is daarom leeg.',
 			{ x: MARGIN_X, maxWidth: CONTENT_WIDTH, color: COLOR_INK_MUTE }
 		);
+		layout.structure.endElement();
 		return;
 	}
 	for (const code of articleCodes) {
 		const article = WOO_ARTICLES[code];
 		if (!article) continue;
 		ensureSpace(layout, 36);
-		drawText(layout, `Art. ${article.code} \u2014 ${article.ground}`, {
+		layout.structure.beginElement('H3');
+		drawTaggedText(layout, `Art. ${article.code} \u2014 ${article.ground}`, {
 			x: MARGIN_X,
 			y: layout.cursorY,
 			size: 11,
 			font: layout.fonts.bold,
 			color: COLOR_INK
 		});
+		layout.structure.endElement();
 		moveDown(layout, 14);
+		layout.structure.beginElement('P');
 		drawWrapped(layout, article.description, {
 			x: MARGIN_X,
 			maxWidth: CONTENT_WIDTH,
 			color: COLOR_INK_SOFT,
 			size: 10
 		});
+		layout.structure.endElement();
 		moveDown(layout, 6);
 	}
 }
@@ -666,32 +847,43 @@ function drawToelichtingSection(layout: Layout, rows: ReportRow[]): void {
 // Footer pass — drawn at the very end so we know `pages.length`
 // ---------------------------------------------------------------------------
 
+/**
+ * Draw the per-page footer. The wordmark text and page number are
+ * intentionally artifact (not tagged) — running headers/footers and
+ * page-number stamps are the canonical PDF/UA artifact case (ISO
+ * 32000-1 §14.8.2.2). Including them in the structure tree would
+ * have a screen reader say "Page 1 of 7. Page 2 of 7. Page 3 of 7..."
+ * for every page break, which is exactly the user-hostile behaviour
+ * artifact tagging exists to prevent.
+ */
 function drawFooters(layout: Layout): void {
 	const total = layout.pages.length;
 	for (let i = 0; i < total; i++) {
 		const page = layout.pages[i];
 		const left = layout.footerText;
 		const right = `Pagina ${i + 1} / ${total}`;
-		page.drawLine({
-			start: { x: MARGIN_X, y: FOOTER_OFFSET + 16 },
-			end: { x: PAGE_WIDTH - MARGIN_X, y: FOOTER_OFFSET + 16 },
-			thickness: 0.25,
-			color: COLOR_DIVIDER
-		});
-		page.drawText(sanitizeForWinAnsi(left), {
-			x: MARGIN_X,
-			y: FOOTER_OFFSET,
-			size: 8,
-			font: layout.fonts.regular,
-			color: COLOR_INK_MUTE
-		});
-		const rightWidth = layout.fonts.regular.widthOfTextAtSize(right, 8);
-		page.drawText(right, {
-			x: PAGE_WIDTH - MARGIN_X - rightWidth,
-			y: FOOTER_OFFSET,
-			size: 8,
-			font: layout.fonts.regular,
-			color: COLOR_INK_MUTE
+		layout.structure.artifact(page, () => {
+			page.drawLine({
+				start: { x: MARGIN_X, y: FOOTER_OFFSET + 16 },
+				end: { x: PAGE_WIDTH - MARGIN_X, y: FOOTER_OFFSET + 16 },
+				thickness: 0.25,
+				color: COLOR_DIVIDER
+			});
+			page.drawText(sanitizeForWinAnsi(left), {
+				x: MARGIN_X,
+				y: FOOTER_OFFSET,
+				size: 8,
+				font: layout.fonts.regular,
+				color: COLOR_INK_MUTE
+			});
+			const rightWidth = layout.fonts.regular.widthOfTextAtSize(right, 8);
+			page.drawText(right, {
+				x: PAGE_WIDTH - MARGIN_X - rightWidth,
+				y: FOOTER_OFFSET,
+				size: 8,
+				font: layout.fonts.regular,
+				color: COLOR_INK_MUTE
+			});
 		});
 	}
 }
@@ -742,11 +934,12 @@ export async function buildOnderbouwingPdf(input: OnderbouwingInput): Promise<Ui
 	doc.setCreationDate(generatedAt);
 	doc.setModificationDate(generatedAt);
 
-	// MarkInfo /Marked declares that this file *intends* to expose logical
-	// content. Without an actual /StructTreeRoot a screen reader still
-	// reads the geometric stream, but conformant viewers will at least
-	// surface the intent — and we leave a hook for a future tagged-PDF
-	// pass (see follow-up todo). Cheap to add, no downside.
+	// /MarkInfo /Marked = true declares the document carries logical
+	// structure tags. We pair it with a real /StructTreeRoot below
+	// (built by StructureBuilder.finalize) so the declaration is
+	// honest — Acrobat / NVDA / VoiceOver will use the structure to
+	// announce headings, table cells with headers, and section
+	// boundaries.
 	doc.catalog.set(
 		PDFName.of('MarkInfo'),
 		doc.context.obj({ Marked: PDFBool.True })
@@ -760,10 +953,13 @@ export async function buildOnderbouwingPdf(input: OnderbouwingInput): Promise<Ui
 		doc,
 		pages: [],
 		page: undefined as unknown as PDFPage,
+		pageIndex: -1,
 		cursorY: 0,
 		fonts,
 		footerText:
-			'Gegenereerd met WOO Buddy \u2014 uw PDF heeft uw browser nooit verlaten'
+			'Gegenereerd met WOO Buddy \u2014 uw PDF heeft uw browser nooit verlaten',
+		structure: new StructureBuilder(),
+		outline: []
 	};
 	newPage(layout);
 
@@ -772,21 +968,63 @@ export async function buildOnderbouwingPdf(input: OnderbouwingInput): Promise<Ui
 	const stamps = formatTimestamp(generatedAt);
 	const documentPageCount = input.document?.page_count ?? 0;
 
+	// Section 1 — Voorblad (cover + provenance + opmerkingen all share
+	// one logical Sect because they're conceptually the document
+	// front-matter).
+	layout.outline.push({ title: 'Voorblad', pageIndex: layout.pageIndex });
+	layout.structure.beginElement('Sect');
 	drawCoverSection(layout, input, rows.length, documentPageCount, stamps);
 	drawDivider(layout);
 	drawProvenanceSection(layout, input);
 	drawDivider(layout);
 	drawNotesSection(layout, input.reviewer.opmerkingen);
+	layout.structure.endElement();
 
+	// Section 2 — Samenvatting
 	newPage(layout);
+	layout.outline.push({ title: 'Samenvatting', pageIndex: layout.pageIndex });
+	layout.structure.beginElement('Sect');
 	drawSummarySection(layout, summary);
+	layout.structure.endElement();
 
+	// Section 3 — Per-redactie tabel
 	newPage(layout);
+	layout.outline.push({
+		title: 'Tabel met redacties',
+		pageIndex: layout.pageIndex
+	});
+	layout.structure.beginElement('Sect');
 	drawTableSection(layout, rows);
+	layout.structure.endElement();
 
+	// Section 4 — Bijlage A. Note we don't force a new page here —
+	// it follows directly after the table per the original layout.
+	// We capture whichever page it lands on for the outline.
+	layout.outline.push({
+		title: 'Bijlage A \u2014 Toelichting per Woo-grond',
+		pageIndex: layout.pageIndex
+	});
+	layout.structure.beginElement('Sect');
 	drawToelichtingSection(layout, rows);
+	layout.structure.endElement();
 
+	// Footer pass. Runs *after* all logical content so total page
+	// count is known. Each footer is artifact-tagged inside
+	// drawFooters, so it doesn't pollute the structure tree.
 	drawFooters(layout);
 
-	return doc.save();
+	// Mount the StructTreeRoot, ParentTree, and per-page
+	// /StructParents. After this point pdf-lib's serializer will
+	// emit a tagged PDF.
+	layout.structure.finalize(doc);
+	mountOutline(doc, layout.outline);
+
+	// `useObjectStreams: false` keeps the catalog and StructTreeRoot
+	// as plain indirect objects in the body. pdf-lib's default
+	// (`true`) packs them into compressed object streams, which
+	// confuses some PDF/UA validators (PAC 2024 in particular has
+	// historically had bugs with object-stream-packed structure
+	// trees) and makes the file harder to debug. The size penalty
+	// is a few kilobytes on a typical 5–10-page report.
+	return doc.save({ useObjectStreams: false });
 }
