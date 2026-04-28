@@ -12,7 +12,9 @@
  */
 
 import {
+	PDFBool,
 	PDFDocument,
+	PDFName,
 	StandardFonts,
 	rgb,
 	type PDFFont,
@@ -40,9 +42,13 @@ const MARGIN_BOTTOM = 64;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_X * 2;
 const FOOTER_OFFSET = 32;
 
+// Colour palette is WCAG 1.4.3 AA compliant against white (≥ 4.5:1) for
+// every shade actually used as text. INK ≈ 14:1, INK_SOFT ≈ 7:1, INK_MUTE
+// ≈ 5.8:1 — INK_MUTE is the small-print threshold (footer 8pt, summary
+// placeholders); going any lighter would fall below AA for body text.
 const COLOR_INK: RGB = rgb(0.12, 0.14, 0.17);
 const COLOR_INK_SOFT: RGB = rgb(0.32, 0.36, 0.42);
-const COLOR_INK_MUTE: RGB = rgb(0.5, 0.54, 0.6);
+const COLOR_INK_MUTE: RGB = rgb(0.36, 0.4, 0.46);
 const COLOR_DIVIDER: RGB = rgb(0.85, 0.87, 0.9);
 const COLOR_TABLE_HEADER_BG: RGB = rgb(0.96, 0.97, 0.98);
 const COLOR_TABLE_ROW_ALT: RGB = rgb(0.985, 0.99, 0.995);
@@ -704,10 +710,47 @@ function drawFooters(layout: Layout): void {
  */
 export async function buildOnderbouwingPdf(input: OnderbouwingInput): Promise<Uint8Array> {
 	const doc = await PDFDocument.create();
-	doc.setTitle(`Onderbouwing van redacties \u2014 ${input.filename}`);
+	const generatedAt = input.generatedAt ?? new Date();
+	const trimmedReviewer = input.reviewer.reviewerName.trim();
+	const trimmedZaak = input.reviewer.zaaknummer.trim();
+
+	// Document metadata. setTitle({ showInWindowTitleBar }) flips
+	// /ViewerPreferences /DisplayDocTitle to true so screen readers and PDF
+	// viewers announce the human-readable title we set instead of falling
+	// back to the filename (WCAG 2.4.2).
+	doc.setTitle(`Onderbouwing van redacties \u2014 ${input.filename}`, {
+		showInWindowTitleBar: true
+	});
+	doc.setAuthor(trimmedReviewer || 'WOO Buddy');
+	doc.setSubject(
+		trimmedZaak
+			? `Onderbouwing bij Woo-besluit, zaaknummer ${trimmedZaak}`
+			: 'Onderbouwing bij Woo-besluit'
+	);
+	doc.setKeywords(
+		[
+			'WOO Buddy',
+			'Woo-besluit',
+			'onderbouwing',
+			'redacties',
+			...(trimmedZaak ? [trimmedZaak] : [])
+		].filter(Boolean)
+	);
 	doc.setCreator('WOO Buddy');
 	doc.setProducer('WOO Buddy (#64 onderbouwingsrapport)');
 	doc.setLanguage('nl-NL');
+	doc.setCreationDate(generatedAt);
+	doc.setModificationDate(generatedAt);
+
+	// MarkInfo /Marked declares that this file *intends* to expose logical
+	// content. Without an actual /StructTreeRoot a screen reader still
+	// reads the geometric stream, but conformant viewers will at least
+	// surface the intent — and we leave a hook for a future tagged-PDF
+	// pass (see follow-up todo). Cheap to add, no downside.
+	doc.catalog.set(
+		PDFName.of('MarkInfo'),
+		doc.context.obj({ Marked: PDFBool.True })
+	);
 	const fonts: Fonts = {
 		regular: await doc.embedFont(StandardFonts.Helvetica),
 		bold: await doc.embedFont(StandardFonts.HelveticaBold)
@@ -726,7 +769,7 @@ export async function buildOnderbouwingPdf(input: OnderbouwingInput): Promise<Ui
 
 	const rows = buildReportRows(input.detections);
 	const summary = buildReportSummary(input.detections);
-	const stamps = formatTimestamp(input.generatedAt ?? new Date());
+	const stamps = formatTimestamp(generatedAt);
 	const documentPageCount = input.document?.page_count ?? 0;
 
 	drawCoverSection(layout, input, rows.length, documentPageCount, stamps);

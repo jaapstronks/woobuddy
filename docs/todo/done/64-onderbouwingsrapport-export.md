@@ -113,3 +113,27 @@ Single PDF, A4 portrait, Dutch, professional but not branded-heavy. Sections:
 - Including extracted text snippets (would require keeping `entity_text` in detections — violates #00).
 - Digital signatures / qualified e-signatures on the report PDF — possible future Enterprise feature, not here.
 - Multi-document / dossier-level reports — single document only, like the rest of the app today (see `CLAUDE.md` "Single-document flow").
+
+## Accessibility (PDF/UA-1, WCAG 2.1 AA, EN 301 549)
+
+Audited 2026-04-28 against the practical accessibility checklist a Dutch overheid recipient would care about (the *Tijdelijk besluit digitale toegankelijkheid overheid* references EN 301 549, which references WCAG 2.1 AA + PDF/UA-1).
+
+**Implemented in v1:**
+
+- [x] Document `/Lang nl-NL` set via `setLanguage('nl-NL')` — screen readers pick the right voice/dictionary.
+- [x] `/Title` set via `setTitle()` and `/ViewerPreferences /DisplayDocTitle true` so AT and PDF viewers announce the human-readable title rather than the filename (WCAG 2.4.2).
+- [x] `/MarkInfo /Marked true` to declare logical-content intent — a hook for a future tagged-PDF pass; conformant readers surface the intent.
+- [x] Real selectable text everywhere; no rasterised content, no images requiring alt text.
+- [x] Reading order matches geometric order top-to-bottom, single column — works in non-tagged fall-back.
+- [x] Colour contrast: every text colour passes WCAG 1.4.3 AA against white. The smallest type (8pt footer) uses `#5C6675` ≈ 5.8:1; body ink ≈ 14:1; soft ink ≈ 7:1.
+- [x] No reliance on colour alone — every tier, source, and article is also labelled in text.
+- [x] Word wrapping never breaks words mid-character; long motivation strings wrap on whitespace.
+- [x] Document metadata: Author, Subject, Keywords, CreationDate, ModificationDate populated (helpful for DMS indexing and a small accessibility nudge).
+
+**Known gaps (deferred to a follow-up):**
+
+- [ ] **Tagged PDF / `/StructTreeRoot`** — pdf-lib has only low-level primitives for this (`PDFContext.obj` + manual marked-content sequences), no high-level helpers. Without it, recipients using a screen reader get the visual-stream fall-back: passable for a single-column document, but headings aren't announced as headings, and table cells aren't associated with their column headers. PDF/UA-1 conformance is impossible without it.
+- [ ] **Document outline / bookmarks** — pdf-lib doesn't expose an `addOutline` API; needs ~30 lines of low-level catalog work to wire `/Outlines` for the four sections (voorblad → samenvatting → tabel → bijlage A). Would help screen-reader users jump between sections in long reports.
+- [ ] **Reviewer signature / qualified provenance** — already deferred above; flagged here too because it's the other thing a fully accessible *and* legally robust bijlage would want.
+
+The follow-up plan is to **route the report through the existing `backend/app/export/` PyMuPDF + pikepdf pipeline** (the same one #48 uses for the gelakte PDF) to add `/StructTreeRoot` and `/Outlines`. The report contains zero document content (no `entity_text`, no extracted page text — by design above), so the privacy reason that would justify keeping it client-side doesn't apply. The trust line on the landing page is about the *source* PDF, which never leaves the browser regardless. See [#65](../65-onderbouwingsrapport-tagged-pdf.md) for the implementation plan.
