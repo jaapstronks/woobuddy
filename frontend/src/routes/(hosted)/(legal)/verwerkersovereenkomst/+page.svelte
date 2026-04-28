@@ -15,7 +15,7 @@
 	Modeltekst voor een verwerkersovereenkomst (DPA) tussen jouw organisatie (verwerkingsverantwoordelijke)
 	en WOO Buddy (verwerker), in lijn met artikel 28 AVG.
 </p>
-<p class="meta">Laatst bijgewerkt: 16 april 2026 · Versie 1.0 (model)</p>
+<p class="meta">Laatst bijgewerkt: 28 april 2026 · Versie 1.1 (model)</p>
 
 <div class="callout">
 	<p>

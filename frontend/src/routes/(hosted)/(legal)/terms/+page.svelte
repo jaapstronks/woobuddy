@@ -15,7 +15,7 @@
 	Deze voorwaarden gelden voor het gebruik van WOO Buddy, zowel via woobuddy.nl als zelf gehost
 	vanuit de open-source code.
 </p>
-<p class="meta">Laatst bijgewerkt: 16 april 2026</p>
+<p class="meta">Laatst bijgewerkt: 28 april 2026</p>
 
 <h2>1. Wie zijn wij?</h2>
 <p>

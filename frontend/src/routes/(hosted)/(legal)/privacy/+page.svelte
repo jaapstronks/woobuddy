@@ -15,7 +15,7 @@
 	WOO Buddy is een hulpmiddel voor het lakken van Woo-documenten. Deze verklaring legt uit welke
 	gegevens we verwerken en — vooral — welke niet.
 </p>
-<p class="meta">Laatst bijgewerkt: 16 april 2026</p>
+<p class="meta">Laatst bijgewerkt: 28 april 2026</p>
 
 <div class="callout">
 	<p>
