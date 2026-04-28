@@ -13,7 +13,7 @@ Only the `main` branch and the latest deployed release of <https://woobuddy.nl> 
 Report privately through either channel:
 
 1. **GitHub Private Vulnerability Reporting** — preferred. Use the "Report a vulnerability" button under the [Security tab](https://github.com/jaapstronks/woobuddy/security) of this repository. This creates a private advisory that only maintainers can see.
-2. **Email** — `jaap@ciiic.nl`. Use the subject line `[WOO Buddy security]`. PGP is not required, but encrypted reports are welcome if you have a preferred key exchange.
+2. **Email** — `jaapstronks@gmail.com`. Use the subject line `[WOO Buddy security]`. PGP is not required, but encrypted reports are welcome if you have a preferred key exchange.
 
 Please include:
 

@@ -15,7 +15,7 @@
 	WOO Buddy is een hulpmiddel voor het lakken van Woo-documenten. Deze verklaring legt uit welke
 	gegevens we verwerken en — vooral — welke niet.
 </p>
-<p class="meta">Laatst bijgewerkt: 16 april 2026</p>
+<p class="meta">Laatst bijgewerkt: 28 april 2026</p>
 
 <div class="callout">
 	<p>
@@ -27,8 +27,8 @@
 
 <h2>1. Wie is verantwoordelijk?</h2>
 <p>
-	WOO Buddy wordt aangeboden door Jaap Stronks en Jeroen Hammer, gevestigd in Nederland. Voor vragen over
-	privacy kun je mailen naar
+	WOO Buddy wordt aangeboden door Bureau Bolster B.V. (KvK 61487953), gevestigd in Nederland. Voor
+	vragen over privacy kun je mailen naar
 	<a href="mailto:privacy@woobuddy.nl">privacy@woobuddy.nl</a>.
 </p>
 

@@ -15,7 +15,7 @@
 	Modeltekst voor een verwerkersovereenkomst (DPA) tussen jouw organisatie (verwerkingsverantwoordelijke)
 	en WOO Buddy (verwerker), in lijn met artikel 28 AVG.
 </p>
-<p class="meta">Laatst bijgewerkt: 16 april 2026 · Versie 1.0 (model)</p>
+<p class="meta">Laatst bijgewerkt: 28 april 2026 · Versie 1.1 (model)</p>
 
 <div class="callout">
 	<p>
@@ -30,8 +30,8 @@
 <ul>
 	<li><strong>Verwerkingsverantwoordelijke:</strong> [naam organisatie], hierna "Klant".</li>
 	<li>
-		<strong>Verwerker:</strong> CIIIC (h.o.d.n. WOO Buddy), gevestigd in Nederland, hierna
-		"WOO Buddy".
+		<strong>Verwerker:</strong> Bureau Bolster B.V. (KvK 61487953, h.o.d.n. WOO Buddy),
+		gevestigd in Nederland, hierna "WOO Buddy".
 	</li>
 </ul>
 
@@ -98,7 +98,6 @@
 <ul>
 	<li><strong>Hetzner Online GmbH</strong> — hosting (Duitsland / Finland, binnen de EER).</li>
 	<li><strong>Postmark (of gelijkwaardig)</strong> — transactionele e-mail (VS, onder SCC's).</li>
-	<li><strong>Plausible Analytics (EU)</strong> — cookieloze webstatistieken (geen persoonsgegevens).</li>
 </ul>
 <p>
 	WOO Buddy informeert Klant schriftelijk bij voorgenomen wijzigingen; Klant heeft 30 dagen de tijd
