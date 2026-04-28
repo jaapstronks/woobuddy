@@ -30,8 +30,8 @@
 <ul>
 	<li><strong>Verwerkingsverantwoordelijke:</strong> [naam organisatie], hierna "Klant".</li>
 	<li>
-		<strong>Verwerker:</strong> Bureau Bolster B.V. (h.o.d.n. WOO Buddy), gevestigd in
-		Nederland, hierna "WOO Buddy".
+		<strong>Verwerker:</strong> Bureau Bolster B.V. (KvK 61487953, h.o.d.n. WOO Buddy),
+		gevestigd in Nederland, hierna "WOO Buddy".
 	</li>
 </ul>
 
