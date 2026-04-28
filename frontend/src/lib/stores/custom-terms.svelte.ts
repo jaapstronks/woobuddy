@@ -39,7 +39,11 @@ let error = $state<string | null>(null);
 
 async function persist(): Promise<void> {
 	if (!currentDocumentId) return;
-	await writeSessionStateSlice(currentDocumentId, { customTerms: terms });
+	// $state.snapshot — IDB's structured-clone algorithm rejects Svelte 5
+	// $state Proxies. Snapshot to a plain array before write.
+	await writeSessionStateSlice(currentDocumentId, {
+		customTerms: $state.snapshot(terms)
+	});
 }
 
 async function load(documentId: string): Promise<void> {

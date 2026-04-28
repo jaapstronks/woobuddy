@@ -129,6 +129,11 @@ const counts = $derived.by(() => {
  * cache so a Cmd+R restores it. Errors degrade silently — the in-memory
  * store stays authoritative; the only consequence is that a refresh
  * loses the slice.
+ *
+ * `$state.snapshot()` is mandatory before handing reactive state to IDB:
+ * Svelte 5 `$state` values are Proxies, and the structured-clone
+ * algorithm rejects Proxies with `DataCloneError`. Snapshotting walks
+ * the tree and produces a plain-object copy that IDB can serialize.
  */
 async function persistDetections(): Promise<void> {
 	if (!currentDocId) return;
@@ -137,7 +142,7 @@ async function persistDetections(): Promise<void> {
 	// extraction layer. Keeping them in IDB would make refresh-restored
 	// state diverge subtly from a fresh analyze when the extraction
 	// layer changes its resolver heuristics.
-	const sanitized = allDetections.map((d) => {
+	const sanitized: Detection[] = $state.snapshot(allDetections).map((d) => {
 		const { entity_text: _et, confidence_level: _cl, ...rest } = d;
 		void _et;
 		void _cl;
@@ -170,9 +175,12 @@ async function setFromAnalyze(
 	const resolved = currentExtraction ? resolveEntityTexts(withLevels, currentExtraction) : withLevels;
 	allDetections = resolved;
 	structureSpansStore.set(docId, structureSpans);
+	// `detections` and `structureSpans` come straight from a fetch
+	// response so they are plain objects — no $state.snapshot needed
+	// here. Empty arrays / objects are equally clone-safe.
 	await writeSessionState({
 		id: docId,
-		detections: detections, // unresolved — entity_text rebuilt on hydrate
+		detections, // unresolved — entity_text rebuilt on hydrate
 		structureSpans,
 		referenceNames: [],
 		customTerms: [],
