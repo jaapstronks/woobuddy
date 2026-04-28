@@ -51,8 +51,7 @@ Infrastructure: PostgreSQL 16 (metadata only — no document content). No LLM an
 
 The app is deliberately scoped to one document at a time while we nail the core UX:
 
-- `/` — landing page (SSR, no Shoelace)
-- `/try` — upload a single PDF; text is extracted client-side, the document is registered, detections are computed, and the user is routed to the review screen
+- `/` — landing page (SSR, no Shoelace). The PDF drop zone is embedded in the hero; uploading triggers client-side text extraction, document registration, detection compute, and routes to the review screen. `/#try` is the in-page anchor; the standalone `/try` route is a permanent 308 redirect to `/#try` for old share links.
 - `/review/[docId]` — PDF viewer on the left, detection list on the right, export button in the toolbar; client-first throughout
 
 There is **no dossier concept, no document list, no cross-document state**. A document stands on its own. The PDF lives in IndexedDB; the server stores only `Document` and `Detection` rows. Several backlog todos (organizations, document lifecycle, name propagation across documents, etc.) assume an older multi-document shape and will need rewriting when tackled.
@@ -85,7 +84,7 @@ There is **no dossier concept, no document list, no cross-document state**. A do
 WOO Buddy is **open core with a generous free tier**. Hosting cost is essentially zero (no LLM, no document storage), so the free tier is deliberately the marketing engine — not a teaser. When designing features, respect the following:
 
 - **Self-host is a first-class tier**, not an afterthought. The codebase is MIT-licensed and runnable via `docker compose up` against a single Postgres. Government IT departments with strict data-sovereignty requirements can run it themselves without talking to us. See `docs/todo/43-open-source-release.md`.
-- **The hosted Gratis tier has no signup wall on `/try` and no document cap.** Anonymous reviewers can analyze and export full PDFs without an account. The trust unlock is "uw PDF verlaat nooit uw browser" — do not undermine it with watermarks, preview-only modes, document caps, or forced login on the trial flow. (Earlier drafts of `32-authentication.md` and `37-mollie-billing.md` proposed those gates and were explicitly reversed.)
+- **The hosted Gratis tier has no signup wall on the landing-page upload flow and no document cap.** Anonymous reviewers can analyze and export full PDFs without an account. The trust unlock is "uw PDF verlaat nooit uw browser" — do not undermine it with watermarks, preview-only modes, document caps, or forced login on the trial flow. (Earlier drafts of `32-authentication.md` and `37-mollie-billing.md` proposed those gates and were explicitly reversed.)
 - **Billing gates team features, not the review loop.** The Team tier (~€79–€99/month per organization) sells multi-user, shared custom wordlists, audit log, SSO, NL-hosted DPA, and priority support. The Enterprise tier sells SLA, ISO27001/NEN7510 paperwork, and dedicated instances. Pricing is per-org flat — never per-document.
 - **Anonymous `/api/analyze` requests must not persist anything to PostgreSQL.** No `Document` row, no `Detection` rows. Detection metadata is computed in memory and returned. Persistence kicks in only when the user logs in and explicitly chooses to save.
 - **Don't introduce LLM/GPU dependencies into the default code path.** They would break the cost model that makes the generous free tier viable. If a future product decision revives a local LLM verification step, it must be opt-in per operator and local-only — see `docs/reference/llm-revival.md`.

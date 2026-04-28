@@ -15,7 +15,7 @@
 **5. Distribution = open core + generous free tier.** Hosting cost is essentially zero (no LLM, no document storage), so we can afford a free tier that is *the marketing engine*, not a teaser. The model:
 
 - **Self-host (free, MIT)** for IT-savvy gemeenten and ministries that want full data sovereignty (#43).
-- **Hosted Gratis tier** for individual reviewers — no signup wall on `/try`, full export, no watermark, no document cap. The trust unlock is "uw PDF verlaat nooit uw browser"; we do not undermine it with friction.
+- **Hosted Gratis tier** for individual reviewers — no signup wall on the landing-page upload flow, full export, no watermark, no document cap. The trust unlock is "uw PDF verlaat nooit uw browser"; we do not undermine it with friction.
 - **Hosted Team tier (~€79–€99/month per organization)** sells the things self-hosting and the Gratis tier *don't* give you: multi-user, shared custom wordlists (#21), audit log (#19), SSO (#42), priority support, NL-hosted with DPA.
 - **Hosted Enterprise** for provincies and ministries — custom pricing, SLA, ISO27001/NEN7510 paperwork, training.
 
@@ -136,7 +136,7 @@ No new todos — this is the "ship it, drive traffic, measure" checkpoint. Expec
 
 - Deploy to production URL
 - Soft launch via personal network (ex-colleagues in gemeenten, privacy/BOFH-style blogs, LinkedIn)
-- Measure in Plausible: `/try` starts, sample opens, exports completed, email signups
+- Measure in Plausible: upload starts, sample opens, exports completed, email signups
 - Collect qualitative feedback through the email list and any direct outreach
 - **Decision gate:** is there enough signal — repeat users, team-lead inquiries, "my colleagues need this too" — to justify building multi-user features? If yes → Phase E. If no → iterate on detection quality, UX, samples, and marketing until there is signal, or kill the project.
 

@@ -79,6 +79,7 @@ class _StubPipeline:
             detections=list(_StubPipeline.result.detections),
             page_count=extraction.page_count,
             has_environmental_content=_StubPipeline.result.has_environmental_content,
+            structure_spans=list(_StubPipeline.result.structure_spans),
         )
 
 
@@ -99,6 +100,23 @@ def _stub_run_pipeline(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 def _sample_payload(doc_id: uuid.UUID, *, text: str = "Hallo wereld") -> dict[str, Any]:
     return {
         "document_id": str(doc_id),
+        "pages": [
+            {
+                "page_number": 0,
+                "full_text": text,
+                "text_items": [
+                    {"text": text, "x0": 10.0, "y0": 20.0, "x1": 110.0, "y1": 32.0}
+                ],
+            }
+        ],
+        "reference_names": [],
+        "custom_terms": [],
+    }
+
+
+def _anonymous_payload(*, text: str = "Hallo wereld") -> dict[str, Any]:
+    """Payload variant for anonymous mode (#50): no document_id key."""
+    return {
         "pages": [
             {
                 "page_number": 0,
@@ -337,6 +355,133 @@ async def test_full_text_never_appears_in_logs_on_failure(
         resp = await client.post(
             "/api/analyze", json=_sample_payload(uploaded_doc.id, text=secret)
         )
+    assert resp.status_code == 500
+
+    combined = "\n".join(record.getMessage() for record in caplog.records)
+    assert secret not in combined
+
+
+# ---------------------------------------------------------------------------
+# Anonymous mode (#50) — no server persistence
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_anonymous_request_persists_nothing(
+    client: AsyncClient, seed_db
+) -> None:
+    """The acceptance criterion: an anonymous analyze call writes zero rows
+    to `documents` and zero rows to `detections`. The pipeline still runs;
+    the detections come back inline in the response."""
+    _StubPipeline.result = PipelineResult(
+        detections=[_pipeline_detection()],
+        page_count=1,
+    )
+
+    resp = await client.post("/api/analyze", json=_anonymous_payload())
+    assert resp.status_code == 200, resp.text
+
+    body = resp.json()
+    # Server generated a fresh session document id — non-empty UUID, never
+    # corresponds to a Postgres row.
+    assert body["document_id"]
+    assert body["detection_count"] == 1
+    assert body["page_count"] == 1
+    assert len(body["detections"]) == 1
+
+    detection = body["detections"][0]
+    assert detection["entity_type"] == "persoon"
+    assert detection["tier"] == "2"
+    assert detection["source"] == "deduce"
+    assert detection["bounding_boxes"][0]["page"] == 0
+    # Server-generated id; client uses it as a local key.
+    assert detection["id"]
+    assert detection["document_id"] == body["document_id"]
+
+    # The acceptance check: zero rows in either table.
+    docs = (await seed_db.execute(select(Document))).scalars().all()
+    detections = (await seed_db.execute(select(Detection))).scalars().all()
+    assert len(docs) == 0
+    assert len(detections) == 0
+
+
+@pytest.mark.asyncio
+async def test_anonymous_response_includes_structure_spans(
+    client: AsyncClient,
+) -> None:
+    """Structure spans (#14) ride along with the response in anonymous mode
+    too — the frontend uses them for bulk-sweep affordances (#20) regardless
+    of whether the document is persisted."""
+    from app.services.structure_engine import StructureSpan
+
+    _StubPipeline.result = PipelineResult(
+        page_count=1,
+        structure_spans=[
+            StructureSpan(
+                kind="signature_block",
+                start_char=10,
+                end_char=42,
+                confidence=0.9,
+                evidence="Met vriendelijke groet,",
+            )
+        ],
+    )
+
+    resp = await client.post("/api/analyze", json=_anonymous_payload())
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["structure_spans"]) == 1
+    assert body["structure_spans"][0]["kind"] == "signature_block"
+
+
+@pytest.mark.asyncio
+async def test_anonymous_pipeline_failure_returns_500_without_persisting(
+    client: AsyncClient, seed_db
+) -> None:
+    """When the pipeline raises in anonymous mode the response is a 500 with
+    a generic Dutch error — and crucially still no DB writes."""
+    _StubPipeline.raise_with = RuntimeError("boom")
+
+    resp = await client.post("/api/analyze", json=_anonymous_payload())
+    assert resp.status_code == 500
+    assert "Analyse mislukt" in resp.text
+
+    docs = (await seed_db.execute(select(Document))).scalars().all()
+    detections = (await seed_db.execute(select(Detection))).scalars().all()
+    assert len(docs) == 0
+    assert len(detections) == 0
+
+
+@pytest.mark.asyncio
+async def test_anonymous_full_text_never_appears_in_logs(
+    client: AsyncClient,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Same privacy invariant as the save-mode test above: anonymous mode
+    must never log document text either, on the success path."""
+    secret = "SentinelAnonZinDieNietInLogsMag9b3"
+    _StubPipeline.result = PipelineResult(page_count=1)
+
+    with caplog.at_level(logging.DEBUG):
+        resp = await client.post("/api/analyze", json=_anonymous_payload(text=secret))
+    assert resp.status_code == 200
+
+    combined = "\n".join(record.getMessage() for record in caplog.records)
+    assert secret not in combined
+
+
+@pytest.mark.asyncio
+async def test_anonymous_full_text_never_appears_in_logs_on_failure(
+    client: AsyncClient,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Same privacy invariant on the failure path — the traceback must not
+    serialize the request body."""
+    secret = "SentinelAnonFailGe2h1c"
+    _StubPipeline.raise_with = RuntimeError("explode anonymously")
+
+    with caplog.at_level(logging.DEBUG):
+        resp = await client.post("/api/analyze", json=_anonymous_payload(text=secret))
     assert resp.status_code == 500
 
     combined = "\n".join(record.getMessage() for record in caplog.records)
