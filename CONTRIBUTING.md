@@ -83,7 +83,7 @@ Open **geen** publiek issue voor beveiligingsproblemen. Zie [`SECURITY.md`](SECU
 
 ## Gedragscode
 
-Dit project volgt de [Contributor Covenant 2.1](CODE_OF_CONDUCT.md). Meldingen: `jaap@ciiic.nl`.
+Dit project volgt de [Contributor Covenant 2.1](CODE_OF_CONDUCT.md). Meldingen: `jaapstronks@gmail.com`.
 
 ## Licentie
 
@@ -114,6 +114,6 @@ WOO Buddy is a small, opinionated codebase. Contributions welcome, but the bar i
 
 **Security reports:** see [`SECURITY.md`](SECURITY.md). Do not file public issues.
 
-**Code of conduct:** [Contributor Covenant 2.1](CODE_OF_CONDUCT.md). Reports: `jaap@ciiic.nl`.
+**Code of conduct:** [Contributor Covenant 2.1](CODE_OF_CONDUCT.md). Reports: `jaapstronks@gmail.com`.
 
 By opening a PR you agree your contribution is published under the project's [MIT license](LICENSE).

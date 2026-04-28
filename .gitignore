@@ -27,6 +27,7 @@ backend/dist/
 
 # Claude Code local state (per-project scratch)
 .claude/
+CLAUDE.md
 
 # Docker
 docker-compose.override.yml
