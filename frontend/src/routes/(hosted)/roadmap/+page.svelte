@@ -24,7 +24,7 @@
 				Wat we nu bouwen, wat hierna komt en wat verder op de planning staat. Een tool voor de Wet
 				open overheid hoort zélf ook open te zijn over wat er op de planning staat.
 			</p>
-			<p class="meta">Laatst bijgewerkt: 18 april 2026</p>
+			<p class="meta">Laatst bijgewerkt: 28 april 2026</p>
 
 			<div class="callout">
 				<p>
@@ -34,6 +34,25 @@
 					<a href="mailto:hoi@woobuddy.nl">hoi@woobuddy.nl</a>.
 				</p>
 			</div>
+
+			<h2>Recent gebouwd</h2>
+			<p>
+				Wat er sinds de vorige update aan de tool is toegevoegd. Het volledige overzicht
+				staat in de
+				<a
+					href="https://github.com/jaapstronks/woobuddy/tree/main/docs/todo/done"
+					target="_blank"
+					rel="noopener noreferrer">backlog</a
+				>.
+			</p>
+			<ul>
+				<li>
+					<strong>Audit-log en onderbouwingsrapport.</strong> Per gelakte passage de juridische
+					grond, motivering en SHA-256-hashes ter verificatie — exporteerbaar als PDF-bijlage
+					bij het Woo-besluit. Alles wordt in de browser gegenereerd; geen documenttekst
+					verlaat je computer.
+				</li>
+			</ul>
 
 			<h2>Nu — waar we aan werken</h2>
 			<p>
@@ -86,10 +105,6 @@
 					<strong>Dossier-modus.</strong> Meerdere documenten in één Woo-verzoek, met gedeelde
 					beslissingen en een gezamenlijke inventarislijst. Vandaag werkt WOO Buddy per document;
 					dossiers zijn de logische volgende stap.
-				</li>
-				<li>
-					<strong>Audit-log en onderbouwingsrapport.</strong> Per gelakte passage de juridische grond
-					en motivering, exporteerbaar als bijlage bij het Woo-besluit.
 				</li>
 				<li>
 					<strong>Gedeelde woordenlijsten per organisatie.</strong> Interne namen, projectcodes en

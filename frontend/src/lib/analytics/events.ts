@@ -55,6 +55,13 @@ export type PlausibleEventProps = {
 	 */
 	publication_export_completed: ExportCompletedProps;
 	/**
+	 * #64 — onderbouwingsrapport (audit log as Woo-besluit bijlage).
+	 * Same buckets as the plain export so the dashboard can see how
+	 * many reviewers actually generate the defensible attachment
+	 * after exporting the gelakte PDF.
+	 */
+	onderbouwing_export_completed: ExportCompletedProps;
+	/**
 	 * #45 — successful lead-form submission. The dashboard goal counts
 	 * conversions on the "blijf op de hoogte / vraag een teamdemo aan"
 	 * funnel, segmented by `source` (landing vs post-export) so we can
