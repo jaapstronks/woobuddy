@@ -65,8 +65,11 @@
 		reviewStore.loadDocument(docId);
 		// The detection store is a module-level singleton. If the reviewer
 		// opened the log without first visiting the review screen (e.g. a
-		// direct link), we still need to hydrate it from the server.
-		detectionStore.load(docId);
+		// direct link), we still need to hydrate it from the IndexedDB
+		// session cache. Anonymous mode (#50) means there is no server
+		// fallback — if the cache is missing, the log shows an empty
+		// state and a hint to revisit the review screen.
+		void detectionStore.hydrate(docId);
 	});
 
 	// -----------------------------------------------------------------------

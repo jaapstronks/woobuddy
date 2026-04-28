@@ -38,8 +38,13 @@ const { mocks, PdfErrorStub } = vi.hoisted(() => {
 				pageCount: 3,
 				fullText: 'ocr two three'
 			})),
-			registerDocument: vi.fn(async () => ({ id: 'doc-1' })),
-			analyzeDocument: vi.fn(async () => undefined),
+			analyzeDocument: vi.fn(async () => ({
+				document_id: 'session-uuid',
+				detection_count: 0,
+				page_count: 1,
+				detections: [],
+				structure_spans: []
+			})),
 			storePdf: vi.fn(async () => {}),
 			storeExtraction: vi.fn(async () => {})
 		}
@@ -59,7 +64,6 @@ vi.mock('$lib/services/pdf-ocr', () => ({
 }));
 
 vi.mock('$lib/api/client', () => ({
-	registerDocument: mocks.registerDocument,
 	analyzeDocument: mocks.analyzeDocument,
 	ApiError: class extends Error {}
 }));
@@ -79,6 +83,16 @@ function makeFile(name = 'scan.pdf', size = 1024): File {
 	const blob = new Blob([new Uint8Array(size)], { type: 'application/pdf' });
 	return new File([blob], name, { type: 'application/pdf' });
 }
+
+// `crypto.randomUUID()` is the source of every docId now (#50 anonymous).
+// Lock it down so assertions don't depend on host randomness.
+beforeEach(() => {
+	let counter = 0;
+	vi.spyOn(crypto, 'randomUUID').mockImplementation(
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		(() => `local-${++counter}` as `${string}-${string}-${string}-${string}-${string}`)
+	);
+});
 
 describe('ingestFile — OCR decision branching (#49)', () => {
 	beforeEach(() => {
@@ -104,7 +118,12 @@ describe('ingestFile — OCR decision branching (#49)', () => {
 		expect(onNeedOcrDecision).not.toHaveBeenCalled();
 		expect(mocks.runOcr).not.toHaveBeenCalled();
 		expect(mocks.storeExtraction).not.toHaveBeenCalled();
-		expect(mocks.registerDocument).toHaveBeenCalledOnce();
+		// #50 — no server registration; the docId is generated client-side.
+		expect(mocks.storePdf).toHaveBeenCalledOnce();
+		if (result.kind === 'ready') {
+			expect(result.documentId).toMatch(/^local-/);
+			expect(result.filename).toBe('scan.pdf');
+		}
 	});
 
 	it('prompts for OCR, runs it, and caches the result when the reviewer accepts', async () => {
@@ -117,23 +136,23 @@ describe('ingestFile — OCR decision branching (#49)', () => {
 
 		expect(onNeedOcrDecision).toHaveBeenCalledOnce();
 		expect(mocks.runOcr).toHaveBeenCalledOnce();
-		expect(mocks.registerDocument).toHaveBeenCalledOnce();
+		expect(mocks.storePdf).toHaveBeenCalledOnce();
 		// Storing the OCR extraction means a reload on the review page
 		// can skip re-OCRing the scan.
 		expect(mocks.storeExtraction).toHaveBeenCalledOnce();
-		expect(result).toEqual({
+		expect(result).toMatchObject({
 			kind: 'ready',
-			documentId: 'doc-1',
-			pages: expect.any(Array),
 			pageCount: 3,
-			viaOcr: true
+			viaOcr: true,
+			filename: 'scan.pdf'
 		});
 		if (result.kind === 'ready') {
+			expect(result.documentId).toMatch(/^local-/);
 			expect(result.pages).toHaveLength(3);
 		}
 	});
 
-	it('registers the doc but skips analyze when the reviewer declines OCR', async () => {
+	it('stores the PDF locally but skips analyze when the reviewer declines OCR', async () => {
 		mocks.extractText.mockRejectedValueOnce(new PdfErrorStub('no text', 'no_text'));
 
 		const onNeedOcrDecision = vi.fn().mockResolvedValue('skip');
@@ -144,10 +163,11 @@ describe('ingestFile — OCR decision branching (#49)', () => {
 		expect(mocks.runOcr).not.toHaveBeenCalled();
 		expect(mocks.storeExtraction).not.toHaveBeenCalled();
 		expect(mocks.analyzeDocument).not.toHaveBeenCalled();
-		// Still registers so the review page has a row to load.
-		expect(mocks.registerDocument).toHaveBeenCalledOnce();
-		// And stores the PDF so the review page can render it.
+		// Still stores the PDF so the review page can render it.
 		expect(mocks.storePdf).toHaveBeenCalledOnce();
+		if (result.kind === 'declined-ocr') {
+			expect(result.documentId).toMatch(/^local-/);
+		}
 	});
 
 	it('lets non-no-text extract errors bubble up unchanged', async () => {
@@ -160,7 +180,8 @@ describe('ingestFile — OCR decision branching (#49)', () => {
 
 		expect(onNeedOcrDecision).not.toHaveBeenCalled();
 		expect(mocks.runOcr).not.toHaveBeenCalled();
-		expect(mocks.registerDocument).not.toHaveBeenCalled();
+		// The flow throws before reaching the storage step.
+		expect(mocks.storePdf).not.toHaveBeenCalled();
 	});
 
 	it('retains pre-#49 behaviour when no OCR handler is provided', async () => {

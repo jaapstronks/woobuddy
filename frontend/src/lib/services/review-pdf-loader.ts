@@ -2,10 +2,15 @@
  * Loading helpers for the review page's PDF column.
  *
  * Extracted from `/review/[docId]/+page.svelte` so the IndexedDB ↔
- * pdf.js ↔ detection-store plumbing can be reused and tested without
- * a component harness. The page component still owns the reactive
- * variables (`pdfData`, `needsPdf`); these helpers just wrap the
- * async steps around those assignments.
+ * pdf.js plumbing can be reused and tested without a component
+ * harness. The page component still owns the reactive variables
+ * (`pdfData`, `needsPdf`); these helpers just wrap the async steps
+ * around those assignments.
+ *
+ * Detection hydration / fresh-analyze is the page's responsibility
+ * since #50 (anonymous local-only state) — it sequences IDB cache
+ * read, ref-names + custom-terms load, and the cache-miss analyze
+ * fallback all in one effect.
  */
 
 import { getPdf, storePdf } from '$lib/services/pdf-store';
@@ -22,7 +27,7 @@ export interface PdfLoadResult {
  * Look up the stored PDF bytes for this document and, if present,
  * re-extract the text layer (or pull the cached OCR extraction for
  * scanned docs) so the review sidebar's text-layer features work on
- * reload. Detections are loaded regardless.
+ * reload.
  *
  * Returns the bytes so the page can wire them into the PdfViewer, plus
  * a flag for whether a file-upload fallback is needed.
@@ -33,14 +38,14 @@ export async function loadPdfAndDetections(documentId: string): Promise<PdfLoadR
 	if (pdfBytes) {
 		await hydrateExtractionText(documentId, pdfBytes);
 	}
-	await detectionStore.load(documentId);
 	return { pdfBytes };
 }
 
 /**
- * Store a freshly uploaded PDF, hydrate the extraction cache, and
- * reload detections. Used by the "PDF niet gevonden" recovery flow
- * when the browser cache was cleared.
+ * Store a freshly uploaded PDF and hydrate the extraction cache. Used
+ * by the "PDF niet gevonden" recovery flow when the browser cache was
+ * cleared. The caller is responsible for refreshing the detection
+ * state afterwards (hydrate from IDB, fall back to analyze).
  */
 export async function attachUploadedPdf(
 	documentId: string,
@@ -49,7 +54,6 @@ export async function attachUploadedPdf(
 ): Promise<void> {
 	await storePdf(documentId, filename, bytes);
 	await hydrateExtractionText(documentId, bytes);
-	await detectionStore.load(documentId);
 }
 
 /**

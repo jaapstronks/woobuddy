@@ -13,8 +13,15 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://woobuddy:woobuddy@localhost:5432/woobuddy"
 
-    # CORS
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    # CORS — 5173 is the canonical Vite dev port; 5174 is Vite's auto-fallback
+    # when 5173 is already taken (a leftover dev server, another project on
+    # the same machine, etc.). Adding the fallback here saves a confusing
+    # round of "why is CORS blocking me?" the first time it shifts.
+    cors_origins: list[str] = [
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:3000",
+    ]
 
     # Shared secret required on every API call. The SvelteKit server proxy
     # attaches this header; browsers cannot forge it cross-origin. Leave empty

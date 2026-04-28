@@ -1,30 +1,27 @@
 /**
  * Page reviews store (#10 — page completeness).
  *
- * Tracks per-page status (unreviewed/in_progress/complete/flagged) for the
- * current document. The server keeps a row per touched page; missing rows
- * are treated as `unreviewed`, so this store stays sparse for long
- * documents where only a handful of pages get marked by hand.
+ * Tracks per-page status (unreviewed/in_progress/complete/flagged) for
+ * the currently viewed document. The store stays sparse — a missing
+ * key reads as `unreviewed`, so for a 200-page document the reviewer
+ * only persists the pages they've actually touched.
  *
- * Status persists immediately on change — there's no explicit save. We
- * optimistically update the local map, then fire-and-forget the PUT;
- * failures roll the entry back and surface an error.
+ * Local-only since #50: every status flip is mirrored into the
+ * IndexedDB session cache so a Cmd+R restores the chips. Nothing is
+ * sent to the server.
  */
 
 import {
-	getPageReviews,
-	upsertPageReview,
-	type PageReviewStatus
-} from '$lib/api/client';
+	readSessionState,
+	writeSessionStateSlice
+} from '$lib/services/session-state-store';
+import type { PageReviewStatus } from '$lib/types';
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
 let currentDocumentId = $state<string | null>(null);
-// Sparse page-number → status map. A missing key is equivalent to
-// `unreviewed`, which lets us avoid writing zeros for every page of a
-// 200-page document the reviewer hasn't touched yet.
 let statuses = $state<Record<number, PageReviewStatus>>({});
 let loading = $state(false);
 let error = $state<string | null>(null);
@@ -33,16 +30,23 @@ let error = $state<string | null>(null);
 // Actions
 // ---------------------------------------------------------------------------
 
+async function persist(): Promise<void> {
+	if (!currentDocumentId) return;
+	// $state.snapshot — IDB's structured-clone algorithm rejects Svelte 5
+	// $state Proxies. Snapshot to a plain object before write.
+	await writeSessionStateSlice(currentDocumentId, {
+		pageReviews: $state.snapshot(statuses)
+	});
+}
+
 async function load(documentId: string) {
 	currentDocumentId = documentId;
 	loading = true;
 	error = null;
 	statuses = {};
 	try {
-		const rows = await getPageReviews(documentId);
-		const next: Record<number, PageReviewStatus> = {};
-		for (const r of rows) next[r.page_number] = r.status;
-		statuses = next;
+		const state = await readSessionState(documentId);
+		statuses = state?.pageReviews ?? {};
 	} catch (e) {
 		error = e instanceof Error ? e.message : 'Paginastatus laden mislukt';
 	} finally {
@@ -61,27 +65,13 @@ function getStatus(pageNumber: number): PageReviewStatus {
 }
 
 /**
- * Set a page's status, persisting immediately.
- *
- * Optimistic: the local map flips right away so the indicator updates
- * instantly. If the PUT fails, the old value is restored and an error
- * string surfaces on the store — the review page shows this in the
- * existing error banner.
+ * Set a page's status, mirroring the change to IDB. Local-only — no
+ * optimistic-vs-confirmed split: the assignment is the truth.
  */
 async function setStatus(pageNumber: number, status: PageReviewStatus) {
 	if (!currentDocumentId) return;
-	const previous = statuses[pageNumber];
 	statuses = { ...statuses, [pageNumber]: status };
-	try {
-		await upsertPageReview(currentDocumentId, pageNumber, status);
-	} catch (e) {
-		// Restore the exact prior entry (including "was missing").
-		const rollback = { ...statuses };
-		if (previous === undefined) delete rollback[pageNumber];
-		else rollback[pageNumber] = previous;
-		statuses = rollback;
-		error = e instanceof Error ? e.message : 'Paginastatus opslaan mislukt';
-	}
+	await persist();
 }
 
 async function markComplete(pageNumber: number) {

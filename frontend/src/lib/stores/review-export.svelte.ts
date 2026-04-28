@@ -39,9 +39,14 @@ let publicationBundling = $state(false);
 let showAccessibilityBanner = $state(false);
 
 export interface RunExportArgs {
-	docId: string;
 	pdfBytes: ArrayBuffer;
 	filename: string;
+	/**
+	 * The current detection list. Accepted detections become the
+	 * redactions sent to the server in the multipart request body —
+	 * #50 anonymous mode means the server can't look them up itself.
+	 */
+	detections: Detection[];
 	/** Number of non-rejected detections at export time — bucketed for analytics. */
 	confirmedCount: number;
 	/** Page count of the exported document — bucketed for analytics. */
@@ -55,9 +60,9 @@ export interface RunExportArgs {
 }
 
 async function runExport({
-	docId,
 	pdfBytes,
 	filename,
+	detections,
 	confirmedCount,
 	pageCount,
 	title
@@ -66,7 +71,7 @@ async function runExport({
 	exportError = null;
 	showAccessibilityBanner = false;
 	try {
-		const redacted = await exportRedactedPdf(docId, pdfBytes, { title });
+		const redacted = await exportRedactedPdf(pdfBytes, filename, detections, { title });
 		downloadBlob(redacted, `gelakt_${filename}`);
 		showPostExportLead = true;
 		showAccessibilityBanner = true;
@@ -127,8 +132,8 @@ function closePublicationDialog(): void {
 }
 
 export interface RunPublicationExportArgs {
-	docId: string;
 	pdfBytes: ArrayBuffer;
+	filename: string;
 	document: Document | null;
 	detections: Detection[];
 	input: PublicationMetadataInput;
@@ -138,7 +143,7 @@ export interface RunPublicationExportArgs {
 }
 
 /**
- * #52 — Publication-export bundle. Re-uses the existing redact-stream
+ * #52 — Publication-export bundle. Re-uses the inline-redactions
  * endpoint for the gelakte PDF and assembles the DiWoo + GPP-Woo
  * artifacts client-side.
  */
@@ -146,9 +151,12 @@ async function runPublicationExport(args: RunPublicationExportArgs): Promise<voi
 	publicationBundling = true;
 	exportError = null;
 	try {
-		const redactedBlob = await exportRedactedPdf(args.docId, args.pdfBytes, {
-			title: args.input.officieleTitel
-		});
+		const redactedBlob = await exportRedactedPdf(
+			args.pdfBytes,
+			args.filename,
+			args.detections,
+			{ title: args.input.officieleTitel }
+		);
 		const redactedBytes = new Uint8Array(await redactedBlob.arrayBuffer());
 		const inputWithSize: PublicationMetadataInput = {
 			...args.input,

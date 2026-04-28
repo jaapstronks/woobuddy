@@ -1,18 +1,5 @@
 import { PUBLIC_API_URL } from '$env/static/public';
-import type {
-	Document,
-	Detection,
-	UpdateDetectionRequest,
-	PageExtraction,
-	BoundingBox,
-	CustomTerm,
-	EntityType,
-	DetectionTier,
-	ReferenceName,
-	ReferenceRoleHint,
-	StructureSpan,
-	WooArticleCode
-} from '$lib/types';
+import type { Detection, PageExtraction, StructureSpan } from '$lib/types';
 
 const BASE = PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -49,7 +36,7 @@ async function requestOnce<T>(path: string, options?: RequestInit): Promise<T> {
 			headers: { 'Content-Type': 'application/json', ...options?.headers },
 			...options
 		});
-	} catch (cause) {
+	} catch {
 		// `fetch` throws a TypeError for DNS, connection-refused, CORS, offline, etc.
 		throw new ApiError(
 			'Kan geen verbinding maken met de server. Controleer je internetverbinding.',
@@ -73,9 +60,8 @@ const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE']);
  * Perform a JSON API request with a single retry for transient failures.
  *
  * Retries only fire on idempotent methods (GET/HEAD/OPTIONS/PUT/DELETE). Non-
- * idempotent POSTs (create-detection, split, merge) would double-execute on a
- * transient gateway error if retried, so they surface the first failure to
- * the caller instead.
+ * idempotent POSTs would double-execute on a transient gateway error if
+ * retried, so they surface the first failure to the caller instead.
  */
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
 	try {
@@ -93,36 +79,35 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 // ---------------------------------------------------------------------------
-// Documents
-// ---------------------------------------------------------------------------
-
-export async function registerDocument(
-	filename: string,
-	pageCount: number
-): Promise<Document> {
-	return request('/api/documents', {
-		method: 'POST',
-		body: JSON.stringify({ filename, page_count: pageCount })
-	});
-}
-
-export async function getDocument(id: string): Promise<Document> {
-	return request(`/api/documents/${id}`);
-}
-
-// ---------------------------------------------------------------------------
-// Detections
+// Analyze (#50 — anonymous mode)
+//
+// The hosted tier launches without authentication, so every analyze call
+// from the public landing-page upload flow is anonymous: no document_id,
+// detections returned inline with server-generated UUIDs, zero DB writes.
+// The save-mode (with document_id) on the backend stays in-tree for the
+// future authenticated save flow but has no caller in this codebase.
 // ---------------------------------------------------------------------------
 
 export interface AnalyzeResponse {
+	/**
+	 * Server-generated session UUID — never corresponds to a Postgres row.
+	 * Callers use it as a local key in IndexedDB / in-memory state.
+	 */
 	document_id: string;
 	detection_count: number;
 	page_count: number;
 	status?: string;
 	/**
+	 * Full detection list with server-generated UUIDs. The list is the
+	 * single source of truth for the review session — no follow-up GET is
+	 * required (and would 404 anyway, since the document was never
+	 * registered).
+	 */
+	detections: Detection[];
+	/**
 	 * Structural regions (email headers, signature blocks, salutations)
-	 * produced by the server-side structure engine (#14). Ephemeral:
-	 * wired for #20 bulk-sweep affordances and #15 Tier 2 card context.
+	 * produced by the server-side structure engine (#14). Wired for #20
+	 * bulk-sweep affordances and #15 Tier 2 card context.
 	 */
 	structure_spans: StructureSpan[];
 }
@@ -133,8 +118,14 @@ export interface AnalyzeCustomTermPayload {
 	woo_article?: string;
 }
 
+/**
+ * Run the rule-based detection pipeline on client-extracted text.
+ *
+ * The text is processed ephemerally on the server (#00 client-first
+ * architecture) — never logged, never stored. The full detection list
+ * comes back inline.
+ */
 export async function analyzeDocument(
-	documentId: string,
 	pages: PageExtraction[],
 	referenceNames: string[] = [],
 	customTerms: AnalyzeCustomTermPayload[] = []
@@ -142,7 +133,6 @@ export async function analyzeDocument(
 	return request('/api/analyze', {
 		method: 'POST',
 		body: JSON.stringify({
-			document_id: documentId,
 			pages: pages.map((p) => ({
 				page_number: p.pageNumber,
 				full_text: p.fullText,
@@ -163,177 +153,6 @@ export async function analyzeDocument(
 			// the full text for every occurrence.
 			custom_terms: customTerms
 		})
-	});
-}
-
-export async function getDetections(documentId: string): Promise<Detection[]> {
-	return request(`/api/documents/${documentId}/detections`);
-}
-
-export async function updateDetection(id: string, data: UpdateDetectionRequest): Promise<Detection> {
-	return request(`/api/detections/${id}`, {
-		method: 'PATCH',
-		body: JSON.stringify(data)
-	});
-}
-
-export interface CreateManualDetectionRequest {
-	document_id: string;
-	entity_type: EntityType;
-	tier: DetectionTier;
-	woo_article?: WooArticleCode;
-	bounding_boxes: BoundingBox[];
-	motivation_text?: string;
-	/**
-	 * "manual" for single text/area selections (#06/#07), "search_redact"
-	 * for bulk-applied search hits (#09). The backend tags the row so audit
-	 * logs can distinguish the two flows. Defaults to "manual" server-side.
-	 */
-	source?: 'manual' | 'search_redact';
-}
-
-/**
- * Create a reviewer-authored ("manual") detection.
- *
- * Client-first: only bounding boxes and metadata are sent. The selected
- * text itself stays in the browser — the server persists no `entity_text`.
- */
-export async function createManualDetection(
-	data: CreateManualDetectionRequest
-): Promise<Detection> {
-	return request('/api/detections', {
-		method: 'POST',
-		body: JSON.stringify(data)
-	});
-}
-
-/**
- * Delete a reviewer-authored detection (used by the undo stack).
- *
- * The server rejects this for non-manual detections — undoing an auto
- * detection flips its `review_status` back via PATCH instead.
- */
-export async function deleteDetection(id: string): Promise<void> {
-	await request<void>(`/api/detections/${id}`, { method: 'DELETE' });
-}
-
-/**
- * Split a detection into two halves (#18).
- *
- * The client has resolved the split point against its local text layer
- * and sends the two resulting bbox sets. The server creates two new
- * manual-source detections inheriting the original's metadata and
- * deletes the original as part of the same operation.
- */
-export async function splitDetection(
-	id: string,
-	bboxesA: BoundingBox[],
-	bboxesB: BoundingBox[]
-): Promise<Detection[]> {
-	return request(`/api/detections/${id}/split`, {
-		method: 'POST',
-		body: JSON.stringify({ bboxes_a: bboxesA, bboxes_b: bboxesB })
-	});
-}
-
-/**
- * Merge two or more detections into one (#18).
- *
- * The server concatenates the inputs' bboxes in list order, creates a
- * new manual-source detection inheriting metadata from the *first* id in
- * the list, and deletes the inputs. All ids must belong to the same
- * document; the server enforces this.
- */
-export async function mergeDetections(ids: string[]): Promise<Detection> {
-	return request('/api/detections/merge', {
-		method: 'POST',
-		body: JSON.stringify({ detection_ids: ids })
-	});
-}
-
-// ---------------------------------------------------------------------------
-// Page reviews (#10 — page completeness)
-// ---------------------------------------------------------------------------
-
-export type PageReviewStatus = 'unreviewed' | 'in_progress' | 'complete' | 'flagged';
-
-export interface PageReview {
-	id: string;
-	document_id: string;
-	page_number: number;
-	status: PageReviewStatus;
-	reviewer_id: string | null;
-	updated_at: string;
-}
-
-export async function getPageReviews(documentId: string): Promise<PageReview[]> {
-	return request(`/api/documents/${documentId}/page-reviews`);
-}
-
-export async function upsertPageReview(
-	documentId: string,
-	pageNumber: number,
-	status: PageReviewStatus
-): Promise<PageReview> {
-	return request(`/api/documents/${documentId}/page-reviews/${pageNumber}`, {
-		method: 'PUT',
-		body: JSON.stringify({ status })
-	});
-}
-
-// ---------------------------------------------------------------------------
-// Reference names (#17 — per-document "niet lakken" list)
-// ---------------------------------------------------------------------------
-
-export async function getReferenceNames(documentId: string): Promise<ReferenceName[]> {
-	return request(`/api/documents/${documentId}/reference-names`);
-}
-
-export async function createReferenceName(
-	documentId: string,
-	displayName: string,
-	roleHint: ReferenceRoleHint = 'publiek_functionaris'
-): Promise<ReferenceName> {
-	return request(`/api/documents/${documentId}/reference-names`, {
-		method: 'POST',
-		body: JSON.stringify({ display_name: displayName, role_hint: roleHint })
-	});
-}
-
-export async function deleteReferenceName(
-	documentId: string,
-	nameId: string
-): Promise<void> {
-	await request<void>(`/api/documents/${documentId}/reference-names/${nameId}`, {
-		method: 'DELETE'
-	});
-}
-
-// ---------------------------------------------------------------------------
-// Custom terms (#21 — per-document "eigen zoektermen")
-// ---------------------------------------------------------------------------
-
-export async function getCustomTerms(documentId: string): Promise<CustomTerm[]> {
-	return request(`/api/documents/${documentId}/custom-terms`);
-}
-
-export async function createCustomTerm(
-	documentId: string,
-	term: string,
-	wooArticle: string = '5.1.2e'
-): Promise<CustomTerm> {
-	return request(`/api/documents/${documentId}/custom-terms`, {
-		method: 'POST',
-		body: JSON.stringify({ term, match_mode: 'exact', woo_article: wooArticle })
-	});
-}
-
-export async function deleteCustomTerm(
-	documentId: string,
-	termId: string
-): Promise<void> {
-	await request<void>(`/api/documents/${documentId}/custom-terms/${termId}`, {
-		method: 'DELETE'
 	});
 }
 

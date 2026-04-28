@@ -133,6 +133,12 @@
 	// Load document + detections + local PDF. The undo stack is per-document
 	// and in-memory only — switching docs or reloading should not leave stale
 	// commands that target rows from a different document.
+	//
+	// #50 — anonymous local-only state: the session lives in IndexedDB
+	// (`session-state-store`), not on the server. Hydration order matters
+	// — ref-names and custom-terms must be loaded before any analyze
+	// fallback so the pipeline sees the reviewer's lists on a fresh
+	// browser visit.
 	$effect(() => {
 		void docId;
 		undoStore.clear();
@@ -140,21 +146,8 @@
 		referenceNamesStore.clear();
 		customTermsStore.clear();
 		reviewExportStore.reset();
-		reviewStore.loadDocument(docId);
-		loadPdfAndDetections(docId);
-		pageReviewStore.load(docId);
-		// #17 — load the per-document reference list so the panel shows
-		// the reviewer's previous entries on reload, and so a re-analysis
-		// triggered by an add/remove has the full list on hand.
-		referenceNamesStore.load(docId);
-		// #21 — same story for the per-document custom wordlist. Loaded
-		// before the first analyze run so the pipeline sees it on page
-		// refresh, not only after the reviewer touches the panel.
-		customTermsStore.load(docId);
-		// #20 — hydrate the structure-spans cache from sessionStorage so the
-		// bulk-sweep chips show up after a soft reload (analyze isn't
-		// re-run when the page refreshes).
 		structureSpansStore.load(docId);
+		void initReviewSession(docId);
 		return () => {
 			undoStore.clear();
 			pageReviewStore.clear();
@@ -162,6 +155,50 @@
 			customTermsStore.clear();
 		};
 	});
+
+	async function initReviewSession(documentId: string) {
+		// PDF first so the viewer column can render while we restore state.
+		// Hero (post-upload) populates the detection store + IDB cache before
+		// navigation, so on the upload path everything is already in place;
+		// on a refresh / direct visit, this orchestration handles hydration.
+		const { pdfBytes } = await loadReviewPdf(documentId);
+		if (pdfBytes) {
+			pdfData = pdfBytes;
+		} else {
+			needsPdf = true;
+		}
+
+		await reviewStore.loadDocument(documentId);
+
+		// Pull the IDB session slices in parallel — they're independent.
+		await Promise.all([
+			pageReviewStore.load(documentId),
+			referenceNamesStore.load(documentId),
+			customTermsStore.load(documentId)
+		]);
+
+		// Detections come last so the analyze fallback (if needed) sees the
+		// already-loaded ref-names + custom-terms in the request payload.
+		if (detectionStore.docId === documentId && detectionStore.all.length > 0) {
+			// Hero just populated it for this doc — nothing to do.
+			return;
+		}
+		const hadCache = await detectionStore.hydrate(documentId);
+		if (!hadCache) {
+			const pages = detectionStore.extraction?.pages;
+			if (pages && pages.length > 0) {
+				await detectionStore.analyze(
+					documentId,
+					pages,
+					referenceNamesStore.displayNames,
+					customTermsStore.analyzePayload
+				);
+			}
+			// No selectable text and no cache → reviewer declined OCR
+			// upstream. Detection list stays empty; manual area redaction
+			// (#07) is still available.
+		}
+	}
 
 	// Flash affected overlays after any undo/redo/push that touches detections.
 	$effect(() => {
@@ -199,15 +236,6 @@
 		history.replaceState(history.state, '', cleaned.pathname + cleaned.search);
 	});
 
-	async function loadPdfAndDetections(documentId: string) {
-		const { pdfBytes } = await loadReviewPdf(documentId);
-		if (pdfBytes) {
-			pdfData = pdfBytes;
-		} else {
-			needsPdf = true;
-		}
-	}
-
 	async function openPdfFilePicker() {
 		const file = await pickPdfFile();
 		if (!file) return;
@@ -215,6 +243,21 @@
 		await attachUploadedPdf(docId, file.name, bytes);
 		pdfData = bytes;
 		needsPdf = false;
+		// After re-attaching the PDF, refresh detection state. If the
+		// session-state IDB record survived (PDF was lost but state wasn't),
+		// hydrate restores everything; otherwise run a fresh analyze.
+		const hadCache = await detectionStore.hydrate(docId);
+		if (!hadCache) {
+			const pages = detectionStore.extraction?.pages;
+			if (pages && pages.length > 0) {
+				await detectionStore.analyze(
+					docId,
+					pages,
+					referenceNamesStore.displayNames,
+					customTermsStore.analyzePayload
+				);
+			}
+		}
 	}
 
 	function handleDebugExport() {
@@ -249,9 +292,9 @@
 		const pageCount = reviewStore.document?.page_count ?? 0;
 		exportDialogOpen = false;
 		await reviewExportStore.runExport({
-			docId,
 			pdfBytes: pdfData,
 			filename,
+			detections: detectionStore.all,
 			confirmedCount,
 			pageCount,
 			title: exportTitle
@@ -279,9 +322,10 @@
 		).length;
 		const pageCount = reviewStore.document?.page_count ?? 0;
 		const version = await loadTooiVersion();
+		const filename = reviewStore.document?.filename ?? 'document.pdf';
 		await reviewExportStore.runPublicationExport({
-			docId,
 			pdfBytes: pdfData,
+			filename,
 			document: reviewStore.document,
 			detections: detectionStore.all,
 			input,

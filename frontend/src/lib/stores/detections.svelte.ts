@@ -2,22 +2,22 @@
  * Detections store — Svelte 5 runes-based state management for the review page.
  *
  * Manages all detections for the currently viewed document, with filtering,
- * selection, and review actions.
+ * selection, and review actions. Local-only since #50: every edit is a pure
+ * in-memory mutation with a client-generated UUID, and the result is mirrored
+ * to IndexedDB (`session-state-store`) so a Cmd+R on the review page restores
+ * the reviewer's accept/reject/manual-redact work without ever hitting the
+ * server.
  */
 
-import {
-	getDetections,
-	updateDetection,
-	analyzeDocument,
-	createManualDetection,
-	deleteDetection,
-	splitDetection,
-	mergeDetections,
-	type CreateManualDetectionRequest
-} from '$lib/api/client';
+import { analyzeDocument } from '$lib/api/client';
 import { HIGH_CONFIDENCE_THRESHOLD } from '$lib/config/thresholds';
 import { structureSpansStore } from '$lib/stores/structure-spans.svelte';
 import { resolveEntityTexts } from '$lib/services/bbox-text-resolver';
+import {
+	readSessionState,
+	writeSessionState,
+	writeSessionStateSlice
+} from '$lib/services/session-state-store';
 import type {
 	BoundingBox,
 	Detection,
@@ -43,35 +43,15 @@ const isHighConfidencePendingTier2 = (d: Detection): boolean =>
 	d.review_status === 'pending' &&
 	d.confidence >= HIGH_CONFIDENCE_THRESHOLD;
 
-/**
- * Merge a server response back into the local list, preserving the
- * client-only `entity_text`. The server does not store document content,
- * so its response omits the text; without this splice the sidebar would
- * blank out on every status change or bbox nudge.
- */
-function mergeServerUpdate(
-	id: string,
-	updated: Detection,
-	preferUpdatedText: boolean
-): void {
-	const existingText = byId[id]?.entity_text;
-	allDetections = allDetections.map((d) =>
-		d.id === id
-			? {
-					...updated,
-					entity_text: preferUpdatedText
-						? updated.entity_text ?? existingText ?? d.entity_text
-						: existingText ?? d.entity_text,
-					confidence_level: confidenceToLevel(updated.confidence)
-				}
-			: d
-	);
+function withConfidenceLevel(d: Detection): Detection {
+	return { ...d, confidence_level: confidenceToLevel(d.confidence) };
 }
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
+let currentDocId = $state<string | null>(null);
 let allDetections = $state<Detection[]>([]);
 let selectedId = $state<string | null>(null);
 /**
@@ -141,29 +121,116 @@ const counts = $derived.by(() => {
 });
 
 // ---------------------------------------------------------------------------
+// Persistence
+// ---------------------------------------------------------------------------
+
+/**
+ * Mirror the current detection list into the IndexedDB session-state
+ * cache so a Cmd+R restores it. Errors degrade silently — the in-memory
+ * store stays authoritative; the only consequence is that a refresh
+ * loses the slice.
+ *
+ * `$state.snapshot()` is mandatory before handing reactive state to IDB:
+ * Svelte 5 `$state` values are Proxies, and the structured-clone
+ * algorithm rejects Proxies with `DataCloneError`. Snapshotting walks
+ * the tree and produces a plain-object copy that IDB can serialize.
+ */
+async function persistDetections(): Promise<void> {
+	if (!currentDocId) return;
+	// Strip the client-only `entity_text` and `confidence_level` fields
+	// before persisting — they're recomputed on hydration via the
+	// extraction layer. Keeping them in IDB would make refresh-restored
+	// state diverge subtly from a fresh analyze when the extraction
+	// layer changes its resolver heuristics.
+	const sanitized: Detection[] = $state.snapshot(allDetections).map((d) => {
+		const { entity_text: _et, confidence_level: _cl, ...rest } = d;
+		void _et;
+		void _cl;
+		return rest as Detection;
+	});
+	await writeSessionStateSlice(currentDocId, { detections: sanitized });
+}
+
+// ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
 
-async function load(documentId: string) {
+/**
+ * Replace the in-memory state with detections produced for `docId` and
+ * write through the IDB session cache. Called by the upload flow with
+ * the full {@link analyzeDocument} response.
+ *
+ * Discards any prior state — switching documents must not carry over
+ * the previous review's selection, filters, or undo staging.
+ */
+async function setFromAnalyze(
+	docId: string,
+	detections: Detection[],
+	structureSpans: import('$lib/types').StructureSpan[]
+): Promise<void> {
+	currentDocId = docId;
+	multiSelectedIds = [];
+	selectedId = null;
+	const withLevels = detections.map(withConfidenceLevel);
+	const resolved = currentExtraction ? resolveEntityTexts(withLevels, currentExtraction) : withLevels;
+	allDetections = resolved;
+	structureSpansStore.set(docId, structureSpans);
+	// `detections` and `structureSpans` come straight from a fetch
+	// response so they are plain objects — no $state.snapshot needed
+	// here. Empty arrays / objects are equally clone-safe.
+	await writeSessionState({
+		id: docId,
+		detections, // unresolved — entity_text rebuilt on hydrate
+		structureSpans,
+		referenceNames: [],
+		customTerms: [],
+		pageReviews: {},
+		storedAt: Date.now()
+	});
+}
+
+/**
+ * Read detections + structure spans for `docId` from the IDB session
+ * cache. Used by the review page on mount/refresh to restore the
+ * reviewer's prior session without re-running analyze. Returns `false`
+ * if no cached state exists; the caller can then trigger a fresh
+ * analyze.
+ */
+async function hydrate(docId: string): Promise<boolean> {
+	currentDocId = docId;
+	multiSelectedIds = [];
+	selectedId = null;
+	const state = await readSessionState(docId);
+	if (!state) {
+		allDetections = [];
+		return false;
+	}
+	const withLevels = state.detections.map(withConfidenceLevel);
+	const resolved = currentExtraction ? resolveEntityTexts(withLevels, currentExtraction) : withLevels;
+	allDetections = resolved;
+	structureSpansStore.set(docId, state.structureSpans);
+	return true;
+}
+
+/**
+ * Run a fresh analyze for the current document and store the result.
+ * Used as a fallback when {@link hydrate} returns `false` (cache miss
+ * after IDB clear) and as the rerun path after a reference-list or
+ * custom-term change.
+ */
+async function analyze(
+	docId: string,
+	pages: ExtractionResult['pages'],
+	referenceNames: string[] = [],
+	customTerms: { term: string; match_mode?: 'exact'; woo_article?: string }[] = []
+): Promise<void> {
 	loading = true;
 	error = null;
-	// A fresh document load invalidates any in-progress merge staging: the
-	// ids were scoped to the previous document and must not silently carry
-	// over to this one.
-	multiSelectedIds = [];
 	try {
-		const raw = await getDetections(documentId);
-		let detections = raw.map((d) => ({
-			...d,
-			confidence_level: confidenceToLevel(d.confidence)
-		}));
-		// Resolve entity_text from local extraction if available
-		if (currentExtraction) {
-			detections = resolveEntityTexts(detections, currentExtraction);
-		}
-		allDetections = detections;
+		const result = await analyzeDocument(pages, referenceNames, customTerms);
+		await setFromAnalyze(docId, result.detections, result.structure_spans);
 	} catch (e) {
-		error = e instanceof Error ? e.message : 'Laden mislukt';
+		error = e instanceof Error ? e.message : 'Analyse mislukt';
 	} finally {
 		loading = false;
 	}
@@ -174,39 +241,6 @@ function setExtraction(extraction: ExtractionResult) {
 	// Re-resolve entity texts for any already-loaded detections
 	if (allDetections.length > 0 && currentExtraction) {
 		allDetections = resolveEntityTexts(allDetections, currentExtraction);
-	}
-}
-
-async function analyze(
-	documentId: string,
-	pages: ExtractionResult['pages'],
-	referenceNames: string[] = [],
-	customTerms: { term: string; match_mode?: 'exact'; woo_article?: string }[] = []
-) {
-	loading = true;
-	error = null;
-	try {
-		// #17 — forward the per-document reference list so the server can
-		// flip matching Tier 2 persoon detections to rejected before they
-		// ever reach the review sidebar.
-		// #21 — same for the custom wordlist: the server scans the full
-		// text for every occurrence and emits `custom` detections that
-		// the sidebar renders alongside the regular pipeline output.
-		const analyzeResult = await analyzeDocument(
-			documentId,
-			pages,
-			referenceNames,
-			customTerms
-		);
-		// #20 — cache the structure spans keyed to this document so the
-		// sweep-block affordances can render without re-running analyze
-		// after every reload. Cleared when a different document loads.
-		structureSpansStore.set(documentId, analyzeResult.structure_spans ?? []);
-		await load(documentId);
-	} catch (e) {
-		error = e instanceof Error ? e.message : 'Analyse mislukt';
-	} finally {
-		loading = false;
 	}
 }
 
@@ -228,33 +262,66 @@ function selectPrevious() {
 	}
 }
 
+/**
+ * Apply a review action to a single detection. Pure local mutation —
+ * the corresponding server PATCH was removed in #50. The IDB session
+ * cache is updated so the change survives a refresh.
+ */
 async function review(id: string, data: UpdateDetectionRequest) {
 	const before = byId[id];
-	try {
-		const updated = await updateDetection(id, data);
-		mergeServerUpdate(id, updated, /* preferUpdatedText */ true);
+	if (!before) return;
 
-		// Analytics (#41). Only fire for terminal review states — "edited"
-		// and "pending" are intermediate and would inflate event volume
-		// without a clear product question to answer. Props are coarse
-		// (tier + entity class) — never entity_text.
-		if (before && (data.review_status === 'accepted' || data.review_status === 'rejected')) {
-			track(
-				data.review_status === 'accepted' ? 'redaction_confirmed' : 'redaction_rejected',
-				{ tier: `tier${before.tier}`, entity_type: before.entity_type }
-			);
+	const next: Detection = { ...before };
+	if (data.review_status !== undefined) {
+		next.review_status = data.review_status;
+		next.reviewed_at = new Date().toISOString();
+	}
+	if (data.woo_article !== undefined) {
+		next.woo_article = data.woo_article;
+	}
+	if (data.bounding_boxes !== undefined) {
+		// Boundary adjust (#11): snapshot the analyzer's original boxes the
+		// first time a reviewer touches this detection, so undo can later
+		// surface "what the analyzer originally produced" alongside "what
+		// I last set."
+		if (!next.original_bounding_boxes) {
+			next.original_bounding_boxes = before.bounding_boxes;
 		}
-	} catch (e) {
-		error = e instanceof Error ? e.message : 'Bijwerken mislukt';
+		next.bounding_boxes = data.bounding_boxes;
+		// Match the server-side rule: a bbox-only edit flips status to
+		// "edited" unless the same call passed an explicit status.
+		if (data.review_status === undefined) {
+			next.review_status = 'edited';
+			next.reviewed_at = new Date().toISOString();
+		}
+	}
+	if (data.subject_role !== undefined) {
+		next.subject_role = data.subject_role;
+	} else if (data.clear_subject_role) {
+		next.subject_role = null;
+	}
+
+	allDetections = allDetections.map((d) => (d.id === id ? next : d));
+	await persistDetections();
+
+	// Analytics (#41). Only fire for terminal review states — "edited"
+	// and "pending" are intermediate and would inflate event volume
+	// without a clear product question to answer. Props are coarse
+	// (tier + entity class) — never entity_text.
+	if (data.review_status === 'accepted' || data.review_status === 'rejected') {
+		track(
+			data.review_status === 'accepted' ? 'redaction_confirmed' : 'redaction_rejected',
+			{ tier: `tier${before.tier}`, entity_type: before.entity_type }
+		);
 	}
 }
 
 /**
  * Create a reviewer-authored redaction from a text selection.
  *
- * Client-first: the server receives only bbox + metadata. The selected
- * text is captured here and kept in the in-memory detection so the
- * sidebar list can show it — but it is NEVER sent back to the server.
+ * Generates a client-side UUID and a consistent timestamp; the result
+ * shape matches what the analyze pipeline emits for `manual` rows so
+ * the rest of the review UI can treat it identically.
  */
 async function createManual(params: {
 	documentId: string;
@@ -267,119 +334,133 @@ async function createManual(params: {
 	/** Defaults to "manual"; #09 passes "search_redact" for bulk-applied hits. */
 	source?: 'manual' | 'search_redact';
 }): Promise<Detection | null> {
-	try {
-		const payload: CreateManualDetectionRequest = {
-			document_id: params.documentId,
-			entity_type: params.entityType,
-			tier: params.tier,
-			woo_article: params.wooArticle,
-			bounding_boxes: params.bboxes,
-			motivation_text: params.motivation,
-			source: params.source ?? 'manual'
-		};
-		const created = await createManualDetection(payload);
-		// Splice the client-known entity_text back onto the server response
-		// so the detection list can show it without another round-trip.
-		const withText: Detection = {
-			...created,
-			entity_text: params.selectedText,
-			confidence_level: confidenceToLevel(created.confidence)
-		};
-		allDetections = [...allDetections, withText];
-		selectedId = withText.id;
-		return withText;
-	} catch (e) {
-		error = e instanceof Error ? e.message : 'Handmatige lakking mislukt';
-		return null;
-	}
+	const id = crypto.randomUUID();
+	const detection: Detection = {
+		id,
+		document_id: params.documentId,
+		entity_text: params.selectedText,
+		entity_type: params.entityType,
+		tier: params.tier,
+		confidence: 1.0, // Reviewer-authored: full confidence by definition.
+		confidence_level: confidenceToLevel(1.0),
+		woo_article: params.wooArticle,
+		review_status: 'accepted',
+		bounding_boxes: params.bboxes,
+		original_bounding_boxes: null,
+		reasoning: params.motivation || null,
+		source: params.source ?? 'manual',
+		propagated_from: null,
+		reviewer_id: null,
+		reviewed_at: new Date().toISOString(),
+		is_environmental: false,
+		subject_role: null,
+		split_from: null,
+		merged_from: null,
+		start_char: null,
+		end_char: null
+	};
+	allDetections = [...allDetections, detection];
+	selectedId = id;
+	await persistDetections();
+	return detection;
 }
 
 /**
- * Delete a manual detection (server-side + local state).
- *
- * Used by the undo store to reverse a `CreateManualCommand`. The server
- * rejects deletion for non-manual detections, so callers must only invoke
- * this for rows they know to be reviewer-authored.
+ * Delete a manual detection from local state. Mirrors the server-side
+ * rule: only reviewer-authored rows (`manual`, `search_redact`) are
+ * deletable — the undo stack only invokes this for those. Auto rows
+ * are immutable; undoing their acceptance flips review_status back.
  */
 async function remove(id: string) {
-	try {
-		await deleteDetection(id);
-		allDetections = allDetections.filter((d) => d.id !== id);
-		if (selectedId === id) selectedId = null;
-	} catch (e) {
-		error = e instanceof Error ? e.message : 'Verwijderen mislukt';
-		throw e;
+	const target = byId[id];
+	if (!target) return;
+	if (target.source !== 'manual' && target.source !== 'search_redact') {
+		error = 'Alleen handmatige detecties kunnen worden verwijderd.';
+		throw new Error(error);
 	}
+	allDetections = allDetections.filter((d) => d.id !== id);
+	if (selectedId === id) selectedId = null;
+	await persistDetections();
 }
 
 /**
  * Replace the bounding boxes of an existing detection (#11 boundary
- * adjustment). The server snapshots the analyzer's original boxes into
- * `original_bounding_boxes` on the very first adjust and flips
- * `review_status` to `"edited"` unless the caller passes `keepStatus`.
- * Callers pass a `keepStatus` payload via the undo stack when reverting
- * (e.g. undo restoring the previous bboxes AND the previous status at the
- * same time).
+ * adjustment). On the very first adjust we snapshot the analyzer's
+ * baseline into `original_bounding_boxes` for audit. The status flips
+ * to "edited" unless the caller passes `keepStatus` — that's the undo
+ * stack restoring the prior bboxes AND prior status in one call.
  */
 async function adjustBoundary(
 	id: string,
 	bboxes: BoundingBox[],
 	keepStatus?: { review_status: ReviewStatus }
 ): Promise<Detection | null> {
-	try {
-		const payload: UpdateDetectionRequest = { bounding_boxes: bboxes };
-		if (keepStatus) payload.review_status = keepStatus.review_status;
-		const updated = await updateDetection(id, payload);
-		mergeServerUpdate(id, updated, /* preferUpdatedText */ false);
-		return updated;
-	} catch (e) {
-		error = e instanceof Error ? e.message : 'Grenscorrectie mislukt';
-		return null;
-	}
+	const target = byId[id];
+	if (!target) return null;
+	const next: Detection = {
+		...target,
+		bounding_boxes: bboxes,
+		original_bounding_boxes:
+			target.original_bounding_boxes ?? target.bounding_boxes,
+		review_status: keepStatus?.review_status ?? 'edited',
+		reviewed_at: new Date().toISOString()
+	};
+	allDetections = allDetections.map((d) => (d.id === id ? next : d));
+	await persistDetections();
+	return next;
 }
 
 /**
- * Split a detection into two (#18).
- *
- * The caller has already computed the two bbox sets from the click
- * position in the PDF viewer. The server creates two new manual-source
- * detections inheriting the original's metadata, deletes the original,
- * and returns both halves. The local cache is updated accordingly and
- * the first half becomes the new selection.
+ * Split a detection into two halves (#18). Both halves inherit the
+ * original's metadata and become reviewer-authored (`source: 'manual'`)
+ * so the regular delete path can remove them. The original row is
+ * dropped.
  */
 async function split(
 	id: string,
 	bboxesA: BoundingBox[],
 	bboxesB: BoundingBox[]
 ): Promise<Detection[] | null> {
-	try {
-		const halves = await splitDetection(id, bboxesA, bboxesB);
-		const withLevels = halves.map((h) => ({
-			...h,
-			confidence_level: confidenceToLevel(h.confidence)
-		}));
-		allDetections = [
-			...allDetections.filter((d) => d.id !== id),
-			...withLevels
-		];
-		selectedId = withLevels[0]?.id ?? null;
-		// A split consumes the single selection, not the merge-staging set —
-		// leave `multiSelectedIds` alone.
-		return withLevels;
-	} catch (e) {
-		error = e instanceof Error ? e.message : 'Splitsen mislukt';
-		return null;
-	}
+	const original = byId[id];
+	if (!original) return null;
+	const stamp = new Date().toISOString();
+	const left: Detection = {
+		...original,
+		id: crypto.randomUUID(),
+		bounding_boxes: bboxesA,
+		original_bounding_boxes: null,
+		confidence: 1.0,
+		confidence_level: confidenceToLevel(1.0),
+		review_status: 'accepted',
+		source: 'manual',
+		split_from: id,
+		merged_from: null,
+		reviewed_at: stamp
+	};
+	const right: Detection = {
+		...original,
+		id: crypto.randomUUID(),
+		bounding_boxes: bboxesB,
+		original_bounding_boxes: null,
+		confidence: 1.0,
+		confidence_level: confidenceToLevel(1.0),
+		review_status: 'accepted',
+		source: 'manual',
+		split_from: id,
+		merged_from: null,
+		reviewed_at: stamp
+	};
+	allDetections = [...allDetections.filter((d) => d.id !== id), left, right];
+	selectedId = left.id;
+	await persistDetections();
+	return [left, right];
 }
 
 /**
- * Merge the ids currently in `multiSelectedIds` (#18).
- *
- * Bboxes are concatenated server-side in the order the ids are passed;
- * metadata (tier, entity type, woo article, motivation) is inherited from
- * the *first* id, which matches the reviewer's "click this one first, then
- * Ctrl+click the others" mental model. The inputs are deleted; the new
- * merged row replaces them in local state and becomes the selection.
+ * Merge the ids currently in `multiSelectedIds` (#18). Bboxes are
+ * concatenated in click order; metadata inherits from the first id, which
+ * matches the reviewer's "click this one first, then Ctrl+click the
+ * others" mental model. The originals are dropped.
  */
 async function merge(): Promise<Detection | null> {
 	if (multiSelectedIds.length < 2) {
@@ -387,24 +468,41 @@ async function merge(): Promise<Detection | null> {
 		return null;
 	}
 	const ids = [...multiSelectedIds];
-	try {
-		const merged = await mergeDetections(ids);
-		const withLevel: Detection = {
-			...merged,
-			confidence_level: confidenceToLevel(merged.confidence)
-		};
-		const idSet = new Set(ids);
-		allDetections = [
-			...allDetections.filter((d) => !idSet.has(d.id)),
-			withLevel
-		];
-		selectedId = withLevel.id;
-		multiSelectedIds = [];
-		return withLevel;
-	} catch (e) {
-		error = e instanceof Error ? e.message : 'Samenvoegen mislukt';
+	const ordered = ids.map((id) => byId[id]).filter((d): d is Detection => d !== undefined);
+	if (ordered.length !== ids.length) {
+		error = 'Detectie niet gevonden';
 		return null;
 	}
+	const documentIds = new Set(ordered.map((d) => d.document_id));
+	if (documentIds.size > 1) {
+		error = 'Samenvoegen over documenten heen wordt niet ondersteund.';
+		return null;
+	}
+	const primary = ordered[0];
+	const combinedBboxes = ordered.flatMap((d) => d.bounding_boxes ?? []);
+	if (combinedBboxes.length === 0) {
+		error = 'Samengevoegde detecties moeten ten minste één bounding box hebben.';
+		return null;
+	}
+	const merged: Detection = {
+		...primary,
+		id: crypto.randomUUID(),
+		bounding_boxes: combinedBboxes,
+		original_bounding_boxes: null,
+		confidence: 1.0,
+		confidence_level: confidenceToLevel(1.0),
+		review_status: 'accepted',
+		source: 'manual',
+		split_from: null,
+		merged_from: ids,
+		reviewed_at: new Date().toISOString()
+	};
+	const idSet = new Set(ids);
+	allDetections = [...allDetections.filter((d) => !idSet.has(d.id)), merged];
+	selectedId = merged.id;
+	multiSelectedIds = [];
+	await persistDetections();
+	return merged;
 }
 
 function toggleMultiSelect(id: string) {
@@ -502,6 +600,9 @@ export const detectionStore = {
 	get tier2HighConfidencePendingCount() {
 		return tier2HighConfidencePendingCount;
 	},
+	get docId() {
+		return currentDocId;
+	},
 	get filters() {
 		return {
 			tier: filterTier,
@@ -509,7 +610,8 @@ export const detectionStore = {
 			entityType: filterEntityType
 		};
 	},
-	load,
+	setFromAnalyze,
+	hydrate,
 	analyze,
 	setExtraction,
 	select,

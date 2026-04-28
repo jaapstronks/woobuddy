@@ -486,3 +486,70 @@ async def test_anonymous_full_text_never_appears_in_logs_on_failure(
 
     combined = "\n".join(record.getMessage() for record in caplog.records)
     assert secret not in combined
+
+
+# ---------------------------------------------------------------------------
+# End-to-end acceptance (#50) — analyze + export, zero rows
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_anonymous_analyze_then_export_produces_zero_rows(
+    client: AsyncClient, seed_db
+) -> None:
+    """The Phase D acceptance test for #50: an anonymous reviewer's full
+    flow — analyze, then export with the returned detections as
+    redactions — must leave both `documents` and `detections` tables
+    empty. Combined to keep the trust-claim invariant verifiable in one
+    spot.
+
+    The export side is exercised through the inline-redactions endpoint
+    by the export test module already; here we glue analyze and export
+    together to assert the zero-rows invariant across both calls."""
+    import json as _json
+
+    import fitz as _fitz
+
+    _StubPipeline.result = PipelineResult(
+        detections=[_pipeline_detection()],
+        page_count=1,
+    )
+
+    analyze_resp = await client.post("/api/analyze", json=_anonymous_payload())
+    assert analyze_resp.status_code == 200
+    body = analyze_resp.json()
+    assert body["detection_count"] == 1
+    assert len(body["detections"]) == 1
+
+    # Build a real minimal PDF and feed it to the export endpoint along
+    # with the analyze response's detections re-shaped as redactions.
+    pdf_doc = _fitz.open()
+    pdf_doc.new_page(width=300, height=200).insert_text((50, 100), "Hi", fontsize=12)
+    pdf_bytes = pdf_doc.tobytes()
+    pdf_doc.close()
+
+    redactions = [
+        {
+            "page": bbox["page"],
+            "x0": bbox["x0"],
+            "y0": bbox["y0"],
+            "x1": bbox["x1"],
+            "y1": bbox["y1"],
+            "woo_article": body["detections"][0]["woo_article"] or "",
+        }
+        for bbox in body["detections"][0]["bounding_boxes"]
+    ]
+    export_resp = await client.post(
+        "/api/export/redact-stream",
+        files={
+            "pdf": ("test.pdf", pdf_bytes, "application/pdf"),
+            "redactions": (None, _json.dumps(redactions)),
+        },
+    )
+    assert export_resp.status_code == 200, export_resp.text
+
+    # Acceptance: both tables empty after the full flow.
+    docs = (await seed_db.execute(select(Document))).scalars().all()
+    detections = (await seed_db.execute(select(Detection))).scalars().all()
+    assert len(docs) == 0
+    assert len(detections) == 0
