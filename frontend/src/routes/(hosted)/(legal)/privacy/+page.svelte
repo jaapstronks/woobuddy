@@ -105,7 +105,12 @@
 <ul>
 	<li><strong>Hosting:</strong> Hetzner (Duitsland/Finland, binnen de EER).</li>
 	<li><strong>E-mail (transactioneel):</strong> Postmark of gelijkwaardig — alleen adressen, nooit documentinhoud.</li>
-	<li><strong>Analytics:</strong> Plausible (zonder cookies, zonder persoonsgegevens).</li>
+	<li>
+		<strong>Analytics:</strong> Plausible (zonder cookies, zonder persoonsgegevens). We tellen
+		pageviews, een handvol benoemde gebeurtenissen (zoals 'document geconverteerd' of 'export
+		voltooid') en uitgaande linkklikken — bijvoorbeeld naar onze GitHub-repo. Geen documentinhoud
+		en geen persoonlijke gegevens.
+	</li>
 	<li>
 		<strong>Microsoft / Google (optioneel):</strong> alleen als je zelf voor "Uit SharePoint of
 		OneDrive" of "Uit Google Drive" kiest. Je authenticeert rechtstreeks bij die provider in je
