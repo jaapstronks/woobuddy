@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Logo from '$lib/components/shared/Logo.svelte';
+	import GithubIcon from '$lib/components/ui/GithubIcon.svelte';
 </script>
 
 <header
@@ -12,9 +13,10 @@
 				href="https://github.com/jaapstronks/woobuddy"
 				target="_blank"
 				rel="noopener noreferrer"
-				class="hidden text-sm text-ink-soft transition-colors hover:text-ink sm:inline"
+				aria-label="WOO Buddy op GitHub (open source)"
+				class="flex items-center text-ink-soft transition-colors hover:text-ink"
 			>
-				Open source
+				<GithubIcon size={20} />
 			</a>
 			<a
 				href="#try"
