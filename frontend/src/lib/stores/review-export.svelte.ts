@@ -19,6 +19,12 @@ import {
 	deriveBundleFilename,
 	type PublicationMetadataInput
 } from '$lib/services/diwoo';
+import {
+	bundleOnderbouwing,
+	sha256Hex,
+	type OnderbouwingInput,
+	type ReviewerInput
+} from '$lib/services/onderbouwing';
 import type { Detection, Document } from '$lib/types';
 import { track } from '$lib/analytics/plausible';
 import { bucketPages, bucketRedactions } from '$lib/analytics/events';
@@ -37,6 +43,17 @@ let publicationBundling = $state(false);
 // guarantee so the work the post-processing pipeline does is visible.
 // Auto-dismisses on the next export run.
 let showAccessibilityBanner = $state(false);
+
+// #64 — onderbouwingsrapport state. The provenance hashes are cached
+// across calls so re-opening the dialog after a successful export
+// doesn't recompute the SHA-256 of a multi-MB PDF for nothing. The
+// redacted hash is populated as a side effect of `runExport`; it
+// stays null until the reviewer has actually exported the gelakte
+// PDF in this session, so the report can be honest about that.
+let onderbouwingDialogOpen = $state(false);
+let onderbouwingBusy = $state(false);
+let originalPdfHash = $state<string | null>(null);
+let redactedPdfHash = $state<string | null>(null);
 
 export interface RunExportArgs {
 	pdfBytes: ArrayBuffer;
@@ -73,6 +90,17 @@ async function runExport({
 	try {
 		const redacted = await exportRedactedPdf(pdfBytes, filename, detections, { title });
 		downloadBlob(redacted, `gelakt_${filename}`);
+		// Cache the redacted PDF hash so a follow-up onderbouwingsrapport
+		// can include it in its provenance block. We deliberately hash
+		// after a successful download so a failed export doesn't poison
+		// the cache with a stale value.
+		try {
+			const redactedBytes = await redacted.arrayBuffer();
+			redactedPdfHash = await sha256Hex(redactedBytes);
+		} catch (hashErr) {
+			console.warn('Failed to hash redacted PDF for onderbouwing provenance', hashErr);
+			redactedPdfHash = null;
+		}
 		showPostExportLead = true;
 		showAccessibilityBanner = true;
 		track('export_completed', {
@@ -119,6 +147,10 @@ function reset(): void {
 	showAccessibilityBanner = false;
 	publicationDialogOpen = false;
 	publicationBundling = false;
+	onderbouwingDialogOpen = false;
+	onderbouwingBusy = false;
+	originalPdfHash = null;
+	redactedPdfHash = null;
 }
 
 function openPublicationDialog(): void {
@@ -158,6 +190,11 @@ async function runPublicationExport(args: RunPublicationExportArgs): Promise<voi
 			{ title: args.input.officieleTitel }
 		);
 		const redactedBytes = new Uint8Array(await redactedBlob.arrayBuffer());
+		try {
+			redactedPdfHash = await sha256Hex(redactedBytes);
+		} catch (hashErr) {
+			console.warn('Failed to hash redacted PDF for onderbouwing provenance', hashErr);
+		}
 		const inputWithSize: PublicationMetadataInput = {
 			...args.input,
 			bestandsomvang: redactedBytes.byteLength
@@ -183,6 +220,92 @@ async function runPublicationExport(args: RunPublicationExportArgs): Promise<voi
 	}
 }
 
+// ---------------------------------------------------------------------------
+// #64 — Onderbouwingsrapport
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute and cache the SHA-256 of the original PDF the first time it's
+ * needed. Subsequent calls return the cached value so re-opening the
+ * dialog after another action doesn't re-hash the (potentially
+ * multi-MB) bytes.
+ */
+async function ensureOriginalHash(pdfBytes: ArrayBuffer): Promise<string> {
+	if (originalPdfHash) return originalPdfHash;
+	const hash = await sha256Hex(pdfBytes);
+	originalPdfHash = hash;
+	return hash;
+}
+
+function openOnderbouwingDialog(): void {
+	exportError = null;
+	onderbouwingDialogOpen = true;
+}
+
+function closeOnderbouwingDialog(): void {
+	if (onderbouwingBusy) return;
+	onderbouwingDialogOpen = false;
+}
+
+export interface RunOnderbouwingExportArgs {
+	pdfBytes: ArrayBuffer;
+	filename: string;
+	document: Document | null;
+	detections: Detection[];
+	reviewer: ReviewerInput;
+	confirmedCount: number;
+	pageCount: number;
+	buildCommit: string;
+}
+
+/**
+ * Generate and download the onderbouwingsrapport. Lazy-imports the
+ * pdf-lib-heavy renderer so the toolbar button itself stays
+ * cheap — only the click handler pulls the ~250KB module.
+ */
+async function runOnderbouwingExport(
+	args: RunOnderbouwingExportArgs
+): Promise<void> {
+	onderbouwingBusy = true;
+	exportError = null;
+	try {
+		const originalSha256 = await ensureOriginalHash(args.pdfBytes);
+		const { buildOnderbouwingPdf } = await import(
+			'$lib/services/onderbouwing/report'
+		);
+		const input: OnderbouwingInput = {
+			document: args.document,
+			filename: args.filename,
+			detections: args.detections,
+			hashes: {
+				originalSha256,
+				redactedSha256: redactedPdfHash
+			},
+			reviewer: args.reviewer,
+			buildCommit: args.buildCommit,
+			generatedAt: new Date()
+		};
+		const pdfBytes = await buildOnderbouwingPdf(input);
+		const artifact = bundleOnderbouwing({
+			pdfBytes,
+			originalFilename: args.filename,
+			includeCsv: args.reviewer.includeCsv,
+			detections: args.detections
+		});
+		downloadBlob(artifact.blob, artifact.filename);
+		onderbouwingDialogOpen = false;
+		track('onderbouwing_export_completed', {
+			redaction_bucket: bucketRedactions(args.confirmedCount),
+			page_bucket: bucketPages(args.pageCount)
+		});
+	} catch (e) {
+		exportError =
+			e instanceof Error ? e.message : 'Onderbouwingsrapport mislukt';
+	} finally {
+		onderbouwingBusy = false;
+	}
+}
+
 export const reviewExportStore = {
 	get exporting() {
 		return exporting;
@@ -202,11 +325,23 @@ export const reviewExportStore = {
 	get publicationBundling() {
 		return publicationBundling;
 	},
+	get onderbouwingDialogOpen() {
+		return onderbouwingDialogOpen;
+	},
+	get onderbouwingBusy() {
+		return onderbouwingBusy;
+	},
+	get hasRedactedHash() {
+		return redactedPdfHash !== null;
+	},
 	runExport,
 	runDebugExport,
 	runPublicationExport,
+	runOnderbouwingExport,
 	openPublicationDialog,
 	closePublicationDialog,
+	openOnderbouwingDialog,
+	closeOnderbouwingDialog,
 	setPostExportLead,
 	setAccessibilityBanner,
 	setError,

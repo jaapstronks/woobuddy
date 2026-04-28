@@ -127,6 +127,7 @@ Once the core loop works, make it feel great **and** get it in front of real use
 | 60 | [Client-side PDF redaction (remove export server-touch)](60-client-side-export.md) | P2 | M–L | Trust-claim correctness 2026-04 |
 | 62 | [Notion ↔ docs/todo cross-references](62-notion-cross-references.md) | P3 | S | Process refinement 2026-04 |
 | 63 | [Frontend PUBLIC_API_URL at runtime](63-frontend-runtime-api-url.md) | P2 | S | v0.1.0 retrospective 2026-04 |
+| 64 | ~~[Onderbouwingsrapport export (audit log as Woo-besluit bijlage)](done/64-onderbouwingsrapport-export.md)~~ | P2 | M | Roadmap promise + trust story 2026-04 |
 
 Launch when all P1s in this phase are green. That is the "Phase D milestone" below.
 

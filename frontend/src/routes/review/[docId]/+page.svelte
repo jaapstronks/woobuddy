@@ -4,6 +4,11 @@
 	import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 	import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 	import '@shoelace-style/shoelace/dist/components/input/input.js';
+	import '@shoelace-style/shoelace/dist/components/dropdown/dropdown.js';
+	import '@shoelace-style/shoelace/dist/components/menu/menu.js';
+	import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
+	import '@shoelace-style/shoelace/dist/components/divider/divider.js';
+	import '@shoelace-style/shoelace/dist/components/button-group/button-group.js';
 
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -65,15 +70,19 @@
 	} from '$lib/services/review-pdf-loader';
 	import { reviewExportStore } from '$lib/stores/review-export.svelte';
 	import PublicationExportDialog from '$lib/components/review/PublicationExportDialog.svelte';
+	import OnderbouwingDialog from '$lib/components/review/OnderbouwingDialog.svelte';
 	import { loadTooiVersion } from '$lib/services/diwoo';
 	import type { PublicationMetadataInput } from '$lib/services/diwoo';
+	import type { ReviewerInput } from '$lib/services/onderbouwing';
 	import type { WooArticleCode, EntityType, DetectionTier } from '$lib/types';
 	import {
 		ArrowLeft,
 		PanelRightClose,
 		PanelRightOpen,
+		ChevronDown,
 		Download,
 		FileJson,
+		FileText,
 		Package,
 		RotateCw,
 		Undo2,
@@ -332,6 +341,70 @@
 			tooiSchemaVersion: version.diwoo_metadata_schema_version,
 			confirmedCount,
 			pageCount
+		});
+	}
+
+	// #64 — onderbouwingsrapport (audit log as Woo-besluit bijlage). Opens
+	// a small dialog for optional reviewer fields (zaaknummer, naam,
+	// opmerkingen, ook-CSV-erbij), then the store generates a PDF in
+	// the browser and triggers the download. Available independently of
+	// the redacted-PDF export — the report can be regenerated as a
+	// follow-up after an addendum without re-running the redaction.
+	const acceptedDetectionCount = $derived(
+		detectionStore.all.filter(
+			(d) => d.review_status === 'accepted' || d.review_status === 'auto_accepted'
+		).length
+	);
+
+	// Combined busy flag for the consolidated export dropdown — any of
+	// the three flows running disables the button so the reviewer can't
+	// queue a second export while one is still in flight. The label
+	// follows the same priority so the spinner shows what's actually
+	// happening, not just a generic "Bezig...".
+	const anyExportBusy = $derived(
+		reviewExportStore.exporting ||
+			reviewExportStore.publicationBundling ||
+			reviewExportStore.onderbouwingBusy
+	);
+	const exportBusyLabel = $derived.by(() => {
+		if (reviewExportStore.exporting) return 'Exporteren...';
+		if (reviewExportStore.publicationBundling) return 'Bundelen...';
+		if (reviewExportStore.onderbouwingBusy) return 'Genereren...';
+		return 'Exporteren...';
+	});
+
+	function handleOpenOnderbouwingDialog() {
+		if (!pdfData) {
+			reviewExportStore.setError(
+				'Geen PDF beschikbaar om een onderbouwingsrapport te genereren.'
+			);
+			return;
+		}
+		if (acceptedDetectionCount === 0) {
+			reviewExportStore.setError(
+				'Er zijn nog geen geaccepteerde redacties om te onderbouwen.'
+			);
+			return;
+		}
+		reviewExportStore.openOnderbouwingDialog();
+	}
+
+	async function handleOnderbouwingSubmit(reviewer: ReviewerInput): Promise<void> {
+		if (!pdfData) return;
+		const filename = reviewStore.document?.filename ?? 'document.pdf';
+		const confirmedCount = detectionStore.all.filter(
+			(d) => d.review_status !== 'rejected'
+		).length;
+		const pageCount = reviewStore.document?.page_count ?? 0;
+		await reviewExportStore.runOnderbouwingExport({
+			pdfBytes: pdfData,
+			filename,
+			document: reviewStore.document,
+			detections: detectionStore.all,
+			reviewer,
+			confirmedCount,
+			pageCount,
+			buildCommit: __WOOBUDDY_BUILD_COMMIT__
 		});
 	}
 
@@ -640,46 +713,85 @@
 				onclick={handleDebugExport}
 				disabled={detectionStore.all.length === 0}
 			>
-				<FileJson size={14} />
+				<span style="display: inline-flex; align-items: center;"><FileJson size={14} /></span>
 			</sl-button>
 		</sl-tooltip>
-		<sl-tooltip content="Exporteer een DiWoo-conforme zip met de gelakte PDF, metadata.xml, metadata.json en lakkenoverzicht. Geschikt voor publicatie via GPP-Woo of een ander Woo-platform.">
+		<!--
+		     Consolidated export menu — primary action is the gelakte PDF
+		     (one click via the button body); the publication-zip and
+		     onderbouwingsrapport sit one dropdown click away. We keep the
+		     primary path fast because that's what 95% of reviewers want,
+		     while still surfacing the related artifacts in the same
+		     mental space.
+		-->
+		<sl-button-group label="Exporteren">
 			<sl-button
 				size="small"
-				variant="default"
-				onclick={handleOpenPublicationDialog}
-				disabled={reviewExportStore.publicationBundling || reviewExportStore.exporting || !pdfData}
+				variant="primary"
+				onclick={openExportDialog}
+				disabled={anyExportBusy || !pdfData}
 			>
-				{#if reviewExportStore.publicationBundling}
-					<sl-spinner slot="prefix" style="font-size: 1rem;"></sl-spinner>
-					Bundelen...
+				{#if anyExportBusy}
+					<sl-spinner slot="prefix" style="font-size: 1rem; --indicator-color: white;"></sl-spinner>
+					{exportBusyLabel}
 				{:else}
-					<span slot="prefix"><Package size={14} /></span>
-					Met publicatiemetadata
+					<span slot="prefix"><Download size={14} /></span>
+					Exporteer gelakte PDF
 				{/if}
 			</sl-button>
-		</sl-tooltip>
-		<sl-button
-			size="small"
-			variant="primary"
-			onclick={openExportDialog}
-			disabled={reviewExportStore.exporting || reviewExportStore.publicationBundling || !pdfData}
-		>
-			{#if reviewExportStore.exporting}
-				<sl-spinner slot="prefix" style="font-size: 1rem; --indicator-color: white;"></sl-spinner>
-				Exporteren...
-			{:else}
-				<span slot="prefix"><Download size={14} /></span>
-				Gelakte PDF
-			{/if}
-		</sl-button>
+			<sl-dropdown placement="bottom-end" hoist>
+				<sl-button
+					slot="trigger"
+					size="small"
+					variant="primary"
+					caret
+					disabled={anyExportBusy || !pdfData}
+					aria-label="Meer exportopties"
+				></sl-button>
+				<sl-menu
+					onsl-select={(e: CustomEvent<{ item: HTMLElement }>) => {
+						const action = e.detail.item.getAttribute('data-action');
+						if (action === 'redacted-pdf') openExportDialog();
+						else if (action === 'publication-zip') handleOpenPublicationDialog();
+						else if (action === 'onderbouwing') handleOpenOnderbouwingDialog();
+					}}
+				>
+					<sl-menu-item data-action="redacted-pdf">
+						<span slot="prefix" class="export-menu-icon"><Download size={14} /></span>
+						Gelakte PDF
+						<span slot="suffix" class="export-menu-help">Toegankelijk, met XMP</span>
+					</sl-menu-item>
+					<sl-menu-item
+						data-action="publication-zip"
+						disabled={reviewExportStore.publicationBundling || undefined}
+					>
+						<span slot="prefix" class="export-menu-icon"><Package size={14} /></span>
+						Publicatiebundel (DiWoo zip)
+						<span slot="suffix" class="export-menu-help">PDF + metadata.xml/json</span>
+					</sl-menu-item>
+					<sl-divider></sl-divider>
+					<sl-menu-item
+						data-action="onderbouwing"
+						disabled={reviewExportStore.onderbouwingBusy ||
+							acceptedDetectionCount === 0 ||
+							undefined}
+					>
+						<span slot="prefix" class="export-menu-icon"><FileText size={14} /></span>
+						Onderbouwingsrapport
+						<span slot="suffix" class="export-menu-help">Bijlage Woo-besluit</span>
+					</sl-menu-item>
+				</sl-menu>
+			</sl-dropdown>
+		</sl-button-group>
 		<sl-tooltip content={reviewStore.sidebarOpen ? 'Verberg detecties' : 'Toon detecties'}>
 			<sl-button size="small" variant="text" onclick={() => reviewStore.toggleSidebar()}>
-				{#if reviewStore.sidebarOpen}
-					<PanelRightClose size={16} />
-				{:else}
-					<PanelRightOpen size={16} />
-				{/if}
+				<span style="display: inline-flex; align-items: center;">
+					{#if reviewStore.sidebarOpen}
+						<PanelRightClose size={16} />
+					{:else}
+						<PanelRightOpen size={16} />
+					{/if}
+				</span>
 			</sl-button>
 		</sl-tooltip>
 	</div>
@@ -727,23 +839,39 @@
 		{#if reviewExportStore.showAccessibilityBanner}
 			<!-- #48 — confirms the accessibility guarantees of the export
 			     so the work the post-processing pipeline does is visible
-			     to the reviewer. Auto-clears on the next export run. -->
+			     to the reviewer. Auto-clears on the next export run.
+			     #64 — also offers a one-click follow-up to generate the
+			     onderbouwingsrapport, so the gelakte PDF and the
+			     onderbouwing end up in the same dossier. -->
 			<div
-				class="mx-4 mt-3 flex items-start justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800"
+				class="mx-4 mt-3 flex flex-col gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800 sm:flex-row sm:items-start sm:justify-between"
 			>
 				<span>
 					Uw PDF is geëxporteerd met Nederlandse taaltag, XMP-metadata en
 					toegankelijke lak-markeringen. Schermlezers lezen voortaan voor
 					welk Woo-artikel een passage is gelakt.
 				</span>
-				<button
-					type="button"
-					onclick={() => reviewExportStore.setAccessibilityBanner(false)}
-					class="shrink-0 rounded-md p-1 text-emerald-700 hover:bg-emerald-100"
-					aria-label="Sluiten"
-				>
-					<X size={16} />
-				</button>
+				<div class="flex shrink-0 items-center gap-2">
+					<sl-button
+						size="small"
+						variant="default"
+						onclick={handleOpenOnderbouwingDialog}
+						disabled={reviewExportStore.onderbouwingBusy ||
+							acceptedDetectionCount === 0 ||
+							!pdfData}
+					>
+						<span slot="prefix"><FileText size={14} /></span>
+						Ook onderbouwingsrapport
+					</sl-button>
+					<button
+						type="button"
+						onclick={() => reviewExportStore.setAccessibilityBanner(false)}
+						class="rounded-md p-1 text-emerald-700 hover:bg-emerald-100"
+						aria-label="Sluiten"
+					>
+						<X size={16} />
+					</button>
+				</div>
 			</div>
 		{/if}
 		{#if reviewExportStore.showPostExportLead}
@@ -1078,6 +1206,16 @@
 		onSubmit={handlePublicationSubmit}
 	/>
 
+	<!-- #64 — onderbouwingsrapport dialog (audit log as Woo-besluit bijlage). -->
+	<OnderbouwingDialog
+		open={reviewExportStore.onderbouwingDialogOpen}
+		busy={reviewExportStore.onderbouwingBusy}
+		acceptedCount={acceptedDetectionCount}
+		hasRedactedHash={reviewExportStore.hasRedactedHash}
+		onCancel={() => reviewExportStore.closeOnderbouwingDialog()}
+		onConfirm={handleOnderbouwingSubmit}
+	/>
+
 	<!-- Manual text-selection redaction overlays. Rendered at the root so
 	     they escape `overflow: hidden` on the PDF scroller. -->
 	{#if manualSelectionStore.selection && manualSelectionStore.stage === 'bar'}
@@ -1107,5 +1245,32 @@
 	   block-level lets Shoelace's internal flexbox center them vertically. */
 	:global(sl-button svg) {
 		display: block;
+	}
+	/* Export-menu helper text in the suffix slot — small + muted so the
+	   primary item label stays the focal point while the subtitle hints
+	   at what's inside without forcing a tooltip. */
+	:global(sl-menu-item .export-menu-help) {
+		font-size: 11px;
+		color: var(--sl-color-neutral-500);
+		margin-left: 1rem;
+	}
+	:global(sl-menu-item[aria-disabled='true'] .export-menu-help) {
+		color: var(--sl-color-neutral-400);
+	}
+	:global(sl-menu-item .export-menu-icon) {
+		display: inline-flex;
+		align-items: center;
+		margin-right: 0.25rem;
+	}
+	/* Shoelace's default menu-item padding is tight; the export menu
+	   has subtitles in the suffix slot so the rows feel cramped at
+	   the default density. Bump the vertical padding and add a small
+	   gap between rows so each option reads as its own decision. */
+	:global(sl-menu-item::part(base)) {
+		padding-top: 0.55rem;
+		padding-bottom: 0.55rem;
+	}
+	:global(sl-menu-item + sl-menu-item) {
+		margin-top: 2px;
 	}
 </style>
