@@ -41,8 +41,13 @@ The Notion page captures this split in one line: *"only the anonymous-zero-rows 
 - `detectionStore` becomes local-only on the anonymous path:
   - `analyze()` takes detections directly from the response into local state — no `load()` follow-up.
   - `review` / `accept` / `reject` / `defer` / `createManual` / `remove` / `adjustBoundary` / `split` / `merge` are pure local mutations with client-generated UUIDs. No PATCH/POST/DELETE.
-- Page-reviews (#10) removed from the anonymous path. They come back when auth lands and cross-session state has somewhere to live.
-- Reference-names (#17) and custom-terms (#21) become local-only stores. They already travel inline in the analyze request body, so the pipeline keeps working — what disappears is the GET/POST/DELETE round-trips for managing the list itself.
+- Page-reviews (#10), reference-names (#17), and custom-terms (#21) become in-memory stores backed by IndexedDB. They already travel inline in the analyze request body where relevant; the GET/POST/DELETE round-trips for managing the lists themselves disappear.
+
+### Refresh-survives state (IndexedDB session cache)
+
+The PDF already lives in IndexedDB (`pdf-store`). To prevent a Cmd+R from blowing away the reviewer's work — accept/reject decisions, manual redactions, ref-names, custom-terms, page-completeness chips — a new `session-state-store` IDB object is added with the same docId key. On every store mutation the relevant slice is written through; on review-page mount the slices hydrate the in-memory stores. Everything still stays on the user's device — the IDB cache is conceptually "the same place the PDF lives," not server persistence.
+
+When IndexedDB is unavailable (private mode, quota exceeded), the stores degrade gracefully to in-memory-only with a one-time toast: "we kunnen je werk niet bewaren bij refresh — exporteer regelmatig."
 
 ## Acceptance
 
@@ -51,6 +56,7 @@ The Notion page captures this split in one line: *"only the anonymous-zero-rows 
 - Export still produces a valid redacted PDF when the detection list is sent inline.
 - Rate limiting on `/api/analyze` still works without a `Document` row to anchor on.
 - `AnalyzeResponse` adds a `detections: list[DetectionResponse]` field; existing fields unchanged.
+- Browser refresh (Cmd+R) on `/review/<docId>` preserves detections, review actions, ref-names, custom-terms, and page-completeness — sourced from the IndexedDB session cache, not from the server.
 - Integration test: full flow → `SELECT COUNT(*) FROM documents` and `SELECT COUNT(*) FROM detections` both return 0.
 
 ## Why this is not a code-quality refactor
