@@ -48,7 +48,11 @@ services:
       # landing. See frontend/src/lib/config/site.ts.
       PUBLIC_SITE_MODE: hosted
       PUBLIC_PLAUSIBLE_DOMAIN: woobuddy.nl
-      PUBLIC_PLAUSIBLE_SRC: https://analytics.woobuddy.nl/js/script.manual.js
+      # `manual.outbound-links` keeps manual pageviews (so `normalizePath()`
+      # can collapse `/review/<uuid>` → `/review/:docId`) AND adds Plausible's
+      # automatic `Outbound Link: Click` event for every external link click.
+      # That powers the GitHub-repo conversion goal on the launch dashboard.
+      PUBLIC_PLAUSIBLE_SRC: https://analytics.woobuddy.nl/js/script.manual.outbound-links.js
       PUBLIC_PLAUSIBLE_API: https://analytics.woobuddy.nl/api/event
     # Lets docker-rollout wait for a new replica to be serving traffic
     # before it retires the old one. busybox wget lives in the
