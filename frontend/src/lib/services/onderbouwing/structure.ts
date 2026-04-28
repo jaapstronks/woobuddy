@@ -309,12 +309,18 @@ export class StructureBuilder {
 		parentTreeDict.set(PDFName.of('Nums'), parentTreeNumsArray);
 		const parentTreeRef = ctx.register(parentTreeDict);
 
-		// 5. Wire /StructParents on each page.
+		// 5. Wire /StructParents and /Tabs on each page.
+		//
+		//    /Tabs /S means "tab order follows the structure tree" — required
+		//    by PDF/UA-1 (Matterhorn 09-004) on every page in a tagged
+		//    document, even when the page has no form fields or annotations
+		//    to traverse. Acrobat's Accessibility Check reports its absence
+		//    as `Tab order — Failed`. The flag is cheap to set and harmless
+		//    on form-free pages, so we set it unconditionally.
 		for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
-			pages[pageIndex].node.set(
-				PDFName.of('StructParents'),
-				PDFNumber.of(pageIndex)
-			);
+			const pageNode = pages[pageIndex].node;
+			pageNode.set(PDFName.of('StructParents'), PDFNumber.of(pageIndex));
+			pageNode.set(PDFName.of('Tabs'), PDFName.of('S'));
 		}
 
 		// 6. Build the StructTreeRoot itself. /K is the root Document

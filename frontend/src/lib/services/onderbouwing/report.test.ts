@@ -44,9 +44,10 @@ function makeInput(overrides: Partial<OnderbouwingInput> = {}): OnderbouwingInpu
 			id: 'doc-1',
 			filename: 'test.pdf',
 			page_count: 5,
+			document_date: null,
+			status: 'review',
 			created_at: '2026-04-25T10:00:00Z',
-			updated_at: '2026-04-25T10:00:00Z',
-			source_kind: 'pdf'
+			five_year_warning: false
 		},
 		filename: 'test.pdf',
 		detections: [makeDetection()],
@@ -171,6 +172,17 @@ describe('buildOnderbouwingPdf — structure tree (#65)', () => {
 		// Every page emitted should carry a /StructParents key.
 		const matches = text.match(/\/StructParents \d+/g) ?? [];
 		expect(matches.length).toBeGreaterThan(0);
+	});
+
+	it('sets /Tabs /S on every page (PDF/UA-1 09-004)', async () => {
+		const text = await renderPdfText(makeInput());
+		// One /Tabs /S per page, and the count must equal the number
+		// of /StructParents entries — Acrobat fails the "Tab order"
+		// check if any page is missing this declaration.
+		const tabsMatches = text.match(/\/Tabs \/S\b/g) ?? [];
+		const structParentsMatches = text.match(/\/StructParents \d+/g) ?? [];
+		expect(tabsMatches.length).toBeGreaterThan(0);
+		expect(tabsMatches.length).toBe(structParentsMatches.length);
 	});
 
 	it('mounts /Outlines on the catalog with at least four entries', async () => {

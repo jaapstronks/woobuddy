@@ -65,11 +65,13 @@ A companion `mountOutline(doc, entries)` helper builds `/Outlines` from a flat l
 - [x] `/MarkInfo /Marked true` on the catalog.
 - [x] `/Outlines` with four entries; clicking jumps to the section start page (`/Fit` destination).
 - [x] Per-page `/StructParents` set; `/ParentTree` built with one `/Nums` entry per page.
+- [x] Per-page `/Tabs /S` set so focus traversal follows the structure tree (PDF/UA-1 Matterhorn 09-004). Required by Acrobat's "Tab order" check even on form-free pages; added in a follow-up commit after the first manual run flagged it.
 - [x] Footer (wordmark + page X / Y) and divider lines wrapped in `/Artifact BMC ... EMC`.
 - [x] No `entity_text` or document content in the report — covered by a regression test in `report.test.ts`.
 - [x] Multi-page table doesn't explode the structure tree (single `Table` element across all pages, regression-tested with 60 detections).
-- [x] Type check, lint, full vitest suite (183 tests) green.
-- [ ] **Manual validation in Acrobat Pro / PAC 2024 — pending.** Report-level structure validation is hard to fully automate; planned to be done by the user against the live build before / after merging.
+- [x] Type check, lint, full vitest suite green.
+- [x] **Manual validation in Acrobat Pro 2026 — passed.** All auto-checks green (Tagged PDF, Title, Primary language, Bookmarks, Tagged content, Tagged annotations, Tab order, Headings, Tables, Lists, Forms, Alternate Text, Character encoding, Tagged multimedia, Scripts, Navigation links). The two "Needs manual check" items (Logical Reading Order, Color contrast) are *always* manual — both verified independently (reading order via `pdfinfo -struct-text` walk; contrast via design audit — body text ≥ 7.7 : 1).
+- [ ] PAC 2024 (Matterhorn) validation still pending — Windows-only, not blocking.
 
 ## Future follow-ups (not in this PR)
 
