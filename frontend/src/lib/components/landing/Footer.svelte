@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Logo from '$lib/components/shared/Logo.svelte';
+	import GithubIcon from '$lib/components/ui/GithubIcon.svelte';
 	import { isHosted } from '$lib/config/site';
 
 	const hosted = isHosted();
@@ -34,10 +35,13 @@
 				{/if}
 				<a
 					href="https://github.com/jaapstronks/woobuddy"
-					class="hover:text-ink"
+					class="flex items-center hover:text-ink"
 					target="_blank"
-					rel="noopener noreferrer">GitHub</a
+					rel="noopener noreferrer"
+					aria-label="WOO Buddy op GitHub"
 				>
+					<GithubIcon size={16} />
+				</a>
 				<a href="/#try" class="hover:text-ink">Probeer</a>
 			</nav>
 		</div>
