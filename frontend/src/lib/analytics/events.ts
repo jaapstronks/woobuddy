@@ -35,6 +35,13 @@ export type ExportCompletedProps = {
 	page_bucket: '1' | '2-10' | '11-50' | '51-200' | '201+';
 };
 
+export type LeadCapturedProps = {
+	/** Where the form was submitted from. Mirrors `LeadSource` in api/client.ts. */
+	source: 'landing' | 'post-export';
+	/** Whether the visitor also opted in to the newsletter. */
+	newsletter_opt_in: boolean;
+};
+
 export type PlausibleEventProps = {
 	document_converted: DocumentConvertedProps;
 	redaction_confirmed: RedactionReviewProps;
@@ -47,6 +54,13 @@ export type PlausibleEventProps = {
 	 * differentiating on document size.
 	 */
 	publication_export_completed: ExportCompletedProps;
+	/**
+	 * #45 — successful lead-form submission. The dashboard goal counts
+	 * conversions on the "blijf op de hoogte / vraag een teamdemo aan"
+	 * funnel, segmented by `source` (landing vs post-export) so we can
+	 * see which placement actually converts.
+	 */
+	lead_captured: LeadCapturedProps;
 };
 
 export type PlausibleEventName = keyof PlausibleEventProps;
