@@ -186,7 +186,12 @@ class CustomTermPayload(BaseModel):
 
 
 class AnalyzeRequest(BaseModel):
-    document_id: uuid.UUID
+    # #50 — None signals anonymous mode (no server persistence). When set,
+    # the request runs in save-mode against an existing Document row, which
+    # is the legacy behavior used by the (still-deferred) authenticated
+    # save flow. The frontend's anonymous landing-page upload flow always
+    # sends None.
+    document_id: uuid.UUID | None = None
     pages: list[AnalyzePage]
     # #17 — per-document reference list of people that must NOT be
     # redacted. Optional: the frontend sends the current list on every
@@ -215,11 +220,20 @@ class StructureSpanResponse(BaseModel):
 
 
 class AnalyzeResponse(BaseModel):
+    # In save-mode this echoes the request's document_id. In anonymous
+    # mode (#50) it is a freshly generated session UUID that the client
+    # can use as a local key — it never corresponds to a Postgres row.
     document_id: uuid.UUID
     detection_count: int
     page_count: int
     status: str = "completed"
     structure_spans: list[StructureSpanResponse] = []
+    # #50 — anonymous mode returns the full detection list inline with
+    # server-generated UUIDs and zero DB writes. Save-mode keeps this
+    # empty for backward compatibility (its callers fetch detections via
+    # GET /api/documents/{id}/detections); populating it in save-mode is
+    # a future optimization.
+    detections: list[DetectionResponse] = []
 
 
 # ---------------------------------------------------------------------------
