@@ -6,13 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 
 from app.api.analyze import router as analyze_router
-from app.api.custom_terms import router as custom_terms_router
-from app.api.detections import router as detections_router
-from app.api.documents import router as documents_router
 from app.api.export import router as export_router
 from app.api.leads import router as leads_router
-from app.api.page_reviews import router as page_reviews_router
-from app.api.reference_names import router as reference_names_router
 from app.config import settings
 from app.db.session import engine
 from app.logging_config import configure_logging, get_logger
@@ -177,12 +172,7 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestIdMiddleware)
 
     app.include_router(analyze_router)
-    app.include_router(documents_router)
-    app.include_router(detections_router)
     app.include_router(export_router)
-    app.include_router(page_reviews_router)
-    app.include_router(reference_names_router)
-    app.include_router(custom_terms_router)
     app.include_router(leads_router)
 
     @app.get("/api/health")

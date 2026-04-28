@@ -1,28 +1,32 @@
-"""Contract tests for the redact-stream export endpoints.
+"""Contract tests for `POST /api/export/redact-stream` (anonymous, inline).
 
-Two endpoints are exercised here:
+The endpoint accepts a multipart upload with the PDF + a JSON list of
+redaction rectangles + an optional filename. Redaction happens in
+memory, the redacted PDF streams back, and nothing is persisted on the
+server. The earlier DB-lookup mode (`/api/documents/{id}/export/...`)
+was removed when the rest of the unused server-side review state went
+— there is no longer a Document or Detection row to anchor an export
+on.
 
-- ``POST /api/documents/:id/export/redact-stream`` — DB-lookup mode.
-  Loads accepted detections from Postgres and applies them to the
-  uploaded PDF.
-- ``POST /api/export/redact-stream`` — inline-redactions mode (#50).
-  Multipart upload with the PDF + a JSON redaction list. Anonymous
-  clients use this exclusively.
-
-Both stream the redacted PDF back without ever touching disk. The
-tests pin:
+The tests pin:
 
 - Magic-byte and size validation happen before PyMuPDF is called, so
   non-PDF payloads get a clean 400 rather than a cryptic parser error.
-- The request body (PDF bytes) must never be logged — only byte counts.
-- An accepted detection results in the PDF content actually changing;
-  with no accepted detections the original bytes come back untouched.
-- The X-Export-Title header lands in XMP and never appears in logs.
-- Inline-redactions mode persists nothing to the database.
+- The request body (PDF bytes) and reviewer-supplied filename / title
+  must never be logged — only metadata (counts, booleans).
+- Empty redactions still post-process for accessibility, but leave
+  the original content intact.
+- A redaction box that covers a known sentinel string actually
+  removes it from the output.
+- Bad redaction JSON returns a clean 400, never a 500.
+- The response carries `Content-Disposition: attachment;
+  filename="gelakt_<sanitized>.pdf"` and the sanitization actually
+  strips path separators.
+- Acceptance for #50: the full flow writes ZERO rows to documents and
+  detections.
 
 We build a real minimal PDF at fixture time using fitz so the happy-
-path tests round-trip the full pipeline; the rest of the tests use
-that same fixture byte string so no on-disk sample is needed.
+path tests round-trip the full pipeline.
 """
 
 from __future__ import annotations
@@ -30,12 +34,10 @@ from __future__ import annotations
 import io
 import json
 import logging
-import uuid
 from collections.abc import Iterator
 
 import fitz
 import pytest
-import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy import select
 
@@ -78,287 +80,9 @@ def _build_minimal_pdf(text: str = "Sentinel content") -> bytes:
     return out
 
 
-@pytest_asyncio.fixture
-async def doc_with_pdf(seed_db) -> Document:
-    doc = Document(filename="test.pdf", page_count=1, status="review")
-    seed_db.add(doc)
-    await seed_db.commit()
-    await seed_db.refresh(doc)
-    return doc
-
-
 @pytest.fixture
 def sample_pdf() -> bytes:
     return _build_minimal_pdf()
-
-
-# ---------------------------------------------------------------------------
-# Validation
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_empty_body_400(client: AsyncClient, doc_with_pdf: Document) -> None:
-    resp = await client.post(
-        f"/api/documents/{doc_with_pdf.id}/export/redact-stream",
-        content=b"",
-        headers={"Content-Type": "application/pdf"},
-    )
-    assert resp.status_code == 400
-    assert "Geen PDF-data" in resp.text
-
-
-@pytest.mark.asyncio
-async def test_non_pdf_magic_is_rejected_before_fitz(
-    client: AsyncClient, doc_with_pdf: Document
-) -> None:
-    """Reject non-PDF payloads at the magic-byte check — never hand them
-    to PyMuPDF, whose error messages can include parser fragments of
-    the input on some versions."""
-    resp = await client.post(
-        f"/api/documents/{doc_with_pdf.id}/export/redact-stream",
-        content=b"<html>nope</html>",
-        headers={"Content-Type": "application/pdf"},
-    )
-    assert resp.status_code == 400
-    assert "geen PDF" in resp.text
-
-
-@pytest.mark.asyncio
-async def test_oversized_payload_returns_413(client: AsyncClient, doc_with_pdf: Document) -> None:
-    """>50 MB must 413 without loading PyMuPDF. We build the payload by
-    prepending the PDF magic to junk so the size check fires before the
-    magic check, matching the endpoint's check order."""
-    body = b"%PDF-" + b"0" * (50 * 1024 * 1024 + 1)
-    resp = await client.post(
-        f"/api/documents/{doc_with_pdf.id}/export/redact-stream",
-        content=body,
-        headers={"Content-Type": "application/pdf"},
-    )
-    assert resp.status_code == 413
-    assert "50 MB" in resp.text
-
-
-@pytest.mark.asyncio
-async def test_unknown_document_returns_404(client: AsyncClient, sample_pdf: bytes) -> None:
-    bogus_id = uuid.uuid4()
-    resp = await client.post(
-        f"/api/documents/{bogus_id}/export/redact-stream",
-        content=sample_pdf,
-        headers={"Content-Type": "application/pdf"},
-    )
-    assert resp.status_code == 404
-
-
-# ---------------------------------------------------------------------------
-# Happy paths
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_no_accepted_detections_still_post_processed(
-    client: AsyncClient, doc_with_pdf: Document, sample_pdf: bytes
-) -> None:
-    """No-redaction case still gets the accessibility pass.
-
-    Earlier versions short-circuited and streamed the input bytes back
-    untouched. Todo #48 changed that: every export gets `/Lang (nl-NL)`
-    and XMP metadata so DMSes and screen readers behave, regardless of
-    whether anything was actually redacted. The original sentinel text
-    must still be intact — post-processing is metadata only on this path."""
-    resp = await client.post(
-        f"/api/documents/{doc_with_pdf.id}/export/redact-stream",
-        content=sample_pdf,
-        headers={"Content-Type": "application/pdf"},
-    )
-    assert resp.status_code == 200
-    assert resp.headers["content-type"].startswith("application/pdf")
-
-    disp = resp.headers["content-disposition"]
-    assert f'filename="gelakt_{doc_with_pdf.filename}"' in disp
-
-    # Sentinel text is preserved (no redactions ran).
-    out = fitz.open(stream=resp.content, filetype="pdf")
-    assert "Sentinel content" in out[0].get_text()
-    out.close()
-
-    # Catalog now carries /Lang nl-NL — verified via pikepdf.
-    import pikepdf
-
-    pdf = pikepdf.open(io.BytesIO(resp.content))
-    try:
-        assert str(pdf.Root.get("/Lang")) == "nl-NL"
-    finally:
-        pdf.close()
-
-
-@pytest.mark.asyncio
-async def test_accepted_detection_actually_redacts_content(
-    client: AsyncClient, doc_with_pdf: Document, seed_db
-) -> None:
-    """End-to-end: a single accepted detection over the sentinel text
-    must produce a PDF that no longer contains the original string."""
-    sentinel = "GeheimTextInPDF"
-    pdf_bytes = _build_minimal_pdf(sentinel)
-
-    # Verify the sentinel is actually in the original — otherwise the
-    # assertion below would pass for the wrong reason.
-    src_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    assert sentinel in src_doc[0].get_text()
-    src_doc.close()
-
-    # Seed an accepted detection whose bbox covers the text. Exact
-    # coordinates don't have to match the text layout perfectly — fitz
-    # blacks out any rect we give it — but we use a box that clearly
-    # overlaps the ink.
-    det = Detection(
-        document_id=doc_with_pdf.id,
-        entity_type="persoon",
-        tier="2",
-        confidence=1.0,
-        woo_article="5.1.2e",
-        review_status="accepted",
-        bounding_boxes=[{"page": 0, "x0": 40.0, "y0": 90.0, "x1": 260.0, "y1": 115.0}],
-        reasoning="test",
-        source="manual",
-    )
-    seed_db.add(det)
-    await seed_db.commit()
-
-    resp = await client.post(
-        f"/api/documents/{doc_with_pdf.id}/export/redact-stream",
-        content=pdf_bytes,
-        headers={"Content-Type": "application/pdf"},
-    )
-    assert resp.status_code == 200
-    # The redacted PDF is a different byte string than the input.
-    assert resp.content != pdf_bytes
-    # And — the authoritative check — the sentinel text is gone from the
-    # rendered text layer. fitz's apply_redactions removes the glyphs, not
-    # just the visual.
-    out_doc = fitz.open(stream=resp.content, filetype="pdf")
-    assert sentinel not in out_doc[0].get_text()
-    out_doc.close()
-
-
-@pytest.mark.asyncio
-async def test_only_accepted_and_auto_accepted_are_redacted(
-    client: AsyncClient, doc_with_pdf: Document, sample_pdf: bytes, seed_db
-) -> None:
-    """Pending / rejected / deferred / edited rows must NOT redact.
-    The endpoint filters on review_status — if that filter ever changes
-    silently, a reject would start blacking out text and we'd ship a
-    privacy regression. This test guards the filter."""
-    for status in ("pending", "rejected", "deferred", "edited"):
-        det = Detection(
-            document_id=doc_with_pdf.id,
-            entity_type="persoon",
-            tier="2",
-            confidence=1.0,
-            woo_article="5.1.2e",
-            review_status=status,
-            bounding_boxes=[{"page": 0, "x0": 0.0, "y0": 0.0, "x1": 300.0, "y1": 200.0}],
-            reasoning=f"status={status}",
-            source="manual",
-        )
-        seed_db.add(det)
-    await seed_db.commit()
-
-    resp = await client.post(
-        f"/api/documents/{doc_with_pdf.id}/export/redact-stream",
-        content=sample_pdf,
-        headers={"Content-Type": "application/pdf"},
-    )
-    assert resp.status_code == 200
-    # Nothing eligible → no redactions ran, but the post-processing
-    # accessibility pass still adds /Lang and XMP. The sentinel text in
-    # the source must still be present — this guards against pending /
-    # rejected / deferred / edited detections accidentally bleeding
-    # through into a redaction.
-    out = fitz.open(stream=resp.content, filetype="pdf")
-    assert "Sentinel content" in out[0].get_text()
-    out.close()
-
-
-# ---------------------------------------------------------------------------
-# Privacy invariant
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_pdf_body_never_appears_in_logs(
-    client: AsyncClient,
-    doc_with_pdf: Document,
-    sample_pdf: bytes,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Request body on /api/documents/:id/export/redact-stream must never
-    be logged. Only byte counts are. We inject a sentinel ASCII marker
-    inside a *valid* PDF so the magic check passes but any accidental
-    logger.info(pdf_bytes) would pick up the marker."""
-    doc = fitz.open()
-    page = doc.new_page()
-    page.insert_text((50, 100), "SentinelPDFBodyMarker9z1k", fontsize=12)
-    body = doc.tobytes()
-    doc.close()
-    assert body[:5] == b"%PDF-"
-
-    with caplog.at_level(logging.DEBUG):
-        resp = await client.post(
-            f"/api/documents/{doc_with_pdf.id}/export/redact-stream",
-            content=body,
-            headers={"Content-Type": "application/pdf"},
-        )
-    assert resp.status_code == 200
-
-    combined = "\n".join(record.getMessage() for record in caplog.records)
-    # The sentinel lives inside the PDF stream; if the body were logged,
-    # the marker would appear. Byte-count metadata is fine.
-    assert "SentinelPDFBodyMarker9z1k" not in combined
-
-
-@pytest.mark.asyncio
-async def test_export_title_header_never_logged(
-    client: AsyncClient,
-    doc_with_pdf: Document,
-    sample_pdf: bytes,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """The user-supplied PDF title (X-Export-Title header) ends up in
-    XMP metadata and must NOT appear in any log line. Reviewers may put
-    zaaknummers, person names, or other privacy-sensitive context into
-    that field — leaking it into structured logs would be a regression
-    against the client-first architecture (only metadata, never content
-    or reviewer-typed strings)."""
-    sentinel = "ExportTitleSentinelXyz9k2"
-    with caplog.at_level(logging.DEBUG):
-        resp = await client.post(
-            f"/api/documents/{doc_with_pdf.id}/export/redact-stream",
-            content=sample_pdf,
-            headers={
-                "Content-Type": "application/pdf",
-                "X-Export-Title": sentinel,
-            },
-        )
-    assert resp.status_code == 200
-
-    # The title must appear in the response (it's in the XMP block).
-    import pikepdf as _pikepdf
-
-    pdf = _pikepdf.open(io.BytesIO(resp.content))
-    try:
-        with pdf.open_metadata() as meta:
-            assert meta["dc:title"] == sentinel
-    finally:
-        pdf.close()
-
-    combined = "\n".join(record.getMessage() for record in caplog.records)
-    assert sentinel not in combined
-
-
-# ---------------------------------------------------------------------------
-# Inline-redactions endpoint (#50 — anonymous, no DB lookup)
-# ---------------------------------------------------------------------------
 
 
 def _redaction(page: int = 0, *, woo_article: str = "5.1.2e") -> dict:
@@ -372,12 +96,17 @@ def _redaction(page: int = 0, *, woo_article: str = "5.1.2e") -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Acceptance + happy paths
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.asyncio
-async def test_inline_happy_path_persists_nothing(
+async def test_happy_path_persists_nothing(
     client: AsyncClient, sample_pdf: bytes, seed_db
 ) -> None:
-    """The acceptance criterion (#50): an anonymous redact-stream call
-    streams a redacted PDF back and writes ZERO rows to documents and
+    """The acceptance criterion (#50): a redact-stream call streams a
+    redacted PDF back and writes ZERO rows to the documents and
     detections tables."""
     resp = await client.post(
         "/api/export/redact-stream",
@@ -389,7 +118,7 @@ async def test_inline_happy_path_persists_nothing(
     )
     assert resp.status_code == 200, resp.text
     assert resp.headers["content-type"] == "application/pdf"
-    assert 'gelakt_test.pdf' in resp.headers.get("content-disposition", "")
+    assert "gelakt_test.pdf" in resp.headers.get("content-disposition", "")
 
     out_doc = fitz.open(stream=resp.content, filetype="pdf")
     try:
@@ -406,7 +135,7 @@ async def test_inline_happy_path_persists_nothing(
 
 
 @pytest.mark.asyncio
-async def test_inline_empty_redactions_returns_unmodified(
+async def test_empty_redactions_returns_unmodified(
     client: AsyncClient, sample_pdf: bytes
 ) -> None:
     """With an empty redaction list the response is still a valid PDF
@@ -426,81 +155,20 @@ async def test_inline_empty_redactions_returns_unmodified(
     finally:
         out_doc.close()
 
+    # /Lang nl-NL should still land on the catalog from the
+    # accessibility post-processing pass — verifies that running it
+    # against an unredacted PDF doesn't somehow no-op.
+    import pikepdf
 
-@pytest.mark.asyncio
-async def test_inline_invalid_redactions_json_400(
-    client: AsyncClient, sample_pdf: bytes
-) -> None:
-    resp = await client.post(
-        "/api/export/redact-stream",
-        files={
-            "pdf": ("test.pdf", sample_pdf, "application/pdf"),
-            "redactions": (None, "not-json"),
-        },
-    )
-    assert resp.status_code == 400
-    assert "Ongeldige redacties" in resp.text
+    pdf = pikepdf.open(io.BytesIO(resp.content))
+    try:
+        assert str(pdf.Root.get("/Lang")) == "nl-NL"
+    finally:
+        pdf.close()
 
 
 @pytest.mark.asyncio
-async def test_inline_redactions_must_be_array_400(
-    client: AsyncClient, sample_pdf: bytes
-) -> None:
-    resp = await client.post(
-        "/api/export/redact-stream",
-        files={
-            "pdf": ("test.pdf", sample_pdf, "application/pdf"),
-            "redactions": (None, '{"not": "array"}'),
-        },
-    )
-    assert resp.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_inline_missing_bbox_field_400(
-    client: AsyncClient, sample_pdf: bytes
-) -> None:
-    bad = json.dumps([{"page": 0, "x0": 0, "x1": 10, "y0": 0}])  # no y1
-    resp = await client.post(
-        "/api/export/redact-stream",
-        files={
-            "pdf": ("test.pdf", sample_pdf, "application/pdf"),
-            "redactions": (None, bad),
-        },
-    )
-    assert resp.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_inline_non_pdf_payload_400(
-    client: AsyncClient,
-) -> None:
-    resp = await client.post(
-        "/api/export/redact-stream",
-        files={
-            "pdf": ("evil.txt", b"not a pdf", "application/pdf"),
-            "redactions": (None, "[]"),
-        },
-    )
-    assert resp.status_code == 400
-    assert "geen pdf" in resp.text.lower()
-
-
-@pytest.mark.asyncio
-async def test_inline_empty_pdf_400(client: AsyncClient) -> None:
-    resp = await client.post(
-        "/api/export/redact-stream",
-        files={
-            "pdf": ("empty.pdf", b"", "application/pdf"),
-            "redactions": (None, "[]"),
-        },
-    )
-    assert resp.status_code == 400
-    assert "Geen PDF-data" in resp.text
-
-
-@pytest.mark.asyncio
-async def test_inline_filename_sanitized(
+async def test_filename_sanitized(
     client: AsyncClient, sample_pdf: bytes
 ) -> None:
     """A reviewer-supplied filename can carry path separators or weird
@@ -521,8 +189,107 @@ async def test_inline_filename_sanitized(
     assert "/" not in disposition.split("filename=")[1]
 
 
+# ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.asyncio
-async def test_inline_pdf_bytes_never_appear_in_logs(
+async def test_invalid_redactions_json_400(
+    client: AsyncClient, sample_pdf: bytes
+) -> None:
+    resp = await client.post(
+        "/api/export/redact-stream",
+        files={
+            "pdf": ("test.pdf", sample_pdf, "application/pdf"),
+            "redactions": (None, "not-json"),
+        },
+    )
+    assert resp.status_code == 400
+    assert "Ongeldige redacties" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_redactions_must_be_array_400(
+    client: AsyncClient, sample_pdf: bytes
+) -> None:
+    resp = await client.post(
+        "/api/export/redact-stream",
+        files={
+            "pdf": ("test.pdf", sample_pdf, "application/pdf"),
+            "redactions": (None, '{"not": "array"}'),
+        },
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_missing_bbox_field_400(
+    client: AsyncClient, sample_pdf: bytes
+) -> None:
+    bad = json.dumps([{"page": 0, "x0": 0, "x1": 10, "y0": 0}])  # no y1
+    resp = await client.post(
+        "/api/export/redact-stream",
+        files={
+            "pdf": ("test.pdf", sample_pdf, "application/pdf"),
+            "redactions": (None, bad),
+        },
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_non_pdf_payload_400(client: AsyncClient) -> None:
+    """Reject non-PDF payloads at the magic-byte check — never hand
+    them to PyMuPDF, whose error messages can include parser
+    fragments of the input on some versions."""
+    resp = await client.post(
+        "/api/export/redact-stream",
+        files={
+            "pdf": ("evil.txt", b"not a pdf", "application/pdf"),
+            "redactions": (None, "[]"),
+        },
+    )
+    assert resp.status_code == 400
+    assert "geen pdf" in resp.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_empty_pdf_400(client: AsyncClient) -> None:
+    resp = await client.post(
+        "/api/export/redact-stream",
+        files={
+            "pdf": ("empty.pdf", b"", "application/pdf"),
+            "redactions": (None, "[]"),
+        },
+    )
+    assert resp.status_code == 400
+    assert "Geen PDF-data" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_oversized_payload_returns_413(client: AsyncClient) -> None:
+    """>50 MB must 413 without loading PyMuPDF. Pad PDF magic bytes
+    with zeros so the size check fires before the magic check."""
+    body = b"%PDF-" + b"0" * (50 * 1024 * 1024 + 1)
+    resp = await client.post(
+        "/api/export/redact-stream",
+        files={
+            "pdf": ("huge.pdf", body, "application/pdf"),
+            "redactions": (None, "[]"),
+        },
+    )
+    assert resp.status_code == 413
+    assert "50 MB" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Privacy invariants
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_pdf_bytes_never_appear_in_logs(
     client: AsyncClient,
     sample_pdf: bytes,
     caplog: pytest.LogCaptureFixture,
@@ -545,12 +312,17 @@ async def test_inline_pdf_bytes_never_appear_in_logs(
 
 
 @pytest.mark.asyncio
-async def test_inline_title_header_lands_in_xmp_not_logs(
+async def test_title_header_lands_in_xmp_not_logs(
     client: AsyncClient,
     sample_pdf: bytes,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    sentinel_title = "InlineTitleSentinel7e3a"
+    """The user-supplied PDF title (X-Export-Title header) ends up in
+    XMP metadata and must NOT appear in any log line. Reviewers may
+    put zaaknummers, person names, or other privacy-sensitive context
+    into that field — leaking it into structured logs would be a
+    regression against the client-first architecture."""
+    sentinel_title = "ExportTitleSentinel7e3a"
     with caplog.at_level(logging.DEBUG):
         resp = await client.post(
             "/api/export/redact-stream",
