@@ -13,13 +13,19 @@
  * - `documents` — uploaded PDF bytes, keyed by `docId` (pdf-store)
  * - `extractions` — OCR ExtractionResult for scanned docs, keyed by
  *   `docId` (extraction-store — #49)
+ * - `session-state` — review-session state (detections, structure spans,
+ *   reference names, custom terms, page reviews) keyed by `docId`
+ *   (session-state-store — #50). Lets a Cmd+R on the review page
+ *   preserve the reviewer's accept/reject/manual-redact work without
+ *   ever touching the server.
  */
 
 export const DB_NAME = 'woobuddy-pdfs';
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 
 export const DOCUMENTS_STORE = 'documents';
 export const EXTRACTIONS_STORE = 'extractions';
+export const SESSION_STATE_STORE = 'session-state';
 
 export class IdbError extends Error {
 	constructor(
@@ -68,6 +74,17 @@ export function openWoobuddyDb(): Promise<IDBDatabase> {
 				}
 				if (!db.objectStoreNames.contains(EXTRACTIONS_STORE)) {
 					db.createObjectStore(EXTRACTIONS_STORE, { keyPath: 'id' });
+				}
+			}
+
+			// v3 → v4: add the review-session state cache (#50). Same
+			// shape as the others — keyPath `id` (the docId). On
+			// downgrade users would lose this state; we accept that
+			// since the data is review-session scoped and the user
+			// can re-analyze from the still-cached PDF.
+			if (oldVersion < 4) {
+				if (!db.objectStoreNames.contains(SESSION_STATE_STORE)) {
+					db.createObjectStore(SESSION_STATE_STORE, { keyPath: 'id' });
 				}
 			}
 		};

@@ -1,5 +1,5 @@
 /**
- * Upload flow — extract text, register the document, run analyze.
+ * Upload flow — extract text, generate a local docId, run analyze.
  *
  * Extracted from the Hero component so the step-machine + pipeline can
  * be exercised without pulling in a DOM renderer. The component layer
@@ -12,13 +12,17 @@
  * 2. Scanned PDF, reviewer accepts OCR (#49) — tesseract.js produces
  *    an `ExtractionResult` in the browser, which is cached in
  *    IndexedDB and then fed to analyze exactly like the digital path.
- * 3. Scanned PDF, reviewer declines OCR — the document is registered
- *    (so the review page has a row to load) but analyze is skipped;
+ * 3. Scanned PDF, reviewer declines OCR — the document is stored
+ *    locally (so the review page can show it) but analyze is skipped;
  *    the reviewer lands on an empty detection list and redacts with
  *    manual area selection (#07).
+ *
+ * Anonymous-only (#50): no document is ever registered on the server.
+ * `docId` is generated client-side via `crypto.randomUUID()` and used
+ * as the IndexedDB key for both `pdf-store` and `session-state-store`.
  */
 
-import { registerDocument, analyzeDocument, ApiError } from '$lib/api/client';
+import { analyzeDocument, ApiError, type AnalyzeResponse } from '$lib/api/client';
 import { storePdf, PdfStoreError } from '$lib/services/pdf-store';
 import {
 	extractText,
@@ -34,12 +38,11 @@ import type { ExtractionResult, PageExtraction } from '$lib/types';
 export const LARGE_PDF_BYTES = 20 * 1024 * 1024;
 export const LARGE_PDF_PAGES = 100;
 
-export type StepId = 'load' | 'extract' | 'register' | 'analyze';
+export type StepId = 'load' | 'extract' | 'analyze';
 
 export const INITIAL_STEPS: Step[] = [
 	{ id: 'load', label: 'PDF laden', status: 'pending' },
 	{ id: 'extract', label: 'Tekst extraheren (in je browser)', status: 'pending' },
-	{ id: 'register', label: 'Document registreren', status: 'pending' },
 	{ id: 'analyze', label: 'Persoonsgegevens detecteren', status: 'pending' }
 ];
 
@@ -81,7 +84,7 @@ export function describeError(e: unknown): string {
  * Reviewer's answer to the OCR opt-in dialog for #49.
  *
  * - `ocr`: run tesseract.js on the document before proceeding.
- * - `skip`: register the document without detection so the reviewer
+ * - `skip`: store the document locally without detection so the reviewer
  *   can go straight to manual redaction.
  */
 export type OcrDecision = 'ocr' | 'skip';
@@ -109,18 +112,23 @@ export type IngestResult =
 	| {
 			kind: 'ready';
 			documentId: string;
+			filename: string;
 			pages: PageExtraction[];
 			pageCount: number;
 			viaOcr: boolean;
 	  }
-	| { kind: 'declined-ocr'; documentId: string; pageCount: number; viaOcr: false };
+	| { kind: 'declined-ocr'; documentId: string; filename: string; pageCount: number; viaOcr: false };
 
 const OCR_STEP_LABEL = 'Tekst herkennen (OCR, in je browser)';
 
 /**
- * Ingest a file: extract (or OCR) text, register the document, store
- * the PDF locally, and — if OCR ran — cache the ExtractionResult so
- * the review page can reuse it on reload without re-running OCR.
+ * Ingest a file: extract (or OCR) text, generate a local docId, store
+ * the PDF locally in IndexedDB, and — if OCR ran — cache the
+ * ExtractionResult so the review page can reuse it on reload without
+ * re-running OCR.
+ *
+ * No server calls. The PDF and its text never leave the browser at this
+ * stage; analyze is a separate step the caller invokes via {@link runAnalyze}.
  *
  * Errors are not caught here — the caller owns the error UI.
  */
@@ -140,7 +148,7 @@ export async function ingestFile(
 
 	const totalPages = pdfDoc.numPages;
 	const extractDetail =
-		totalPages >= LARGE_PDF_PAGES ? `Dit document heeft ${totalPages} pagina\u2019s.` : null;
+		totalPages >= LARGE_PDF_PAGES ? `Dit document heeft ${totalPages} pagina’s.` : null;
 
 	let extraction: ExtractionResult | null = null;
 	let viaOcr = false;
@@ -164,14 +172,14 @@ export async function ingestFile(
 		const decision = await handlers.onNeedOcrDecision();
 
 		if (decision === 'skip') {
-			// Decline path: still register the document so the review
-			// page has a row to load, but skip analyze entirely.
-			handlers.onStep('register');
-			const doc = await registerDocument(file.name, totalPages);
-			await storePdf(doc.id, file.name, bytes);
+			// Decline path: still store the document locally so the review
+			// page has a PDF to render, but skip analyze entirely.
+			const docId = crypto.randomUUID();
+			await storePdf(docId, file.name, bytes);
 			return {
 				kind: 'declined-ocr',
-				documentId: doc.id,
+				documentId: docId,
+				filename: file.name,
 				pageCount: totalPages,
 				viaOcr: false
 			};
@@ -194,19 +202,21 @@ export async function ingestFile(
 	}
 
 	// Past this point `extraction` is set for both digital and OCR paths.
-	handlers.onStep('register');
-	const doc = await registerDocument(file.name, extraction.pageCount);
-	await storePdf(doc.id, file.name, bytes);
+	// Generate the local docId and persist the PDF to IndexedDB. There is
+	// no server registration step — the docId is a pure client construct.
+	const docId = crypto.randomUUID();
+	await storePdf(docId, file.name, bytes);
 	if (viaOcr) {
 		// Cache so the review page's own `extractAndSetText` pass can
 		// skip re-running OCR. A fresh tab reload on a scanned doc is
 		// otherwise a 30–90 second cliff.
-		await storeExtraction(doc.id, extraction);
+		await storeExtraction(docId, extraction);
 	}
 
 	return {
 		kind: 'ready',
-		documentId: doc.id,
+		documentId: docId,
+		filename: file.name,
 		pages: extraction.pages,
 		pageCount: extraction.pageCount,
 		viaOcr
@@ -216,13 +226,17 @@ export async function ingestFile(
 /**
  * Run analyze on a document that's already been ingested. Split from
  * `ingestFile` so the Hero can expose a retry button that re-runs just
- * this step without re-extracting and re-registering.
+ * this step without re-extracting.
+ *
+ * Returns the full {@link AnalyzeResponse} so callers can stash the
+ * detection list into the detection store before navigating to the
+ * review page — the server holds nothing, so the response is the only
+ * source of truth for this analysis.
  */
 export async function runAnalyze(
-	documentId: string,
 	pages: PageExtraction[],
 	handlers: UploadFlowHandlers
-): Promise<void> {
+): Promise<AnalyzeResponse> {
 	handlers.onStep('analyze');
-	await analyzeDocument(documentId, pages);
+	return analyzeDocument(pages);
 }

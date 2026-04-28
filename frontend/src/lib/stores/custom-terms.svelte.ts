@@ -2,16 +2,16 @@
  * Custom-terms store (#21 — per-document "eigen zoektermen").
  *
  * Holds the list of reviewer-typed search terms that must be redacted
- * throughout the currently viewed document. Persisted in the backend's
- * `document_custom_terms` table; this store is the frontend mirror and
- * the single source of truth for the review screen.
+ * throughout the currently viewed document. Local-only since #50:
+ * every term is a client-generated row, mirrored to the IndexedDB
+ * session cache. Terms ride along inline with the next `/api/analyze`
+ * call via {@link analyzePayload} — the server never persists them.
  *
  * The store is intentionally a near-copy of `reference-names.svelte.ts`
  * — the two features share the same persistence shape and UX pattern.
  * The only difference in intent is direction: reference names flip
  * matching detections to `rejected`, custom terms produce new
- * `accepted` detections. That asymmetry lives in the undo commands
- * and the review-page wiring; at the store layer it is just a CRUD.
+ * `accepted` detections.
  *
  * Like the reference-names store, this module does NOT call
  * `/api/analyze` itself — that concern stays on the review page where
@@ -19,10 +19,9 @@
  */
 
 import {
-	createCustomTerm,
-	deleteCustomTerm,
-	getCustomTerms
-} from '$lib/api/client';
+	readSessionState,
+	writeSessionStateSlice
+} from '$lib/services/session-state-store';
 import type { CustomTerm } from '$lib/types';
 
 // ---------------------------------------------------------------------------
@@ -38,13 +37,19 @@ let error = $state<string | null>(null);
 // Actions
 // ---------------------------------------------------------------------------
 
+async function persist(): Promise<void> {
+	if (!currentDocumentId) return;
+	await writeSessionStateSlice(currentDocumentId, { customTerms: terms });
+}
+
 async function load(documentId: string): Promise<void> {
 	currentDocumentId = documentId;
 	loading = true;
 	error = null;
 	terms = [];
 	try {
-		terms = await getCustomTerms(documentId);
+		const state = await readSessionState(documentId);
+		terms = state?.customTerms ?? [];
 	} catch (e) {
 		error = e instanceof Error ? e.message : 'Zoektermen laden mislukt';
 	} finally {
@@ -60,45 +65,43 @@ function clear(): void {
 
 /**
  * Add a term to the custom wordlist. Returns the created row on
- * success, `null` on failure (the error is surfaced on the store).
- * The caller is responsible for triggering a re-analysis after the
- * promise resolves so the new term's matches appear in the detection
- * list.
+ * success, `null` on failure. The caller is responsible for triggering
+ * a re-analysis after the promise resolves so the new term's matches
+ * appear in the detection list.
  */
 async function add(term: string, wooArticle: string = '5.1.2e'): Promise<CustomTerm | null> {
 	if (!currentDocumentId) return null;
 	const trimmed = term.trim();
 	if (!trimmed) return null;
 	error = null;
-	try {
-		const created = await createCustomTerm(currentDocumentId, trimmed, wooArticle);
-		// Server is authoritative — the 201 response carries the
-		// normalized form and the server-assigned id, both of which
-		// the undo stack needs to reverse this action cleanly.
-		terms = [...terms, created];
-		return created;
-	} catch (e) {
-		error = e instanceof Error ? e.message : 'Zoekterm toevoegen mislukt';
-		return null;
-	}
+	const created: CustomTerm = {
+		id: crypto.randomUUID(),
+		document_id: currentDocumentId,
+		term: trimmed,
+		// Backend renormalizes server-side — local form is for UI dedup only.
+		normalized_term: trimmed.normalize('NFKC').toLocaleLowerCase('nl-NL'),
+		match_mode: 'exact',
+		woo_article: wooArticle,
+		created_at: new Date().toISOString()
+	};
+	terms = [...terms, created];
+	await persist();
+	return created;
 }
 
 /**
- * Remove a term by id. Returns whether the server accepted the
- * change; the caller then re-analyzes so the corresponding `custom`
- * detections disappear from the list.
+ * Remove a term by id. Returns whether the term existed; the caller
+ * then re-analyzes so the corresponding `custom` detections disappear
+ * from the list.
  */
 async function remove(id: string): Promise<boolean> {
 	if (!currentDocumentId) return false;
 	error = null;
-	try {
-		await deleteCustomTerm(currentDocumentId, id);
-		terms = terms.filter((t) => t.id !== id);
-		return true;
-	} catch (e) {
-		error = e instanceof Error ? e.message : 'Zoekterm verwijderen mislukt';
-		return false;
-	}
+	const before = terms.length;
+	terms = terms.filter((t) => t.id !== id);
+	if (terms.length === before) return false;
+	await persist();
+	return true;
 }
 
 function clearError(): void {

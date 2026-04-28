@@ -2,21 +2,22 @@
  * Reference-names store (#17 — per-document "publiek functionarissen" list).
  *
  * Holds the list of names the reviewer has marked as "niet lakken" for
- * the currently viewed document. The backend persists them in the
- * `document_reference_names` table; this store is the frontend mirror
- * and the single source of truth for the review screen.
+ * the currently viewed document. Local-only since #50: every entry is a
+ * client-generated row, mirrored to the IndexedDB session cache so a
+ * Cmd+R restores it. The names ride along inline with the next
+ * `/api/analyze` call (see `analyzePayload` consumers in the review
+ * page) — the server never persists them.
  *
  * Adding or removing a name is expected to trigger a re-analysis on the
- * review page — this store exposes `add` / `remove` but does NOT itself
+ * review page. This store exposes `add` / `remove` but does NOT itself
  * call `/api/analyze`, so that concern stays on the page where the
  * extraction and undo stack live.
  */
 
 import {
-	createReferenceName,
-	deleteReferenceName,
-	getReferenceNames
-} from '$lib/api/client';
+	readSessionState,
+	writeSessionStateSlice
+} from '$lib/services/session-state-store';
 import type { ReferenceName } from '$lib/types';
 
 // ---------------------------------------------------------------------------
@@ -32,13 +33,24 @@ let error = $state<string | null>(null);
 // Actions
 // ---------------------------------------------------------------------------
 
+async function persist(): Promise<void> {
+	if (!currentDocumentId) return;
+	await writeSessionStateSlice(currentDocumentId, { referenceNames: names });
+}
+
+/**
+ * Hydrate the store from the IndexedDB session cache for `documentId`.
+ * Clears any prior state first so switching documents does not bleed
+ * names across reviews.
+ */
 async function load(documentId: string): Promise<void> {
 	currentDocumentId = documentId;
 	loading = true;
 	error = null;
 	names = [];
 	try {
-		names = await getReferenceNames(documentId);
+		const state = await readSessionState(documentId);
+		names = state?.referenceNames ?? [];
 	} catch (e) {
 		error = e instanceof Error ? e.message : 'Referentielijst laden mislukt';
 	} finally {
@@ -63,35 +75,36 @@ async function add(displayName: string): Promise<ReferenceName | null> {
 	const trimmed = displayName.trim();
 	if (!trimmed) return null;
 	error = null;
-	try {
-		const created = await createReferenceName(currentDocumentId, trimmed);
-		// Server is authoritative — even though we could optimistically
-		// append, the 201 response is fast and returning the row with the
-		// server-assigned id/normalized form keeps the undo stack honest.
-		names = [...names, created];
-		return created;
-	} catch (e) {
-		error = e instanceof Error ? e.message : 'Naam toevoegen mislukt';
-		return null;
-	}
+	const created: ReferenceName = {
+		id: crypto.randomUUID(),
+		document_id: currentDocumentId,
+		display_name: trimmed,
+		// Match the backend's `unicodedata.normalize('NFKC', ...).casefold()`
+		// behaviour — the only consumer of `normalized_name` is the analyze
+		// pipeline server-side, which renormalizes anyway, so a simple
+		// casefold here is enough for local UI dedup.
+		normalized_name: trimmed.normalize('NFKC').toLocaleLowerCase('nl-NL'),
+		role_hint: 'publiek_functionaris',
+		created_at: new Date().toISOString()
+	};
+	names = [...names, created];
+	await persist();
+	return created;
 }
 
 /**
- * Remove a name by id. Like `add`, returns whether the server accepted
- * the change; the caller then re-analyzes so previously-rejected
- * detections by this reference can flip back to `pending`.
+ * Remove a name by id. Returns whether the name existed; the caller
+ * then re-analyzes so previously-rejected detections by this reference
+ * can flip back to `pending`.
  */
 async function remove(id: string): Promise<boolean> {
 	if (!currentDocumentId) return false;
 	error = null;
-	try {
-		await deleteReferenceName(currentDocumentId, id);
-		names = names.filter((n) => n.id !== id);
-		return true;
-	} catch (e) {
-		error = e instanceof Error ? e.message : 'Naam verwijderen mislukt';
-		return false;
-	}
+	const before = names.length;
+	names = names.filter((n) => n.id !== id);
+	if (names.length === before) return false;
+	await persist();
+	return true;
 }
 
 function clearError(): void {

@@ -15,7 +15,9 @@
 		type StepId,
 		type OcrDecision
 	} from '$lib/services/upload-flow';
-	import type { PageExtraction } from '$lib/types';
+	import { detectionStore } from '$lib/stores/detections.svelte';
+	import { reviewStore } from '$lib/stores/review.svelte';
+	import type { Document, PageExtraction } from '$lib/types';
 	import { SAMPLES, type SampleDoc } from '$lib/samples';
 	import { track } from '$lib/analytics/plausible';
 	import { bucketPages } from '$lib/analytics/events';
@@ -59,7 +61,25 @@
 	} as const;
 
 	let pendingDocId: string | null = null;
+	let pendingFilename: string | null = null;
+	let pendingPageCount: number = 0;
 	let pendingPages: PageExtraction[] | null = null;
+
+	function buildLocalDocument(id: string, filename: string, pageCount: number): Document {
+		// Anonymous flow (#50) — there is no Document row on the server; we
+		// synthesize the bits the review page reads (filename, page_count)
+		// and leave the rest at safe defaults. five_year_warning was a
+		// server-derived heuristic and is not reproduced here.
+		return {
+			id,
+			filename,
+			page_count: pageCount,
+			document_date: null,
+			status: 'review',
+			created_at: new Date().toISOString(),
+			five_year_warning: false
+		};
+	}
 
 	onMount(() => {
 		hydrated = true;
@@ -93,6 +113,8 @@
 		uploadError = null;
 		canRetryAnalyze = false;
 		pendingDocId = null;
+		pendingFilename = null;
+		pendingPageCount = 0;
 		pendingPages = null;
 		steps = cloneInitialSteps();
 	}
@@ -134,6 +156,13 @@
 				// drop them into the review screen where manual area
 				// selection is their redaction tool.
 				steps = allDone();
+				reviewStore.setDocument(
+					buildLocalDocument(result.documentId, result.filename, result.pageCount)
+				);
+				// Seed the detection store with an empty list for this docId
+				// so the review page recognises it as already-hydrated and
+				// skips the cache-miss analyze fallback.
+				await detectionStore.setFromAnalyze(result.documentId, [], []);
 				track('document_converted', {
 					source_type: sourceTypeOf(files[0]),
 					page_bucket: bucketPages(result.pageCount),
@@ -143,6 +172,8 @@
 				return;
 			}
 			pendingDocId = result.documentId;
+			pendingFilename = result.filename;
+			pendingPageCount = result.pageCount;
 			pendingPages = result.pages;
 			track('document_converted', {
 				source_type: sourceTypeOf(files[0]),
@@ -158,19 +189,32 @@
 	}
 
 	async function tryAnalyze() {
-		if (!pendingDocId || !pendingPages) return;
+		if (!pendingDocId || !pendingPages || !pendingFilename) return;
 		uploading = true;
 		uploadError = null;
 		canRetryAnalyze = false;
 
 		try {
-			await runAnalyze(pendingDocId, pendingPages, { onStep: setStep });
+			const response = await runAnalyze(pendingPages, { onStep: setStep });
+			// #50 anonymous local-only state: the response IS the result.
+			// Push it into the in-memory detection store and the IDB
+			// session cache before navigating, so the review page can
+			// render immediately without a cache-miss analyze fallback.
+			await detectionStore.setFromAnalyze(
+				pendingDocId,
+				response.detections,
+				response.structure_spans
+			);
+			reviewStore.setDocument(
+				buildLocalDocument(pendingDocId, pendingFilename, pendingPageCount)
+			);
 			steps = allDone();
 			await goto(`/review/${pendingDocId}`);
 		} catch (e) {
 			uploadError = describeError(e);
-			// Any error at the analyze step is retryable — the document is
-			// registered, pages are cached; retry skips re-extract.
+			// Any error at the analyze step is retryable — the PDF is
+			// already in IndexedDB and pages are cached; retry skips
+			// re-extract.
 			canRetryAnalyze = true;
 			uploading = false;
 			steps = cloneInitialSteps();
