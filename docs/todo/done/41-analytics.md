@@ -8,7 +8,7 @@
 
 ## Why
 
-Basic analytics to understand visitor behaviour and the Phase-D conversion funnel (`/try` starts → document converted → redactions reviewed → export completed → email signup). Google Analytics is inappropriate for a government privacy tool, and the hosted Plausible tier is a recurring €/month the project doesn't need to pay because the server used for other sites (CIIIC, etc.) can host a single Plausible Community Edition instance that serves many subdomains.
+Basic analytics to understand visitor behaviour and the Phase-D conversion funnel (`/try` starts → document converted → redactions reviewed → export completed → email signup). Google Analytics is inappropriate for a government privacy tool, and the hosted Plausible tier is a recurring €/month the project doesn't need to pay because a shared VPS already hosts a single Plausible Community Edition instance that serves many subdomains.
 
 ## Decision
 
@@ -28,7 +28,7 @@ Plausible Community Edition (AGPL, free), self-hosted on a shared VPS, using a *
 
 ## Scope (ops — done out of tree)
 
-The ops scope landed via the shared Plausible instance at `../plausible` (CIIICnl/plausible on GitHub), which serves both `analytics.ciiic.nl` and `analytics.woobuddy.nl` from one VPS. The pattern intentionally lets a future host migration be a DNS flip, not a code change in this repo.
+The ops scope landed via a shared Plausible CE instance running on a VPS that serves multiple analytics subdomains, including `analytics.woobuddy.nl`. The pattern intentionally lets a future host migration be a DNS flip, not a code change in this repo.
 
 - [x] VPS provisioned and running Plausible CE + Postgres + ClickHouse behind Caddy (see `../plausible/docker-compose.yml` + `Caddyfile`).
 - [x] `analytics.woobuddy.nl` resolves to the shared VPS (Caddy block in `../plausible/Caddyfile`, A record verified live).
