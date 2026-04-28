@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Mail, CheckCircle2, AlertCircle, Loader2 } from 'lucide-svelte';
 	import { submitLead, type LeadSource } from '$lib/api/client';
+	import { track } from '$lib/analytics/plausible';
 
 	interface Props {
 		/** Where the form is being submitted from — telemetry signal only. */
@@ -48,6 +49,7 @@
 				source,
 				newsletterOptIn
 			});
+			track('lead_captured', { source, newsletter_opt_in: newsletterOptIn });
 			status = 'success';
 		} catch (err) {
 			status = 'error';
