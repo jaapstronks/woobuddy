@@ -6,6 +6,7 @@
 
 	import type { Detection, WooArticleCode } from '$lib/types';
 	import { WOO_ARTICLES, getArticleLabel, isRelativeGround } from '$lib/utils/woo-articles';
+	import { isAcceptedRedaction } from '$lib/utils/review-status';
 	import MotivationEditor from './MotivationEditor.svelte';
 	import InterestWeighingChecklist from './InterestWeighingChecklist.svelte';
 	import FactOpinionIndicator from './FactOpinionIndicator.svelte';
@@ -34,9 +35,7 @@
 	});
 
 	const isPending = $derived(detection.review_status === 'pending' || detection.review_status === 'deferred');
-	const isRedacted = $derived(
-		detection.review_status === 'accepted' || detection.review_status === 'auto_accepted'
-	);
+	const isRedacted = $derived(isAcceptedRedaction(detection.review_status));
 	const needsWeighing = $derived(selectedArticle !== null && isRelativeGround(selectedArticle));
 	const canRedact = $derived(selectedArticle !== null && (!needsWeighing || weighingComplete));
 

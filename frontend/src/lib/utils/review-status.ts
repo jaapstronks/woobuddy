@@ -63,7 +63,6 @@ export function getReviewStatusBadgeClass(status: ReviewStatus): string {
 export const DETECTION_SOURCES: Record<DetectionSource, { label: string }> = {
 	regex: { label: 'Regex' },
 	deduce: { label: 'Deduce NER' },
-	llm: { label: 'LLM' },
 	manual: { label: 'Handmatig' },
 	search_redact: { label: 'Zoek & lak' },
 	reference_list: { label: 'Referentielijst' },
@@ -80,4 +79,14 @@ export function getSourceLabel(source: DetectionSource | undefined | null): stri
 /** A source is "automatic" (analyzer-generated) iff it is not reviewer-authored. */
 export function isAutoSource(source: DetectionSource | undefined | null): boolean {
 	return source !== 'manual' && source !== 'search_redact';
+}
+
+/**
+ * A detection that will produce a black bar in the exported PDF: either
+ * confirmed by the reviewer (`accepted`) or auto-redacted by the pipeline
+ * (`auto_accepted`, e.g. Tier 1 hard identifiers). Used by export, the
+ * redaction log, and card UI to mirror the export pipeline exactly.
+ */
+export function isAcceptedRedaction(status: ReviewStatus): boolean {
+	return status === 'accepted' || status === 'auto_accepted';
 }

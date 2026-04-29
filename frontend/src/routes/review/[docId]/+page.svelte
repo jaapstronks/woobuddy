@@ -75,6 +75,7 @@
 	import type { PublicationMetadataInput } from '$lib/services/diwoo';
 	import type { ReviewerInput } from '$lib/services/onderbouwing';
 	import type { WooArticleCode, EntityType, DetectionTier } from '$lib/types';
+	import { isAcceptedRedaction } from '$lib/utils/review-status';
 	import {
 		ArrowLeft,
 		PanelRightClose,
@@ -281,9 +282,22 @@
 	let exportDialogOpen = $state(false);
 	let exportTitle = $state('');
 
+	// Common payload bits all three export flows need. Hoisted out of the
+	// individual handlers so adding a new export type doesn't risk drift
+	// on filename fallback or the "rejected rows don't ship" rule.
+	const PDF_UNAVAILABLE_ERROR = 'Geen PDF beschikbaar om te exporteren.';
+	const exportFilename = $derived(reviewStore.document?.filename ?? 'document.pdf');
+	const exportPageCount = $derived(reviewStore.document?.page_count ?? 0);
+	const confirmedDetectionCount = $derived(
+		detectionStore.all.filter((d) => d.review_status !== 'rejected').length
+	);
+	const acceptedDetectionCount = $derived(
+		detectionStore.all.filter((d) => isAcceptedRedaction(d.review_status)).length
+	);
+
 	function openExportDialog(): void {
 		if (!pdfData) {
-			reviewExportStore.setError('Geen PDF beschikbaar om te exporteren.');
+			reviewExportStore.setError(PDF_UNAVAILABLE_ERROR);
 			return;
 		}
 		exportDialogOpen = true;
@@ -291,21 +305,16 @@
 
 	async function handleExport(): Promise<void> {
 		if (!pdfData) {
-			reviewExportStore.setError('Geen PDF beschikbaar om te exporteren.');
+			reviewExportStore.setError(PDF_UNAVAILABLE_ERROR);
 			return;
 		}
-		const filename = reviewStore.document?.filename ?? 'document.pdf';
-		const confirmedCount = detectionStore.all.filter(
-			(d) => d.review_status !== 'rejected'
-		).length;
-		const pageCount = reviewStore.document?.page_count ?? 0;
 		exportDialogOpen = false;
 		await reviewExportStore.runExport({
 			pdfBytes: pdfData,
-			filename,
+			filename: exportFilename,
 			detections: detectionStore.all,
-			confirmedCount,
-			pageCount,
+			confirmedCount: confirmedDetectionCount,
+			pageCount: exportPageCount,
 			title: exportTitle
 		});
 	}
@@ -318,7 +327,7 @@
 	// new server route.
 	function handleOpenPublicationDialog() {
 		if (!pdfData) {
-			reviewExportStore.setError('Geen PDF beschikbaar om te exporteren.');
+			reviewExportStore.setError(PDF_UNAVAILABLE_ERROR);
 			return;
 		}
 		reviewExportStore.openPublicationDialog();
@@ -326,35 +335,18 @@
 
 	async function handlePublicationSubmit(input: PublicationMetadataInput): Promise<void> {
 		if (!pdfData) return;
-		const confirmedCount = detectionStore.all.filter(
-			(d) => d.review_status !== 'rejected'
-		).length;
-		const pageCount = reviewStore.document?.page_count ?? 0;
 		const version = await loadTooiVersion();
-		const filename = reviewStore.document?.filename ?? 'document.pdf';
 		await reviewExportStore.runPublicationExport({
 			pdfBytes: pdfData,
-			filename,
+			filename: exportFilename,
 			document: reviewStore.document,
 			detections: detectionStore.all,
 			input,
 			tooiSchemaVersion: version.diwoo_metadata_schema_version,
-			confirmedCount,
-			pageCount
+			confirmedCount: confirmedDetectionCount,
+			pageCount: exportPageCount
 		});
 	}
-
-	// #64 — onderbouwingsrapport (audit log as Woo-besluit bijlage). Opens
-	// a small dialog for optional reviewer fields (zaaknummer, naam,
-	// opmerkingen, ook-CSV-erbij), then the store generates a PDF in
-	// the browser and triggers the download. Available independently of
-	// the redacted-PDF export — the report can be regenerated as a
-	// follow-up after an addendum without re-running the redaction.
-	const acceptedDetectionCount = $derived(
-		detectionStore.all.filter(
-			(d) => d.review_status === 'accepted' || d.review_status === 'auto_accepted'
-		).length
-	);
 
 	// Combined busy flag for the consolidated export dropdown — any of
 	// the three flows running disables the button so the reviewer can't
@@ -391,19 +383,14 @@
 
 	async function handleOnderbouwingSubmit(reviewer: ReviewerInput): Promise<void> {
 		if (!pdfData) return;
-		const filename = reviewStore.document?.filename ?? 'document.pdf';
-		const confirmedCount = detectionStore.all.filter(
-			(d) => d.review_status !== 'rejected'
-		).length;
-		const pageCount = reviewStore.document?.page_count ?? 0;
 		await reviewExportStore.runOnderbouwingExport({
 			pdfBytes: pdfData,
-			filename,
+			filename: exportFilename,
 			document: reviewStore.document,
 			detections: detectionStore.all,
 			reviewer,
-			confirmedCount,
-			pageCount,
+			confirmedCount: confirmedDetectionCount,
+			pageCount: exportPageCount,
 			buildCommit: __WOOBUDDY_BUILD_COMMIT__
 		});
 	}

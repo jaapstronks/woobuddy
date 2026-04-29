@@ -110,16 +110,11 @@ export type SubjectRole =
 // (regex / Deduce NER / rule / structure / ...) from reviewer-authored
 // rows (manual selection, search-and-redact). Surfaced in the log
 // table's "Source" column and in the filter bar.
-//
-// The `llm` value is legacy — kept for backwards compatibility with any
-// persisted rows produced before the LLM pass was removed. Nothing in
-// the live pipeline produces it anymore.
 // ---------------------------------------------------------------------------
 
 export type DetectionSource =
 	| 'regex'
 	| 'deduce'
-	| 'llm'
 	| 'manual'
 	| 'search_redact'
 	// #17 — per-document reference list short-circuit (publiek functionaris).
@@ -177,7 +172,7 @@ export interface Detection {
 	 * `regex`/`deduce`/`rule`/`structure`/... for automatic detections,
 	 * `manual` for reviewer-drawn redactions, `search_redact` for bulk
 	 * search-and-redact hits. Used for filtering and for the "Auto vs
-	 * handmatig" stats tile. (`llm` is legacy — see DetectionSource.)
+	 * handmatig" stats tile.
 	 */
 	source?: DetectionSource;
 	propagated_from: string | null;

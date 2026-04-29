@@ -12,7 +12,7 @@
 import type { Detection, DetectionTier, ReviewStatus, WooArticleCode } from '$lib/types';
 import { ENTITY_TYPES } from '$lib/utils/entity-types';
 import { WOO_ARTICLES } from '$lib/utils/woo-articles';
-import { isAutoSource, getSourceLabel } from '$lib/utils/review-status';
+import { isAutoSource, getSourceLabel, isAcceptedRedaction } from '$lib/utils/review-status';
 
 /**
  * Detection rows that end up on the report. Mirrors the export
@@ -20,9 +20,7 @@ import { isAutoSource, getSourceLabel } from '$lib/utils/review-status';
  * actual gelakte PDF describe exactly the same set of black bars.
  */
 export function selectReportableDetections(detections: Detection[]): Detection[] {
-	const reportable = detections.filter(
-		(d) => d.review_status === 'accepted' || d.review_status === 'auto_accepted'
-	);
+	const reportable = detections.filter((d) => isAcceptedRedaction(d.review_status));
 	reportable.sort((a, b) => {
 		const pa = a.bounding_boxes[0]?.page ?? Number.MAX_SAFE_INTEGER;
 		const pb = b.bounding_boxes[0]?.page ?? Number.MAX_SAFE_INTEGER;
