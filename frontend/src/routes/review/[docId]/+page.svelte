@@ -682,7 +682,10 @@
 			<div class="flex items-center gap-4">
 				<ProgressBar tiers={progressTiers} />
 				{#if pageProgressText}
-					<span class="text-xs text-neutral">{pageProgressText}</span>
+					<!-- Hidden below xl (1280px) — at medium desktop widths the
+					     ProgressBar carries enough signal on its own and shedding
+					     this line frees ~80px so the toolbar stays one row. -->
+					<span class="hidden text-xs text-neutral xl:inline">{pageProgressText}</span>
 				{/if}
 			</div>
 		</div>
@@ -692,7 +695,9 @@
 			<sl-tooltip content="Lak-logboek">
 				<sl-button size="small" variant="default" onclick={() => goto(`/review/${docId}/log`)}>
 					<span slot="prefix"><ListOrdered size={14} /></span>
-					Logboek
+					<!-- Label hides below xl; the icon + tooltip carry the meaning
+					     at medium desktop widths. -->
+					<span class="hidden xl:inline">Logboek</span>
 				</sl-button>
 			</sl-tooltip>
 			<sl-tooltip content="Zoek & Lak (Ctrl+F)">
@@ -725,20 +730,26 @@
 		     the related artifacts in the same mental space. -->
 		<div class="flex items-center" data-toolbar-cluster="export">
 			<sl-button-group label="Exporteren">
-				<sl-button
-					size="small"
-					variant="primary"
-					onclick={openExportDialog}
-					disabled={anyExportBusy || !pdfData}
-				>
-					{#if anyExportBusy}
-						<sl-spinner slot="prefix" style="font-size: 1rem; --indicator-color: white;"></sl-spinner>
-						{exportBusyLabel}
-					{:else}
-						<span slot="prefix"><Download size={14} /></span>
-						Exporteer gelakte PDF
-					{/if}
-				</sl-button>
+				<!-- Wrapped in a tooltip so the icon-only state below lg
+				     still surfaces the action on hover. -->
+				<sl-tooltip content="Exporteer gelakte PDF">
+					<sl-button
+						size="small"
+						variant="primary"
+						onclick={openExportDialog}
+						disabled={anyExportBusy || !pdfData}
+					>
+						{#if anyExportBusy}
+							<sl-spinner slot="prefix" style="font-size: 1rem; --indicator-color: white;"></sl-spinner>
+							<!-- Busy label follows the same rule as the idle label so the
+							     button's width doesn't jump when an export starts. -->
+							<span class="hidden lg:inline">{exportBusyLabel}</span>
+						{:else}
+							<span slot="prefix"><Download size={14} /></span>
+							<span class="hidden lg:inline">Exporteer gelakte PDF</span>
+						{/if}
+					</sl-button>
+				</sl-tooltip>
 				<sl-dropdown placement="bottom-end" hoist>
 					<sl-button
 						slot="trigger"
