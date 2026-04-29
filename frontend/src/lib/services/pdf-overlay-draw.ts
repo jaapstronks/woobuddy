@@ -13,6 +13,7 @@
  */
 
 import type { BoundingBox, Detection } from '$lib/types';
+import { isAcceptedRedaction } from '$lib/utils/review-status';
 
 /**
  * Cosmetic slack applied to detection and search overlays at draw time.
@@ -198,11 +199,7 @@ export function getOverlayStyle(det: Detection, selectedDetectionId: string | nu
 	if (det.entity_type === 'area') {
 		return `background: rgba(0,0,0,0.85); color: white; ${selectedAccent}`;
 	}
-	if (
-		det.tier === '1' ||
-		det.review_status === 'accepted' ||
-		det.review_status === 'auto_accepted'
-	) {
+	if (det.tier === '1' || isAcceptedRedaction(det.review_status)) {
 		return `background: rgba(0,0,0,0.7); color: white; ${selectedAccent}`;
 	}
 	if (det.tier === '2') {

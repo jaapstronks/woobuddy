@@ -9,6 +9,7 @@
 	import { CONFIDENCE_LABELS, CONFIDENCE_COLORS } from '$lib/utils/confidence';
 	import { confidenceToLevel } from '$lib/utils/tiers';
 	import { WOO_ARTICLES } from '$lib/utils/woo-articles';
+	import { isAcceptedRedaction } from '$lib/utils/review-status';
 
 	interface Props {
 		detection: Detection;
@@ -44,9 +45,7 @@
 	}: Props = $props();
 
 	const isPending = $derived(detection.review_status === 'pending');
-	const isAccepted = $derived(
-		detection.review_status === 'accepted' || detection.review_status === 'auto_accepted'
-	);
+	const isAccepted = $derived(isAcceptedRedaction(detection.review_status));
 	const isRejected = $derived(detection.review_status === 'rejected');
 	const isPropagated = $derived(!!detection.propagated_from);
 	const article = $derived(detection.woo_article ? WOO_ARTICLES[detection.woo_article] : null);

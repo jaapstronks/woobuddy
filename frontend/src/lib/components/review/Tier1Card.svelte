@@ -3,6 +3,7 @@
 
 	import type { Detection } from '$lib/types';
 	import { WOO_ARTICLES } from '$lib/utils/woo-articles';
+	import { isAcceptedRedaction } from '$lib/utils/review-status';
 
 	interface Props {
 		detection: Detection;
@@ -19,9 +20,7 @@
 	let { detection, onUnredact, onRedact }: Props = $props();
 
 	const article = $derived(detection.woo_article ? WOO_ARTICLES[detection.woo_article] : null);
-	const isRedacted = $derived(
-		detection.review_status === 'auto_accepted' || detection.review_status === 'accepted'
-	);
+	const isRedacted = $derived(isAcceptedRedaction(detection.review_status));
 </script>
 
 <div

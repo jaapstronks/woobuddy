@@ -75,6 +75,7 @@
 	import type { PublicationMetadataInput } from '$lib/services/diwoo';
 	import type { ReviewerInput } from '$lib/services/onderbouwing';
 	import type { WooArticleCode, EntityType, DetectionTier } from '$lib/types';
+	import { isAcceptedRedaction } from '$lib/utils/review-status';
 	import {
 		ArrowLeft,
 		PanelRightClose,
@@ -351,9 +352,7 @@
 	// the redacted-PDF export — the report can be regenerated as a
 	// follow-up after an addendum without re-running the redaction.
 	const acceptedDetectionCount = $derived(
-		detectionStore.all.filter(
-			(d) => d.review_status === 'accepted' || d.review_status === 'auto_accepted'
-		).length
+		detectionStore.all.filter((d) => isAcceptedRedaction(d.review_status)).length
 	);
 
 	// Combined busy flag for the consolidated export dropdown — any of

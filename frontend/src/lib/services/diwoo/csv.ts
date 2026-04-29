@@ -12,6 +12,7 @@
 import type { Detection } from '$lib/types';
 import { ENTITY_TYPES } from '$lib/utils/entity-types';
 import { WOO_ARTICLES } from '$lib/utils/woo-articles';
+import { isAcceptedRedaction } from '$lib/utils/review-status';
 
 const HEADERS = [
 	'#',
@@ -50,9 +51,7 @@ function motivationFor(detection: Detection): string {
 }
 
 export function buildRedactionLogCsv(detections: Detection[]): string {
-	const accepted = detections.filter(
-		(d) => d.review_status === 'accepted' || d.review_status === 'auto_accepted'
-	);
+	const accepted = detections.filter((d) => isAcceptedRedaction(d.review_status));
 
 	const rows: string[] = [];
 	rows.push(HEADERS.join(','));
