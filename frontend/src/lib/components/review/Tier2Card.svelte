@@ -206,9 +206,12 @@
 		     false positives — CBS-surname collisions with Dutch words like
 		     "Engels", place names, organisations — which in practice are
 		     the most common reason a reviewer keeps a Tier 2 hit visible. -->
-		<div class="mt-3">
+		<!-- Role picker: vertical stack so the longest label
+		     ("Publiek functionaris") never truncates in the narrow
+		     review panel. -->
+		<div class="mt-3" role="radiogroup" aria-label="Reden om niet te lakken">
 			<div class="mb-1 text-[11px] font-medium text-gray-700">Reden om niet te lakken</div>
-			<sl-button-group label="Reden om niet te lakken">
+			<div class="role-stack flex flex-col gap-1">
 				<sl-button
 					size="small"
 					variant={detection.subject_role === 'ambtenaar' ? 'primary' : 'default'}
@@ -230,7 +233,7 @@
 				>
 					Geen persoon
 				</sl-button>
-			</sl-button-group>
+			</div>
 		</div>
 	{:else if detection.woo_article}
 		<!-- Pending or Accepted → Woo-grond picker. The label shifts to
@@ -320,3 +323,18 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	/* Full-width buttons in the vertical role-picker stack. Shoelace's
+	   internal button is inline-flex by default, so width: 100% on the
+	   host alone won't stretch the rendered control — we have to reach
+	   into ::part(base). */
+	.role-stack sl-button {
+		display: block;
+		width: 100%;
+	}
+	.role-stack sl-button::part(base) {
+		width: 100%;
+		justify-content: center;
+	}
+</style>
