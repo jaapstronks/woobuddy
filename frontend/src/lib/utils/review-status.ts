@@ -63,7 +63,6 @@ export function getReviewStatusBadgeClass(status: ReviewStatus): string {
 export const DETECTION_SOURCES: Record<DetectionSource, { label: string }> = {
 	regex: { label: 'Regex' },
 	deduce: { label: 'Deduce NER' },
-	llm: { label: 'LLM' },
 	manual: { label: 'Handmatig' },
 	search_redact: { label: 'Zoek & lak' },
 	reference_list: { label: 'Referentielijst' },
