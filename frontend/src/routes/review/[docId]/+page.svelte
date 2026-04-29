@@ -648,18 +648,30 @@
 />
 
 <div class="flex h-full flex-col">
-	<!-- Top bar: back + filters + progress + export + sidebar toggle -->
+	<!-- Top toolbar. Items are grouped into named clusters (nav, filters,
+	     progress, tools, export, view) so each cluster can collapse, wrap,
+	     or shed labels independently when responsive rules land in a
+	     follow-up PR. This pass is structural only — visual order and
+	     spacing at desktop width are unchanged apart from a tighter
+	     intra-cluster gap inside the tools cluster (Logboek/Search/JSON
+	     now read as one group). Dividers stay as positional siblings for
+	     now; moving them to CSS borders is part of the responsive work. -->
 	<div class="flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 py-2">
-		<a
-			href="/"
-			class="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-neutral hover:bg-gray-100 hover:text-gray-900"
-			title="Terug naar start"
-		>
-			<ArrowLeft size={16} />
-			<span class="hidden sm:inline">Terug</span>
-		</a>
+		<!-- Cluster: nav -->
+		<div class="flex items-center" data-toolbar-cluster="nav">
+			<a
+				href="/"
+				class="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-neutral hover:bg-gray-100 hover:text-gray-900"
+				title="Terug naar start"
+			>
+				<ArrowLeft size={16} />
+				<span class="hidden sm:inline">Terug</span>
+			</a>
+		</div>
 		<div class="h-5 w-px bg-gray-200"></div>
-		<div class="flex flex-1 flex-wrap items-center justify-between gap-3">
+		<!-- Cluster: filters + progress (sharing the flex-1 spacer that
+		     pushes the right-hand clusters to the edge) -->
+		<div class="flex flex-1 flex-wrap items-center justify-between gap-3" data-toolbar-cluster="filters-progress">
 			<DetectionFilters
 				currentTier={detectionStore.filters.tier}
 				currentStatus={detectionStore.filters.status}
@@ -675,112 +687,117 @@
 			</div>
 		</div>
 		<div class="h-5 w-px bg-gray-200"></div>
-		<sl-tooltip content="Lak-logboek">
-			<sl-button size="small" variant="default" onclick={() => goto(`/review/${docId}/log`)}>
-				<span slot="prefix"><ListOrdered size={14} /></span>
-				Logboek
-			</sl-button>
-		</sl-tooltip>
-		<sl-tooltip content="Zoek & Lak (Ctrl+F)">
-			<sl-button
-				size="small"
-				variant={searchStore.open ? 'primary' : 'default'}
-				onclick={() => {
-					searchStore.toggle();
-					if (searchStore.open && !reviewStore.sidebarOpen) reviewStore.toggleSidebar();
-				}}
-			>
-				<span style="display: inline-flex; align-items: center;"><Search size={14} /></span>
-			</sl-button>
-		</sl-tooltip>
-		<sl-tooltip content="Exporteer detecties als JSON (diagnostiek)">
-			<sl-button
-				size="small"
-				variant="text"
-				onclick={handleDebugExport}
-				disabled={detectionStore.all.length === 0}
-			>
-				<span style="display: inline-flex; align-items: center;"><FileJson size={14} /></span>
-			</sl-button>
-		</sl-tooltip>
-		<!--
-		     Consolidated export menu — primary action is the gelakte PDF
-		     (one click via the button body); the publication-zip and
-		     onderbouwingsrapport sit one dropdown click away. We keep the
-		     primary path fast because that's what 95% of reviewers want,
-		     while still surfacing the related artifacts in the same
-		     mental space.
-		-->
-		<sl-button-group label="Exporteren">
-			<sl-button
-				size="small"
-				variant="primary"
-				onclick={openExportDialog}
-				disabled={anyExportBusy || !pdfData}
-			>
-				{#if anyExportBusy}
-					<sl-spinner slot="prefix" style="font-size: 1rem; --indicator-color: white;"></sl-spinner>
-					{exportBusyLabel}
-				{:else}
-					<span slot="prefix"><Download size={14} /></span>
-					Exporteer gelakte PDF
-				{/if}
-			</sl-button>
-			<sl-dropdown placement="bottom-end" hoist>
+		<!-- Cluster: tools (Logboek + Search + JSON-debug) -->
+		<div class="flex items-center gap-2" data-toolbar-cluster="tools">
+			<sl-tooltip content="Lak-logboek">
+				<sl-button size="small" variant="default" onclick={() => goto(`/review/${docId}/log`)}>
+					<span slot="prefix"><ListOrdered size={14} /></span>
+					Logboek
+				</sl-button>
+			</sl-tooltip>
+			<sl-tooltip content="Zoek & Lak (Ctrl+F)">
 				<sl-button
-					slot="trigger"
 					size="small"
-					variant="primary"
-					caret
-					disabled={anyExportBusy || !pdfData}
-					aria-label="Meer exportopties"
-				></sl-button>
-				<sl-menu
-					onsl-select={(e: CustomEvent<{ item: HTMLElement }>) => {
-						const action = e.detail.item.getAttribute('data-action');
-						if (action === 'redacted-pdf') openExportDialog();
-						else if (action === 'publication-zip') handleOpenPublicationDialog();
-						else if (action === 'onderbouwing') handleOpenOnderbouwingDialog();
+					variant={searchStore.open ? 'primary' : 'default'}
+					onclick={() => {
+						searchStore.toggle();
+						if (searchStore.open && !reviewStore.sidebarOpen) reviewStore.toggleSidebar();
 					}}
 				>
-					<sl-menu-item data-action="redacted-pdf">
-						<span slot="prefix" class="export-menu-icon"><Download size={14} /></span>
-						Gelakte PDF
-						<span slot="suffix" class="export-menu-help">Toegankelijk, met XMP</span>
-					</sl-menu-item>
-					<sl-menu-item
-						data-action="publication-zip"
-						disabled={reviewExportStore.publicationBundling || undefined}
-					>
-						<span slot="prefix" class="export-menu-icon"><Package size={14} /></span>
-						Publicatiebundel (DiWoo zip)
-						<span slot="suffix" class="export-menu-help">PDF + metadata.xml/json</span>
-					</sl-menu-item>
-					<sl-divider></sl-divider>
-					<sl-menu-item
-						data-action="onderbouwing"
-						disabled={reviewExportStore.onderbouwingBusy ||
-							acceptedDetectionCount === 0 ||
-							undefined}
-					>
-						<span slot="prefix" class="export-menu-icon"><FileText size={14} /></span>
-						Onderbouwingsrapport
-						<span slot="suffix" class="export-menu-help">Bijlage Woo-besluit</span>
-					</sl-menu-item>
-				</sl-menu>
-			</sl-dropdown>
-		</sl-button-group>
-		<sl-tooltip content={reviewStore.sidebarOpen ? 'Verberg detecties' : 'Toon detecties'}>
-			<sl-button size="small" variant="text" onclick={() => reviewStore.toggleSidebar()}>
-				<span style="display: inline-flex; align-items: center;">
-					{#if reviewStore.sidebarOpen}
-						<PanelRightClose size={16} />
+					<span style="display: inline-flex; align-items: center;"><Search size={14} /></span>
+				</sl-button>
+			</sl-tooltip>
+			<sl-tooltip content="Exporteer detecties als JSON (diagnostiek)">
+				<sl-button
+					size="small"
+					variant="text"
+					onclick={handleDebugExport}
+					disabled={detectionStore.all.length === 0}
+				>
+					<span style="display: inline-flex; align-items: center;"><FileJson size={14} /></span>
+				</sl-button>
+			</sl-tooltip>
+		</div>
+		<!-- Cluster: export. Primary action is the gelakte PDF (one click
+		     via the button body); the publication-zip and onderbouwingsrapport
+		     sit one dropdown click away. We keep the primary path fast
+		     because that's what 95% of reviewers want, while still surfacing
+		     the related artifacts in the same mental space. -->
+		<div class="flex items-center" data-toolbar-cluster="export">
+			<sl-button-group label="Exporteren">
+				<sl-button
+					size="small"
+					variant="primary"
+					onclick={openExportDialog}
+					disabled={anyExportBusy || !pdfData}
+				>
+					{#if anyExportBusy}
+						<sl-spinner slot="prefix" style="font-size: 1rem; --indicator-color: white;"></sl-spinner>
+						{exportBusyLabel}
 					{:else}
-						<PanelRightOpen size={16} />
+						<span slot="prefix"><Download size={14} /></span>
+						Exporteer gelakte PDF
 					{/if}
-				</span>
-			</sl-button>
-		</sl-tooltip>
+				</sl-button>
+				<sl-dropdown placement="bottom-end" hoist>
+					<sl-button
+						slot="trigger"
+						size="small"
+						variant="primary"
+						caret
+						disabled={anyExportBusy || !pdfData}
+						aria-label="Meer exportopties"
+					></sl-button>
+					<sl-menu
+						onsl-select={(e: CustomEvent<{ item: HTMLElement }>) => {
+							const action = e.detail.item.getAttribute('data-action');
+							if (action === 'redacted-pdf') openExportDialog();
+							else if (action === 'publication-zip') handleOpenPublicationDialog();
+							else if (action === 'onderbouwing') handleOpenOnderbouwingDialog();
+						}}
+					>
+						<sl-menu-item data-action="redacted-pdf">
+							<span slot="prefix" class="export-menu-icon"><Download size={14} /></span>
+							Gelakte PDF
+							<span slot="suffix" class="export-menu-help">Toegankelijk, met XMP</span>
+						</sl-menu-item>
+						<sl-menu-item
+							data-action="publication-zip"
+							disabled={reviewExportStore.publicationBundling || undefined}
+						>
+							<span slot="prefix" class="export-menu-icon"><Package size={14} /></span>
+							Publicatiebundel (DiWoo zip)
+							<span slot="suffix" class="export-menu-help">PDF + metadata.xml/json</span>
+						</sl-menu-item>
+						<sl-divider></sl-divider>
+						<sl-menu-item
+							data-action="onderbouwing"
+							disabled={reviewExportStore.onderbouwingBusy ||
+								acceptedDetectionCount === 0 ||
+								undefined}
+						>
+							<span slot="prefix" class="export-menu-icon"><FileText size={14} /></span>
+							Onderbouwingsrapport
+							<span slot="suffix" class="export-menu-help">Bijlage Woo-besluit</span>
+						</sl-menu-item>
+					</sl-menu>
+				</sl-dropdown>
+			</sl-button-group>
+		</div>
+		<!-- Cluster: view (sidebar toggle) -->
+		<div class="flex items-center" data-toolbar-cluster="view">
+			<sl-tooltip content={reviewStore.sidebarOpen ? 'Verberg detecties' : 'Toon detecties'}>
+				<sl-button size="small" variant="text" onclick={() => reviewStore.toggleSidebar()}>
+					<span style="display: inline-flex; align-items: center;">
+						{#if reviewStore.sidebarOpen}
+							<PanelRightClose size={16} />
+						{:else}
+							<PanelRightOpen size={16} />
+						{/if}
+					</span>
+				</sl-button>
+			</sl-tooltip>
+		</div>
 	</div>
 
 	{#if detectionStore.loading || reviewStore.loading}
@@ -1073,71 +1090,85 @@
 			{/if}
 		</div>
 
-		<!-- Bottom toolbar -->
+		<!-- Bottom toolbar. Mirrors the top toolbar's cluster pattern so
+		     responsive rules can target both bars uniformly. -->
 		<div class="flex shrink-0 items-center justify-between border-t border-gray-200 bg-white px-4 py-1.5">
-			<BatchActions
-				tier1PendingCount={detectionStore.tier1PendingCount}
-				tier2HighConfidenceCount={detectionStore.tier2HighConfidencePendingCount}
-				onAcceptAllTier1={handleAcceptAllTier1}
-				onAcceptHighConfidenceTier2={handleAcceptHighConfidenceTier2}
-			/>
+			<!-- Cluster: batch (left) -->
+			<div class="flex items-center" data-toolbar-cluster="batch">
+				<BatchActions
+					tier1PendingCount={detectionStore.tier1PendingCount}
+					tier2HighConfidenceCount={detectionStore.tier2HighConfidencePendingCount}
+					onAcceptAllTier1={handleAcceptAllTier1}
+					onAcceptHighConfidenceTier2={handleAcceptHighConfidenceTier2}
+				/>
+			</div>
+			<!-- Right-side groups: history (edit-only), zoom, fit-mode. -->
 			<div class="flex items-center gap-1">
 				{#if reviewStore.mode === 'edit'}
-					<sl-tooltip content="Ongedaan maken (Ctrl+Z)">
-						<sl-button
-							size="small"
-							variant="default"
-							disabled={!undoStore.canUndo}
-							onclick={handleUndo}
-						>
-							<Undo2 size={14} />
-						</sl-button>
-					</sl-tooltip>
-					<sl-tooltip content="Opnieuw (Ctrl+Shift+Z)">
-						<sl-button
-							size="small"
-							variant="default"
-							disabled={!undoStore.canRedo}
-							onclick={handleRedo}
-						>
-							<Redo2 size={14} />
-						</sl-button>
-					</sl-tooltip>
+					<!-- Cluster: history (undo + redo, edit mode only) -->
+					<div class="flex items-center gap-1" data-toolbar-cluster="history">
+						<sl-tooltip content="Ongedaan maken (Ctrl+Z)">
+							<sl-button
+								size="small"
+								variant="default"
+								disabled={!undoStore.canUndo}
+								onclick={handleUndo}
+							>
+								<Undo2 size={14} />
+							</sl-button>
+						</sl-tooltip>
+						<sl-tooltip content="Opnieuw (Ctrl+Shift+Z)">
+							<sl-button
+								size="small"
+								variant="default"
+								disabled={!undoStore.canRedo}
+								onclick={handleRedo}
+							>
+								<Redo2 size={14} />
+							</sl-button>
+						</sl-tooltip>
+					</div>
 					<div class="mx-1 h-5 w-px bg-gray-200"></div>
 				{/if}
-				<sl-tooltip content="Uitzoomen">
-					<sl-button size="small" variant="default" onclick={() => reviewStore.zoomOut()}>−</sl-button>
-				</sl-tooltip>
-				<button
-					type="button"
-					class="min-w-[3rem] rounded px-1 text-center text-xs text-neutral hover:bg-gray-100"
-					title="Klik om naar 100% te gaan"
-					onclick={() => reviewStore.setScale(1)}
-				>
-					{Math.round(reviewStore.pdfScale * 100)}%
-				</button>
-				<sl-tooltip content="Inzoomen">
-					<sl-button size="small" variant="default" onclick={() => reviewStore.zoomIn()}>+</sl-button>
-				</sl-tooltip>
+				<!-- Cluster: zoom (zoom out, scale label, zoom in) -->
+				<div class="flex items-center gap-1" data-toolbar-cluster="zoom">
+					<sl-tooltip content="Uitzoomen">
+						<sl-button size="small" variant="default" onclick={() => reviewStore.zoomOut()}>−</sl-button>
+					</sl-tooltip>
+					<button
+						type="button"
+						class="min-w-[3rem] rounded px-1 text-center text-xs text-neutral hover:bg-gray-100"
+						title="Klik om naar 100% te gaan"
+						onclick={() => reviewStore.setScale(1)}
+					>
+						{Math.round(reviewStore.pdfScale * 100)}%
+					</button>
+					<sl-tooltip content="Inzoomen">
+						<sl-button size="small" variant="default" onclick={() => reviewStore.zoomIn()}>+</sl-button>
+					</sl-tooltip>
+				</div>
 				<div class="mx-1 h-5 w-px bg-gray-200"></div>
-				<sl-tooltip content="Pas op breedte">
-					<sl-button
-						size="small"
-						variant={reviewStore.pdfFitMode === 'width' ? 'primary' : 'default'}
-						onclick={() => reviewStore.setFitMode('width')}
-					>
-						<StretchHorizontal size={14} />
-					</sl-button>
-				</sl-tooltip>
-				<sl-tooltip content="Hele pagina">
-					<sl-button
-						size="small"
-						variant={reviewStore.pdfFitMode === 'page' ? 'primary' : 'default'}
-						onclick={() => reviewStore.setFitMode('page')}
-					>
-						<Maximize2 size={14} />
-					</sl-button>
-				</sl-tooltip>
+				<!-- Cluster: fit (fit-to-width, fit-to-page) -->
+				<div class="flex items-center gap-1" data-toolbar-cluster="fit">
+					<sl-tooltip content="Pas op breedte">
+						<sl-button
+							size="small"
+							variant={reviewStore.pdfFitMode === 'width' ? 'primary' : 'default'}
+							onclick={() => reviewStore.setFitMode('width')}
+						>
+							<StretchHorizontal size={14} />
+						</sl-button>
+					</sl-tooltip>
+					<sl-tooltip content="Hele pagina">
+						<sl-button
+							size="small"
+							variant={reviewStore.pdfFitMode === 'page' ? 'primary' : 'default'}
+							onclick={() => reviewStore.setFitMode('page')}
+						>
+							<Maximize2 size={14} />
+						</sl-button>
+					</sl-tooltip>
+				</div>
 			</div>
 		</div>
 	{/if}
