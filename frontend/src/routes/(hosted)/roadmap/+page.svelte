@@ -24,13 +24,15 @@
 				Wat we nu bouwen, wat hierna komt en wat verder op de planning staat. Een tool voor de Wet
 				open overheid hoort zélf ook open te zijn over wat er op de planning staat.
 			</p>
-			<p class="meta">Laatst bijgewerkt: 28 april 2026</p>
+			<p class="meta">Laatst bijgewerkt: 29 april 2026</p>
 
 			<div class="callout">
 				<p>
-					<strong>Geen beloftes, wel een algemene richting</strong> Deze pagina beschrijft onze intenties, geen
-					deadlines. Volgorde en scope kunnen wijzigen op basis van feedback van reviewers en
-					pilot-organisaties. Op het moment van schrijven is de tool nog volledig nieuw en niet ingebruik, dus het kan nog alle kanten op – zolang de tool overheden maar helpt om WOO-verzoeken af te handelen. Mis je iets? Mail ons op
+					<strong>Geen beloftes, wel een algemene richting.</strong> Deze pagina beschrijft onze intenties,
+					geen deadlines. Volgorde en scope kunnen wijzigen op basis van feedback van reviewers
+					en pilot-organisaties. Op het moment van schrijven is de tool nog volledig nieuw en
+					nauwelijks in gebruik, dus het kan nog alle kanten op — zolang de tool overheden maar
+					helpt om Woo-verzoeken af te handelen. Mis je iets? Mail ons op
 					<a href="mailto:hoi@woobuddy.nl">hoi@woobuddy.nl</a>.
 				</p>
 			</div>
@@ -47,46 +49,62 @@
 			</p>
 			<ul>
 				<li>
-					<strong>Audit-log en onderbouwingsrapport.</strong> Per gelakte passage de juridische
-					grond, motivering en SHA-256-hashes ter verificatie — exporteerbaar als PDF-bijlage
-					bij het Woo-besluit. Alles wordt in de browser gegenereerd; geen documenttekst
-					verlaat je computer.
+					<strong>Anonieme reviewmodus — nul rijen in de database.</strong> De tool slaat bij
+					gebruik zonder account letterlijk niets meer op: geen documentrij, geen detectierij,
+					geen logregel met inhoud. Open je netwerk-tabblad en je ziet alleen
+					<code>POST /api/analyze</code> en <code>POST /api/export/redact-stream</code> — verder
+					niets.
+				</li>
+				<li>
+					<strong>Onderbouwingsrapport als bijlage bij het Woo-besluit.</strong> Per gelakte
+					passage de juridische grond, een Nederlandse motivering en SHA-256-hashes van het
+					originele én het gelakte bestand — zodat de ontvanger over een half jaar nog kan
+					verifiëren dat zijn PDF identiek is aan wat WOO Buddy heeft gegenereerd. Het rapport
+					wordt volledig in je browser samengesteld en is zelf ook PDF/UA-1-conform
+					(structure tree, screenreader-toegankelijk).
+				</li>
+				<li>
+					<strong>Toegankelijke PDF-export.</strong> Elke gelakte PDF heeft een taal-tag
+					(<code>nl-NL</code>), XMP-metadata, screenreader-vriendelijke alt-teksten op elke
+					redactie (<em>"Gelakt — Artikel 5.1.2e — Persoonlijke levenssfeer"</em>) en wordt
+					optioneel als PDF/A-2b geëxporteerd. Voldoet aan de digitale-toegankelijkheidseisen
+					van de overheid.
+				</li>
+				<li>
+					<strong>Publicatieklare DiWoo-bundel.</strong> Een <code>.zip</code> met gelakte PDF,
+					<code>metadata.xml</code> (TOOI), <code>metadata.json</code> (GPP-Woo) en een
+					lakkenoverzicht — klaar om te publiceren via GPP-Woo of een ander Woo-platform.
+				</li>
+				<li>
+					<strong>Open source release v0.1.0.</strong> WOO Buddy is publiek onder MIT-licentie,
+					met multi-arch Docker images op GHCR (amd64 + arm64) en upgrade-instructies in de
+					repo. Gemeenten en ministeries die volledige data-soevereiniteit willen, kunnen het
+					met één <code>docker compose up</code> op eigen infrastructuur draaien.
 				</li>
 			</ul>
 
 			<h2>Nu — waar we aan werken</h2>
 			<p>
-				De huidige focus: de basisfunctionaliteit gereed maken voor gebrui. De review-workflow werkt, de
-				detectie is goed genoeg voor proefprojecten; nu is het tijd om te testen, feedback te verzamelen, ondersteuning voor
-				meer bestandsformaten ain te voeren en de infrastructuur om publiek te kunnen lanceren.
+				De huidige focus: feedback verzamelen uit de eerste echte proefprojecten,
+				ondersteuning voor meer bestandsformaten toevoegen, en de bestandskiezer voor
+				Microsoft 365 / Google Drive operationeel krijgen.
 			</p>
 			<ul>
 				<li>
-					<strong>Productie-deployment en analytics.</strong> WOO Buddy op een stabiel publiek adres,
-					met privacy-vriendelijke statistieken (Plausible, geen cookies).
+					<strong>Meer bestandsformaten in de browser.</strong> Losse afbeeldingen,
+					<code>.docx</code>, <code>.txt</code>, <code>.zip</code>-bundels en
+					<code>.msg</code>-/e-mailbestanden — allemaal client-side geconverteerd, zodat ze je
+					browser niet verlaten.
 				</li>
 				<li>
-					<strong>Meer bestandsformaten in de browser.</strong> Losse afbeeldingen, <code>.docx</code>,
-					<code>.txt</code>, <code>.zip</code>-bundels en <code>.msg</code>-/e-mailbestanden — allemaal
-					client-side geconverteerd, zodat ze je browser niet verlaten.
+					<strong>Microsoft 365 &amp; Google Drive-bestandskiezer.</strong> Direct een document
+					uit SharePoint of Drive openen — client-side, zonder tussenstop op onze server. De
+					code staat klaar; we wachten nog op de OAuth-app-registraties.
 				</li>
 				<li>
-					<strong>Toegankelijke PDF-export.</strong> Taal-tag, XMP-metadata, alt-teksten en
-					PDF/A-2b — zodat het eindresultaat voldoet aan de digitale toegankelijkheidseisen van de
-					overheid.
-				</li>
-				<li>
-					<strong>Microsoft 365 &amp; Google Drive-bestandskiezer.</strong> Direct een document uit
-					SharePoint of Drive openen — client-side, zonder tussenstop op onze server.
-				</li>
-				<li>
-					<strong>Publicatie-klare export volgens DiWoo.</strong> Een <code>.zip</code> met gelakte
-					PDF, <code>metadata.xml</code> (DiWoo/TOOI) en een grondenoverzicht — klaar om te
-					publiceren via GPP-Woo of een ander Woo-platform.
-				</li>
-				<li>
-					<strong>Open source release.</strong> Volledig zelf-hostbaar onder MIT, voor gemeenten en
-					ministeries die data-soevereiniteit willen garanderen.
+					<strong>Decision-gate metrics op het analytics-dashboard.</strong> Privacy-vriendelijke
+					statistieken (Plausible, geen cookies) staan live; we lijnen nu de doelen en segmenten
+					uit waarmee we over zes weken evalueren of WOO Buddy aanslaat bij echte Woo-teams.
 				</li>
 			</ul>
 
