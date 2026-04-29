@@ -2,7 +2,7 @@
 	<title>Privacyverklaring — WOO Buddy</title>
 	<meta
 		name="description"
-		content="Privacyverklaring van WOO Buddy. PDF's verlaten nooit je browser. De server slaat geen documentinhoud op — alleen metadata van beslissingen."
+		content="Privacyverklaring van WOO Buddy. PDF's verlaten nooit je browser. Bij anoniem gebruik slaan we letterlijk niets op — geen documentinhoud en geen detectie-metadata."
 	/>
 	<link rel="canonical" href="https://woobuddy.nl/privacy" />
 	<meta property="og:url" content="https://woobuddy.nl/privacy" />
@@ -15,13 +15,14 @@
 	WOO Buddy is een hulpmiddel voor het lakken van Woo-documenten. Deze verklaring legt uit welke
 	gegevens we verwerken en — vooral — welke niet.
 </p>
-<p class="meta">Laatst bijgewerkt: 28 april 2026</p>
+<p class="meta">Laatst bijgewerkt: 29 april 2026</p>
 
 <div class="callout">
 	<p>
-		<strong>Samengevat:</strong> je PDF verlaat nooit je browser. De server ziet geen documentinhoud,
-		logt geen tekst en slaat geen bestanden op. We bewaren alleen metadata van beslissingen
-		(positie, type, artikel) — nooit de persoonsgegevens zelf.
+		<strong>Samengevat:</strong> je PDF verlaat nooit je browser. Bij gebruik zonder account slaan
+		we letterlijk niets op — geen documentinhoud, geen detectie-metadata, geen logregel met
+		documenttekst. De server berekent detecties in het werkgeheugen en gooit alles direct daarna
+		weg.
 	</p>
 </div>
 
@@ -44,9 +45,19 @@
 
 <h3>2.2 Detectie-metadata</h3>
 <p>
-	Wanneer je beslissingen opslaat, bewaren we per detectie: positie (bbox-coördinaten), type (bijv.
+	<strong>Zonder account (de standaard-flow):</strong> de server slaat
+	<strong>geen</strong> detectie-metadata op. Geen positie, geen type, geen artikel-referentie,
+	geen reviewstatus. Je beslissingen leven uitsluitend in het geheugen van je browser (en in
+	IndexedDB op je eigen apparaat, zodat een herlaadactie ze niet wegvaagt). Open je netwerk-tabblad
+	tijdens het reviewen en je ziet alleen <code>POST /api/analyze</code> en
+	<code>POST /api/export/redact-stream</code> — geen <code>POST /api/documents</code>, geen
+	<code>PATCH /api/detections</code>.
+</p>
+<p>
+	<strong>Met account (toekomstig, alleen als je expliciet voor opslaan kiest):</strong> wanneer je
+	besluit een sessie te bewaren, slaan we per detectie: positie (bbox-coördinaten), type (bijv.
 	BSN, naam, adres), tier, artikel-referentie en reviewstatus. We bewaren <strong>niet</strong> de
-	tekst zelf (geen <code>entity_text</code>).
+	tekst zelf (geen <code>entity_text</code>) — ook niet in deze opslag-modus.
 </p>
 
 <h3>2.3 Accountgegevens (alleen bij inloggen)</h3>
@@ -93,7 +104,14 @@
 <h2>4. Hoe lang bewaren we het?</h2>
 <ul>
 	<li><strong>Documentinhoud:</strong> niet bewaard.</li>
-	<li><strong>Detectie-metadata:</strong> zolang je het account actief is, of tot je een document verwijdert.</li>
+	<li>
+		<strong>Detectie-metadata bij anoniem gebruik:</strong> niet bewaard. Alleen in je eigen
+		browser (IndexedDB), tot jij die wist.
+	</li>
+	<li>
+		<strong>Detectie-metadata bij ingelogd gebruik met expliciete opslag:</strong> zolang je
+		account actief is, of tot je een document verwijdert.
+	</li>
 	<li><strong>Accountgegevens:</strong> tot 30 dagen na opzegging.</li>
 	<li><strong>Toegangslogs:</strong> maximaal 30 dagen.</li>
 </ul>
