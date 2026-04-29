@@ -19,6 +19,14 @@
 				eigen infrastructuur draaien.
 			</p>
 
+			<p class="mt-4 text-lg leading-relaxed text-ink-soft">
+				Sinds v0.1.0 staan kant-en-klare Docker-images publiek op GHCR, multi-arch
+				(amd64 + arm64), met upgrade-instructies in de repo. Eén
+				<code class="rounded bg-surface px-1.5 py-0.5 text-base">docker compose up</code>
+				en je gemeente of ministerie draait WOO Buddy op haar eigen Postgres — zonder
+				ons, zonder netwerkverkeer naar onze infrastructuur.
+			</p>
+
 			<div class="mt-8">
 				<a
 					href="https://github.com/jaapstronks/woobuddy"

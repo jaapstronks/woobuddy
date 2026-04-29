@@ -1,13 +1,22 @@
 <script lang="ts">
-	import { Lock, EyeOff, CircleSlash, Cloud, Accessibility, Package } from 'lucide-svelte';
+	import {
+		Lock,
+		EyeOff,
+		CircleSlash,
+		Cloud,
+		Accessibility,
+		Package,
+		FileCheck
+	} from 'lucide-svelte';
 	import { anyPickerEnabled } from '$lib/config/file-picker';
 
 	const cloudPickEnabled = anyPickerEnabled();
 
 	const chips = [
-		{ icon: Lock, label: 'Geen byte verlaat je computer' },
+		{ icon: Lock, label: 'PDF blijft in je browser, wij slaan niets op' },
 		{ icon: CircleSlash, label: 'Geen AI of LLM in de pijplijn' },
 		{ icon: EyeOff, label: 'Geen cookies, geen fingerprinting' },
+		{ icon: FileCheck, label: 'Onderbouwingsrapport als bijlage bij je besluit' },
 		{ icon: Accessibility, label: 'Geëxporteerde PDF’s zijn voorgelezen-toegankelijk' },
 		{ icon: Package, label: 'Publicatieklaar volgens de DiWoo-standaard' },
 		...(cloudPickEnabled
@@ -41,8 +50,8 @@
 		style="animation-delay: 120ms;"
 	>
 		WOO Buddy herkent BSN's, namen, adressen en andere persoonsgegevens in je
-		Woo-documenten — en helpt je ze in een paar klikken weg te lakken. Het hele
-		proces draait in je browser.
+		Woo-documenten en helpt je ze in een paar klikken weg te lakken — zonder
+		dat ook maar één regel uit je document op onze servers wordt opgeslagen.
 	</p>
 
 	<ul
