@@ -16,11 +16,11 @@
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-node": "^5.0.0",
-		"@sveltejs/kit": "^2.63.1",
+		"@sveltejs/kit": "^2.65.1",
 		"@sveltejs/vite-plugin-svelte": "^7.1.2",
-		"@tailwindcss/vite": "^4.3.0",
+		"@tailwindcss/vite": "^4.3.1",
 		"@testing-library/svelte": "^5.3.1",
-		"@types/node": "^25.9.2",
+		"@types/node": "^25.9.3",
 		"svelte": "^5.56.3",
 		"svelte-check": "^4.6.0",
 		"typescript": "^6.0.3",
@@ -33,7 +33,7 @@
 		"lucide-svelte": "^1.0.1",
 		"pdf-lib": "^1.17.1",
 		"pdfjs-dist": "^5.7.284",
-		"tailwindcss": "^4.3.0",
+		"tailwindcss": "^4.3.1",
 		"tesseract.js": "^7.0.0"
 	}
 }
