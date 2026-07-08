@@ -1,14 +1,16 @@
-"""HTTP tests for the public contact endpoint (#45 — Brevo edition).
+"""HTTP tests for the public contact endpoint (#45 — Listmonk + Scaleway TEM).
 
 `backend/app/api/leads.py` is public, unauthenticated, and fires two
-Brevo calls in a specific order:
+upstream calls in a specific order:
 
-1. `/v3/smtp/email` — always, so the operator sees the message.
-2. `/v3/contacts` — only when `newsletter_opt_in` is true.
+1. Scaleway TEM `/emails` — always, so the operator sees the message.
+2. Listmonk `/api/public/subscription` — only when `newsletter_opt_in`
+   is true.
 
-These tests fake Brevo with a tiny `_FakeAsyncClient` that records
-calls and returns canned responses — one per URL — so we can exercise
-the happy path and the error mapping for each endpoint in isolation.
+These tests fake both upstreams with a tiny `_FakeAsyncClient` that
+records calls and returns canned responses — one per URL — so we can
+exercise the happy path and the error mapping for each endpoint in
+isolation.
 """
 
 from __future__ import annotations
@@ -44,7 +46,7 @@ def _disable_rate_limiter() -> Iterator[None]:
 
 
 # ---------------------------------------------------------------------------
-# Brevo upstream fake
+# Upstream fake (Scaleway TEM + Listmonk)
 # ---------------------------------------------------------------------------
 
 
@@ -64,12 +66,12 @@ class _FakeResponse:
 class _FakeAsyncClient:
     """Records every POST and returns a canned response per URL.
 
-    leads.py issues two distinct calls (smtp + contacts). Tests set
-    per-URL responses via `responses[url] = _FakeResponse(...)`. A
-    missing entry falls back to `default_response`.
+    leads.py issues two distinct calls (TEM email + Listmonk subscribe).
+    Tests set per-URL responses via `responses[url] = _FakeResponse(...)`.
+    A missing entry falls back to `default_response`.
     """
 
-    default_response: _FakeResponse = _FakeResponse(201)
+    default_response: _FakeResponse = _FakeResponse(200)
     responses: dict[str, _FakeResponse] = {}
     raise_on_post: httpx.HTTPError | None = None
     calls: list[dict[str, Any]] = []
@@ -97,24 +99,33 @@ class _FakeAsyncClient:
         return _FakeAsyncClient.responses.get(url, _FakeAsyncClient.default_response)
 
 
-_SMTP_URL = "https://api.brevo.com/v3/smtp/email"
-_CONTACTS_URL = "https://api.brevo.com/v3/contacts"
+_TEM_REGION = "fr-par"
+_TEM_URL = (
+    "https://api.scaleway.com/transactional-email/v1alpha1/regions/"
+    f"{_TEM_REGION}/emails"
+)
+_LISTMONK_BASE = "https://listmonk.dreamkit.eu"
+_LISTMONK_URL = f"{_LISTMONK_BASE}/api/public/subscription"
+_LIST_UUID = "test-uuid-abc"
 
 
 @pytest.fixture(autouse=True)
-def _patch_brevo(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    _FakeAsyncClient.default_response = _FakeResponse(201)
+def _patch_upstreams(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    _FakeAsyncClient.default_response = _FakeResponse(200)
     _FakeAsyncClient.responses = {}
     _FakeAsyncClient.raise_on_post = None
     _FakeAsyncClient.calls = []
     monkeypatch.setattr("app.api.leads.httpx.AsyncClient", _FakeAsyncClient)
-    # The endpoint bails out on a missing key; set one so the happy
+    # The endpoint bails out on a missing secret key; set one so the happy
     # path can proceed. Empty-key behavior has a dedicated test below.
-    monkeypatch.setattr(settings, "brevo_api_key", "test-key-xyz")
-    monkeypatch.setattr(settings, "brevo_list_id", 4)
-    monkeypatch.setattr(settings, "brevo_notification_email", "ops@example.nl")
-    monkeypatch.setattr(settings, "brevo_sender_email", "noreply@example.nl")
-    monkeypatch.setattr(settings, "brevo_sender_name", "WOO Buddy")
+    monkeypatch.setattr(settings, "scaleway_secret_key", "test-key-xyz")
+    monkeypatch.setattr(settings, "scaleway_project_id", "proj-123")
+    monkeypatch.setattr(settings, "scaleway_tem_region", _TEM_REGION)
+    monkeypatch.setattr(settings, "tem_from_email", "noreply@example.nl")
+    monkeypatch.setattr(settings, "tem_from_name", "WOO Buddy")
+    monkeypatch.setattr(settings, "notification_email", "ops@example.nl")
+    monkeypatch.setattr(settings, "listmonk_url", _LISTMONK_BASE)
+    monkeypatch.setattr(settings, "listmonk_list_uuid", _LIST_UUID)
     yield
 
 
@@ -146,28 +157,28 @@ async def test_contact_only_sends_email_and_skips_list(
     assert resp.status_code == 200, resp.text
     assert resp.json() == {"ok": True}
 
-    # Exactly one upstream call — the transactional email. No /v3/contacts.
+    # Exactly one upstream call — the transactional email. No subscribe.
     assert len(_FakeAsyncClient.calls) == 1
-    smtp = _calls_to(_SMTP_URL)
-    assert len(smtp) == 1
-    assert _calls_to(_CONTACTS_URL) == []
+    tem = _calls_to(_TEM_URL)
+    assert len(tem) == 1
+    assert _calls_to(_LISTMONK_URL) == []
 
-    payload = smtp[0]["json"]
+    payload = tem[0]["json"]
     assert payload["to"] == [{"email": "ops@example.nl"}]
-    # Reply-To is the submitter's normalized address so the inbox
-    # reply button Just Works.
-    assert payload["replyTo"]["email"] == "jaap@example.com"
-    assert payload["replyTo"]["name"] == "Jaap Stronks"
-    assert payload["sender"] == {
-        "email": "noreply@example.nl",
-        "name": "WOO Buddy",
-    }
+    assert payload["from"] == {"email": "noreply@example.nl", "name": "WOO Buddy"}
+    assert payload["project_id"] == "proj-123"
+    # Reply-To is the submitter's normalized address (with name) so the
+    # inbox reply button Just Works.
+    assert payload["additional_headers"] == [
+        {"key": "Reply-To", "value": '"Jaap Stronks" <jaap@example.com>'}
+    ]
     assert "Jaap Stronks" in payload["subject"]
-    assert "Interesse in de pilot." in payload["htmlContent"]
-    assert "Nee" in payload["htmlContent"]
+    assert "Interesse in de pilot." in payload["html"]
+    assert "Interesse in de pilot." in payload["text"]
+    assert "Nee" in payload["html"]
 
-    # API key goes through as a header, never as a query param.
-    assert smtp[0]["headers"]["api-key"] == "test-key-xyz"
+    # Secret key goes through as the X-Auth-Token header, never a query param.
+    assert tem[0]["headers"]["X-Auth-Token"] == "test-key-xyz"
 
 
 # ---------------------------------------------------------------------------
@@ -189,26 +200,23 @@ async def test_newsletter_opt_in_also_subscribes(client: AsyncClient) -> None:
 
     assert resp.status_code == 200
 
-    # Two calls, in order: smtp first, then contacts.
+    # Two calls, in order: TEM email first, then Listmonk subscribe.
     assert [c["url"] for c in _FakeAsyncClient.calls] == [
-        _SMTP_URL,
-        _CONTACTS_URL,
+        _TEM_URL,
+        _LISTMONK_URL,
     ]
 
-    contacts_payload = _calls_to(_CONTACTS_URL)[0]["json"]
-    assert contacts_payload["email"] == "a@b.nl"
-    assert contacts_payload["listIds"] == [4]
-    assert contacts_payload["updateEnabled"] is True
-    attrs = contacts_payload["attributes"]
-    assert attrs["SOURCE"] == "landing"
-    assert attrs["FIRSTNAME"] == "Ada"
+    sub_payload = _calls_to(_LISTMONK_URL)[0]["json"]
+    assert sub_payload["email"] == "a@b.nl"
+    assert sub_payload["name"] == "Ada"
+    assert sub_payload["list_uuids"] == [_LIST_UUID]
 
 
 @pytest.mark.asyncio
-async def test_email_only_payload_omits_optional_attributes(
+async def test_subscribe_payload_collapses_blank_name(
     client: AsyncClient,
 ) -> None:
-    """Blank optional fields must collapse to missing keys, not empty strings."""
+    """Blank optional name must collapse to an empty string, not whitespace."""
     resp = await client.post(
         "/api/leads",
         json={
@@ -222,11 +230,9 @@ async def test_email_only_payload_omits_optional_attributes(
     )
 
     assert resp.status_code == 200
-    attrs = _calls_to(_CONTACTS_URL)[0]["json"]["attributes"]
-    assert "FIRSTNAME" not in attrs
-    assert "COMPANY" not in attrs
-    assert "MESSAGE" not in attrs
-    assert attrs["SOURCE"] == "post-export"
+    sub_payload = _calls_to(_LISTMONK_URL)[0]["json"]
+    assert sub_payload["name"] == ""
+    assert sub_payload["list_uuids"] == [_LIST_UUID]
 
 
 @pytest.mark.asyncio
@@ -237,14 +243,14 @@ async def test_newsletter_opt_in_defaults_to_false(client: AsyncClient) -> None:
         json={"email": "a@b.nl", "source": "landing"},
     )
     assert resp.status_code == 200
-    assert _calls_to(_CONTACTS_URL) == []
+    assert _calls_to(_LISTMONK_URL) == []
 
 
 @pytest.mark.asyncio
-async def test_204_from_brevo_list_is_success(client: AsyncClient) -> None:
-    """Brevo returns 204 when `updateEnabled: true` updates an existing
-    contact. That is a normal success path, not an error."""
-    _FakeAsyncClient.responses = {_CONTACTS_URL: _FakeResponse(204)}
+async def test_2xx_from_listmonk_is_success(client: AsyncClient) -> None:
+    """Any 2xx from the public subscription endpoint is success (it is
+    idempotent for an already-subscribed address)."""
+    _FakeAsyncClient.responses = {_LISTMONK_URL: _FakeResponse(200, {"data": True})}
 
     resp = await client.post(
         "/api/leads",
@@ -303,15 +309,15 @@ async def test_invalid_source_422(client: AsyncClient) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Brevo upstream error mapping
+# Upstream error mapping
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_missing_api_key_returns_500_without_network_call(
+async def test_missing_secret_key_returns_500_without_network_call(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(settings, "brevo_api_key", "")
+    monkeypatch.setattr(settings, "scaleway_secret_key", "")
 
     resp = await client.post(
         "/api/leads",
@@ -322,14 +328,12 @@ async def test_missing_api_key_returns_500_without_network_call(
 
 
 @pytest.mark.asyncio
-async def test_duplicate_parameter_is_silent_success(client: AsyncClient) -> None:
-    """A 400 with code=duplicate_parameter on the list call must look the
-    same as a fresh insert so the form cannot be used to probe
-    membership."""
+async def test_listmonk_4xx_is_silent_success(client: AsyncClient) -> None:
+    """A 4xx on the subscribe call must look the same as a fresh subscribe
+    so the form cannot be used to probe list membership — and the operator
+    already got the notification email."""
     _FakeAsyncClient.responses = {
-        _CONTACTS_URL: _FakeResponse(
-            400, {"code": "duplicate_parameter", "message": "Contact already exists"}
-        )
+        _LISTMONK_URL: _FakeResponse(400, {"message": "already exists"})
     }
 
     resp = await client.post(
@@ -340,11 +344,9 @@ async def test_duplicate_parameter_is_silent_success(client: AsyncClient) -> Non
 
 
 @pytest.mark.asyncio
-async def test_generic_400_from_contacts_becomes_502(client: AsyncClient) -> None:
+async def test_listmonk_5xx_becomes_502(client: AsyncClient) -> None:
     _FakeAsyncClient.responses = {
-        _CONTACTS_URL: _FakeResponse(
-            400, {"code": "invalid_parameter", "message": "something else"}
-        )
+        _LISTMONK_URL: _FakeResponse(500, {"message": "boom"})
     }
 
     resp = await client.post(
@@ -356,14 +358,14 @@ async def test_generic_400_from_contacts_becomes_502(client: AsyncClient) -> Non
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("auth_code", [401, 403])
-async def test_smtp_auth_error_returns_500(
+async def test_tem_auth_error_returns_500(
     client: AsyncClient, auth_code: int
 ) -> None:
-    """Revoked / misconfigured API key on the transactional endpoint.
+    """Revoked / misconfigured secret key on the transactional endpoint.
     We explicitly do NOT surface 401/403 so the form can't distinguish
     auth failures from other outages and leak account state."""
     _FakeAsyncClient.responses = {
-        _SMTP_URL: _FakeResponse(auth_code, {"code": "unauthorized"})
+        _TEM_URL: _FakeResponse(auth_code, {"message": "unauthorized"})
     }
 
     resp = await client.post(
@@ -371,14 +373,14 @@ async def test_smtp_auth_error_returns_500(
         json={"email": "a@b.nl", "source": "landing"},
     )
     assert resp.status_code == 500
-    # Contacts call must not fire after the SMTP call failed.
-    assert _calls_to(_CONTACTS_URL) == []
+    # Subscribe call must not fire after the TEM call failed.
+    assert _calls_to(_LISTMONK_URL) == []
 
 
 @pytest.mark.asyncio
-async def test_smtp_rate_limit_returns_503(client: AsyncClient) -> None:
+async def test_tem_rate_limit_returns_503(client: AsyncClient) -> None:
     _FakeAsyncClient.responses = {
-        _SMTP_URL: _FakeResponse(429, {"code": "too_many_requests"})
+        _TEM_URL: _FakeResponse(429, {"message": "too_many_requests"})
     }
 
     resp = await client.post(
@@ -389,9 +391,9 @@ async def test_smtp_rate_limit_returns_503(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_smtp_5xx_returns_502(client: AsyncClient) -> None:
+async def test_tem_5xx_returns_502(client: AsyncClient) -> None:
     _FakeAsyncClient.responses = {
-        _SMTP_URL: _FakeResponse(500, {"code": "internal_error"})
+        _TEM_URL: _FakeResponse(500, {"message": "internal_error"})
     }
 
     resp = await client.post(
@@ -402,7 +404,7 @@ async def test_smtp_5xx_returns_502(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_smtp_transport_error_returns_502(client: AsyncClient) -> None:
+async def test_tem_transport_error_returns_502(client: AsyncClient) -> None:
     """Network-level failure (DNS, timeout, connection refused) before
     we even get a response object."""
     _FakeAsyncClient.raise_on_post = httpx.ConnectError("boom")
@@ -415,10 +417,10 @@ async def test_smtp_transport_error_returns_502(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_smtp_non_json_error_body_still_502(client: AsyncClient) -> None:
-    """Brevo occasionally returns HTML error pages. The JSON probe must
-    swallow ValueError without crashing the handler."""
-    _FakeAsyncClient.responses = {_SMTP_URL: _FakeResponse(502, json_body=None)}
+async def test_tem_non_json_error_body_still_502(client: AsyncClient) -> None:
+    """A non-JSON error body must not crash the handler (the code never
+    parses the body — any non-2xx maps deterministically)."""
+    _FakeAsyncClient.responses = {_TEM_URL: _FakeResponse(502, json_body=None)}
 
     resp = await client.post(
         "/api/leads",

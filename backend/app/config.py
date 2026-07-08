@@ -28,18 +28,34 @@ class Settings(BaseSettings):
     # in local development if the frontend calls the backend directly.
     proxy_shared_secret: str = ""
 
-    # Brevo (#45 — public lead capture). Every form submission fires a
-    # transactional email to `brevo_notification_email` so the operator
-    # actually reads the message. Newsletter subscription is a separate,
-    # optional opt-in: when the submitter ticks the checkbox we also
-    # push the contact into Brevo list `brevo_list_id`. Leave the API key
-    # empty in local development — the endpoint will then return a generic
-    # 500 so the form shows a retry rather than silently dropping signups.
-    brevo_api_key: str = ""
-    brevo_list_id: int = 4
-    brevo_notification_email: str = "jaapstronks@gmail.com"
-    brevo_sender_email: str = "noreply@woobuddy.nl"
-    brevo_sender_name: str = "WOO Buddy"
+    # Lead capture (#45 — public form). Migrated from Brevo to Dreamkit's
+    # own infra (Listmonk + Scaleway TEM) on 2026-07-08. Every submission
+    # fires a transactional email to `notification_email` via Scaleway TEM
+    # so the operator reads the message. Newsletter subscription is a
+    # separate, optional opt-in: when the submitter ticks the checkbox we
+    # also subscribe the contact to the Listmonk list `listmonk_list_uuid`.
+
+    # Scaleway TEM (transactional email). Auth is the Scaleway secret key
+    # (sent as `X-Auth-Token`); `scaleway_project_id` scopes the send. The
+    # From-address must sit on a verified TEM sending domain — the shared
+    # `mail.dreamkit.eu` works out of the box. Switch `tem_from_email` to a
+    # verified `woobuddy.nl` address if own-domain branding is wanted (needs
+    # SPF/DKIM set up in Scaleway first). Leave `scaleway_secret_key` empty in
+    # local dev — the endpoint then returns a generic 500 so the form shows a
+    # retry rather than silently dropping signups.
+    scaleway_secret_key: str = ""
+    scaleway_project_id: str = ""
+    scaleway_tem_region: str = "fr-par"
+    tem_from_email: str = "noreply@mail.dreamkit.eu"
+    tem_from_name: str = "WOO Buddy"
+    notification_email: str = "jaapstronks@gmail.com"
+
+    # Listmonk (self-hosted, EU) — the optional newsletter list. No API token
+    # is needed: we use the public subscription endpoint, and a double-opt-in
+    # list makes Listmonk send the confirmation mail itself. Leave
+    # `listmonk_list_uuid` empty to disable the newsletter subscribe entirely.
+    listmonk_url: str = "https://listmonk.dreamkit.eu"
+    listmonk_list_uuid: str = ""
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
