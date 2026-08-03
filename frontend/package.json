@@ -32,7 +32,7 @@
 		"fflate": "^0.8.3",
 		"lucide-svelte": "^1.0.1",
 		"pdf-lib": "^1.17.1",
-		"pdfjs-dist": "^5.7.284",
+		"pdfjs-dist": "^6.2.108",
 		"tailwindcss": "^4.3.3",
 		"tesseract.js": "^7.0.0"
 	}
