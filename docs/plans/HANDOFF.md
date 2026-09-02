@@ -1,64 +1,82 @@
-# Uitvoer: #72 Leadformulier op woobuddy.nl repareren (Listmonk-branch landen + Scaleway TEM via CLI)
+# Review en merge: PR #100 — leadformulier op woobuddy.nl repareren (#72)
 
-**Model: Opus.** Modelkeuze: uitvoerrepo, brief is uitvoeringsklaar met een gemeten
-oorzaak en een toetsbaar "klaar als"; geen signalen. De enige beslissing (notificatie-adres,
-afzenderdomein) staat expliciet in de brief onder "Jaap beslist"; alles daarbuiten is
-uitvoerwerk.
+**Model: Opus.** Modelkeuze: uitvoerrepo, geen signalen. De PR is uitvoerwerk met een
+gemeten oorzaak en een toetsbaar acceptatiecriterium; de enige beslissing (afzenderdomein,
+notificatie-adres) is al genomen. Escaleer naar Fable alleen als de review een
+ontwerpvraag opgooit die de brief niet beantwoordt.
 
 ## Stand bij vertrek
 
-2026-09-02, avond. PR #99 (backlog naar `docs/plans/`, briefs #66–#71) is gemerged;
-`origin/main` staat op de squash-commit daarvan. Claimbord leeg. **Productie-bevinding
-van vanavond:** `POST /api/leads` op woobuddy.nl geeft een 500 omdat de api-container
-geen mailconfig krijgt (alle `BREVO_*` leeg, prod-compose geeft alleen `DATABASE_URL`
-door). Jaap: verhuizen naar Scaleway TEM, inrichten mag via `scw`. Alles staat in
-`briefs/72-lead-form-broken-in-production.md`. `feat/brevo-to-listmonk` (c1ee83d) staat
-lokaal op de Mac, ongepusht, 20+ commits achter main. Twee oudere beslissingen wachten nog
-op Jaap (motivatieveld #66, PDF/A #67).
+2026-09-02, avond. **PR #100 wacht op Jaaps review en merge:**
+https://github.com/jaapstronks/woobuddy/pull/100 — `feat/brevo-to-listmonk`, gerebased op
+`main`, 13 bestanden. Frontend-CI groen; backend-CI stond nog te draaien bij vertrek.
+
+Wat de PR doet: Listmonk + Scaleway TEM landen, de mailconfig via expliciete
+`environment:`-regels in `docker-compose.prod.yml` naar de api-container krijgen,
+`deploy.sh` die sleutels laten schrijven, een CR/LF-filter op `name`/`organization` vóór
+Subject en Reply-To (vier nieuwe tests), en twee deploy-gates plus een startup-error zodat
+een lege mailsleutel niet meer stilletjes kan shippen.
+
+**Al gedaan buiten de repo:** Scaleway IAM-applicatie `woobuddy-leads`
+(`982fc6f1-fe35-4222-93f1-4d99da9cdcef`), policy `woobuddy-leads-tem` met
+`TransactionalEmailFullAccess` gescoped op alleen het Bolster-project, API-key
+`SCW8VR5ZHG62XET92G4M`. Rechtstreeks tegen de TEM-API getest: HTTP 200, mail verstuurd
+naar jaap@jaapstronks.nl. De secret staat als letterlijke waarde in de project-root `.env`
+(gitignored), samen met project-id, afzender en de Listmonk-lijst-UUID.
+
+Jaaps beslissingen deze sessie: notificatie-adres `jaap@jaapstronks.nl` (niet meer
+jaapstronks@gmail.com — ook vastgelegd in `~/.claude/CLAUDE.md`), afzender voorlopig
+`noreply@mail.dreamkit.eu`. #66 en #67 zijn bewust gesnoozed.
 
 ## Opdracht
 
-1. `git pull`, lees `briefs/72-lead-form-broken-in-production.md` integraal. Claim #72 op het
-   claimbord in `TODO.md` (`#72 — @mbp — feat/brevo-to-listmonk — klaar als: …`).
-2. `git checkout feat/brevo-to-listmonk && git rebase origin/main`. Los conflicten op (de
-   branch raakt `leads.py`, `config.py`, `schemas.py`, `client.ts`, `.env.example`,
-   `test_leads_api.py`). `pytest` groen.
-3. Drie scanpunten op de branch: (a) `docker-compose.prod.yml` § `api` krijgt
-   `env_file: .env`; `deploy/deploy.sh` schrijft de mailsleutels naast `DBASE_PASSWORD`;
-   (b) CR/LF-filter op `name`/`organization` vóór ze in een mailheader gaan (test erbij);
-   (c) Brevo-narratie uit `leads.py` en de `#45`-docstring.
-4. Fail-loud: startup-warning bij lege `scaleway_secret_key` buiten dev, en een smoke-check
-   in `deploy/install.sh` die faalt als de mailconfig ontbreekt.
-5. Scaleway via CLI, profiel `bolster` (stappen in de brief): IAM-applicatie + policy +
-   API-key → 1Password (vault Bolster). Afzender voorlopig `noreply@mail.dreamkit.eu`
-   (al geverifieerd). Listmonk-lijst-UUID uit de Listmonk-admin.
-6. Push, PR openen (`feat(leads): migrate lead form to Listmonk + Scaleway TEM and wire
-   prod mail config`, template uit CLAUDE.md, < 400 regels waar mogelijk; de branch is al
-   ~250 regels, dus splits de compose/deploy-wijziging af als het boven de 400 komt).
-   `claude-notify-pr` afvuren. **Merge niet zelf.**
-7. Na Jaaps merge (of met zijn akkoord in dezelfde sessie): `deploy/deploy.sh` met de
-   nieuwe `.env`-sleutels, dan één echte testinzending → 200 en mail in
-   `NOTIFICATION_EMAIL`. Acceptatiecriteria in de brief afvinken.
-8. **Overschrijf dit bestand** met de review-en-merge-handoff voor jouw PR (model per
-   `werkwijze` § Modelkeuze per sessie; default Opus, `Modelkeuze:`-regel eronder) en sluit
-   af met de sluitregel.
+1. `git pull`. Check `gh pr checks 100`; beide suites moeten groen zijn. Let op: de
+   backend-suite kent één bekende faal op machines mét Ghostscript
+   (`test_empty_redactions_returns_unmodified`, zie #67) — die telt niet mee.
+2. Review PR #100 tegen `briefs/72-lead-form-broken-in-production.md`. Kijk specifiek naar
+   het CR/LF-filter (`_clean(header_safe=True)` in `leads.py`) en naar de twee gates in
+   `deploy/install.sh` — die zijn de hele bestaansreden van de brief.
+3. Merge (squash) als het klopt. Branch wordt automatisch verwijderd.
+4. **Deploy en verifieer.** `op run --env-file=.env -- ./deploy/deploy.sh` vanuit de
+   repo-root. Daarna één echte inzending via het formulier op woobuddy.nl: verwacht een
+   200 en een notificatiemail op jaap@jaapstronks.nl. Vink dan de drie
+   acceptatiecriteria in de brief af.
+5. Toets de gate één keer echt: maak `SCALEWAY_SECRET_KEY` in de project-root `.env`
+   tijdelijk leeg en bevestig dat `deploy.sh` weigert te starten. Zet 'm daarna terug.
+6. Sluit #72 af: brief naar `docs/plans/done/`, regel in `done/register.md`, item uit
+   TODO.md naar _Recently done_, claimbord leegmaken. Draai daarna
+   `merge-housekeeping`.
+7. **Losse eindjes voor Jaap** (niet blokkerend voor de merge):
+   - `op` is uitgelogd (`account is not signed in`), dus de Scaleway-secret staat als
+     platte waarde in de project-root `.env` in plaats van in 1Password. Na `op signin`:
+     item aanmaken in vault Bolster en de regel vervangen door een `op://`-referentie.
+     `deploy/README.md` beschrijft de vorm.
+   - `~/.claude/CLAUDE.md` wordt niet gesynct naar dev-server-1 (allowlist-`.gitignore`
+     dekt alleen `skills/`, `commands/`, `bin/`). Het nieuwe mailadres-blok staat dus
+     alleen op de Mac.
+8. **Overschrijf dit bestand** met de handoff voor het volgende werk (model per
+   `werkwijze` § Modelkeuze per sessie, met een `Modelkeuze:`-regel eronder) en sluit af
+   met de sluitregel.
 
 ## Doorgeefblok
 
-- **#68** (landingspagina zonder Shoelace, Nederlandse leadform-fouten): delegeerbaar,
-  volgende na #72. Let op: #72 raakt `client.ts`; #68 bouwt daar de `detail`-parsing op.
+- **#68** (landingspagina zonder Shoelace, Nederlandse leadform-fouten): eerstvolgende
+  uitvoeritem. #72 raakte `client.ts` alleen in een docstring, dus #68 kan er direct op
+  bouwen.
 - **#66** (P0) zodra Jaap het motivatieveld beslist heeft; **#67** zodra PDF/A beslist is.
+  Beide bewust gesnoozed op 2026-09-02.
 - **#71** deel "Now" (CI-stappen + CONTRIBUTING gelijktrekken) en **#63** zijn klein en
   direct delegeerbaar.
 - Dependabot: `pdfjs-dist`-high (#92); #97/#98 checken.
+- Losse eind: `noreply@woobuddy.nl` als TEM-domein inrichten vraagt SPF/DKIM/MX bij
+  TransIP. Recept staat in `deploy/README.md`; verdient een eigen nummer als het gebeurt.
 
 ## Terugkeer-check
 
-- [ ] Jaap: `NOTIFICATION_EMAIL` voor leads, en afzender op `mail.dreamkit.eu` laten of
-      `woobuddy.nl` als TEM-domein inrichten? (#72)
-- [ ] Jaap: motivatieveld houden of schrappen? (#66)
-- [ ] Jaap: PDF/A-2b wel of niet? (#67)
+- [ ] Jaap: motivatieveld houden of schrappen? (#66) — gesnoozed 2026-09-02
+- [ ] Jaap: PDF/A-2b wel of niet? (#67) — gesnoozed 2026-09-02
 - [ ] Jaap: Notion-database "Woobuddy Todos" handmatig verwijderen (404 via de koppeling).
+- [ ] Jaap: `op signin`, daarna de Scaleway-secret naar 1Password (vault Bolster).
 
 ## Extra van Jaap
 
