@@ -1,7 +1,7 @@
-"""Public contact form (#45 — Listmonk + Scaleway TEM edition).
+"""Public contact form.
 
-The GTM plan launches WOO Buddy without auth, so this endpoint is our
-only way for interested visitors to reach us. A visitor submits
+WOO Buddy launches without auth, so this endpoint is the only way for
+interested visitors to reach us. A visitor submits
 `{email, source, newsletter_opt_in}` (plus optional name / organization
 / message). Two things can happen:
 
@@ -14,9 +14,8 @@ only way for interested visitors to reach us. A visitor submits
    subscription endpoint. A double-opt-in list makes Listmonk send the
    confirmation mail itself.
 
-Migrated from Brevo to Dreamkit's own EU infra 2026-07-08. Listmonk is the
-system of record for the audience list; there is no dual-write to Postgres,
-no CSV export, no `leads` table.
+Listmonk is the system of record for the audience list; there is no
+dual-write to Postgres, no CSV export, no `leads` table.
 
 Design notes:
 
@@ -61,11 +60,28 @@ _MAX_MESSAGE_LEN = 2000
 _HTTP_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 
 
-def _clean(value: str | None, *, max_len: int) -> str | None:
-    """Trim whitespace, enforce max length, collapse blanks to None."""
+# Anything that ends up in a mail header (Subject, Reply-To) must not carry
+# control characters. A bare CR/LF in `name` or `organization` would let a
+# submitter terminate our header and append their own — a Bcc, say — to the
+# notification mail. Double quotes and backslashes go too: the display name
+# in Reply-To is wrapped in quotes, so an unescaped one breaks the address
+# out of its quoted string.
+_HEADER_UNSAFE_RE = re.compile(r'[\x00-\x1f\x7f"\\]+')
+
+
+def _clean(value: str | None, *, max_len: int, header_safe: bool = False) -> str | None:
+    """Trim whitespace, enforce max length, collapse blanks to None.
+
+    With `header_safe=True` every control character, double quote and
+    backslash collapses to a single space first, so the result is safe to
+    interpolate into a mail header. Truncation happens last, so the cap
+    still holds after substitution.
+    """
     if value is None:
         return None
     stripped = value.strip()
+    if header_safe:
+        stripped = _HEADER_UNSAFE_RE.sub(" ", stripped).strip()
     if not stripped:
         return None
     return stripped[:max_len]
@@ -94,12 +110,12 @@ def _build_listmonk_payload(email: str, data: LeadCreate) -> dict[str, Any]:
     """Shape our form fields into Listmonk's public-subscription payload.
 
     Only called when the submitter opts in to the newsletter. Listmonk
-    segments by list, not by attribute-at-send, so the Brevo attributes
-    (SOURCE / COMPANY / MESSAGE) are intentionally dropped — the
-    transactional email already carries the full form contents to the
-    operator, and the list only needs an address to subscribe.
+    segments by list, not by attribute-at-send, so source / organization /
+    message are deliberately not sent along: the transactional email
+    already carries the full form contents to the operator, and the list
+    only needs an address to subscribe.
     """
-    name = _clean(data.name, max_len=_MAX_NAME_LEN)
+    name = _clean(data.name, max_len=_MAX_NAME_LEN, header_safe=True)
     return {
         "email": email,
         "name": name or "",
@@ -114,8 +130,11 @@ def _build_tem_payload(email: str, data: LeadCreate) -> dict[str, Any]:
     a `Reply-To` header set to the submitter's address, so hitting reply
     in their inbox just works.
     """
-    name = _clean(data.name, max_len=_MAX_NAME_LEN)
-    organization = _clean(data.organization, max_len=_MAX_ORG_LEN)
+    # `name` and `organization` reach the Subject and Reply-To headers, so
+    # they are cleaned header-safe. `message` only ever lands in the body,
+    # HTML-escaped and rendered `pre-wrap`, so its newlines stay meaningful.
+    name = _clean(data.name, max_len=_MAX_NAME_LEN, header_safe=True)
+    organization = _clean(data.organization, max_len=_MAX_ORG_LEN, header_safe=True)
     message = _clean(data.message, max_len=_MAX_MESSAGE_LEN)
 
     rows: list[tuple[str, str]] = [

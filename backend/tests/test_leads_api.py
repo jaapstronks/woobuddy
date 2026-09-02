@@ -1,4 +1,4 @@
-"""HTTP tests for the public contact endpoint (#45 — Listmonk + Scaleway TEM).
+"""HTTP tests for the public contact endpoint (Listmonk + Scaleway TEM).
 
 `backend/app/api/leads.py` is public, unauthenticated, and fires two
 upstream calls in a specific order:
@@ -464,3 +464,111 @@ async def test_email_and_name_never_appear_in_logs(
     assert secret_name not in combined
     assert secret_org not in combined
     assert secret_message not in combined
+
+
+# ---------------------------------------------------------------------------
+# Header injection (#72)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_crlf_in_name_cannot_inject_a_mail_header(
+    client: AsyncClient,
+) -> None:
+    """A newline in `name` must not reach Subject or Reply-To.
+
+    `name` is interpolated into both headers. Without a filter, a
+    submitter could terminate the header and append their own — a Bcc
+    that quietly copies every lead somewhere else, say.
+    """
+    resp = await client.post(
+        "/api/leads",
+        json={
+            "email": "attacker@example.nl",
+            "name": "Ada\r\nBcc: exfil@evil.example\r\nX-Injected: 1",
+            "source": "landing",
+            "newsletter_opt_in": False,
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    payload = _calls_to(_TEM_URL)[0]["json"]
+
+    reply_to = payload["additional_headers"][0]["value"]
+    subject = payload["subject"]
+
+    for field in (reply_to, subject):
+        assert "\r" not in field
+        assert "\n" not in field
+    # The words survive (we neutralize rather than truncate), but they sit
+    # on one line inside the quoted display name, so they are no longer
+    # headers — just text.
+    assert reply_to == '"Ada Bcc: exfil@evil.example X-Injected: 1" <attacker@example.nl>'
+    assert "Bcc: exfil@evil.example" in subject
+    # Exactly one quoted display name — an unescaped quote in `name` would
+    # otherwise let the submitter close it early.
+    assert reply_to.count('"') == 2
+
+
+@pytest.mark.asyncio
+async def test_quotes_in_name_do_not_break_the_reply_to_display_name(
+    client: AsyncClient,
+) -> None:
+    resp = await client.post(
+        "/api/leads",
+        json={
+            "email": "a@b.nl",
+            "name": 'Ada" <root@evil.example> "',
+            "source": "landing",
+            "newsletter_opt_in": False,
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    reply_to = _calls_to(_TEM_URL)[0]["json"]["additional_headers"][0]["value"]
+    assert reply_to.count('"') == 2
+    assert reply_to.endswith("<a@b.nl>")
+    assert "root@evil.example" not in reply_to.split("<")[-1]
+
+
+@pytest.mark.asyncio
+async def test_crlf_in_organization_is_stripped_from_the_subject(
+    client: AsyncClient,
+) -> None:
+    """`organization` reaches the Subject when no name is given."""
+    resp = await client.post(
+        "/api/leads",
+        json={
+            "email": "a@b.nl",
+            "organization": "Gemeente\nSubject: hijacked",
+            "source": "landing",
+            "newsletter_opt_in": False,
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    subject = _calls_to(_TEM_URL)[0]["json"]["subject"]
+    assert "\n" not in subject
+    assert "\r" not in subject
+
+
+@pytest.mark.asyncio
+async def test_newlines_in_message_are_preserved(client: AsyncClient) -> None:
+    """The body is not a header: a multi-line message must stay multi-line.
+
+    Guards the header filter against over-reach — `message` is escaped and
+    rendered `pre-wrap`, so its newlines carry meaning.
+    """
+    resp = await client.post(
+        "/api/leads",
+        json={
+            "email": "a@b.nl",
+            "message": "Regel een.\nRegel twee.",
+            "source": "landing",
+            "newsletter_opt_in": False,
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    payload = _calls_to(_TEM_URL)[0]["json"]
+    assert "Regel een.\nRegel twee." in payload["text"]

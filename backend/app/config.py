@@ -10,6 +10,12 @@ class Settings(BaseSettings):
     local LLM pass back, start from `docs/reference/llm-revival.md`.
     """
 
+    # Deployment environment. "development" (the default) keeps optional
+    # integrations quiet when they are unconfigured; anything else means a
+    # real deployment, where a missing mail key is a misconfiguration worth
+    # shouting about at startup. Set ENVIRONMENT=production on the VPS.
+    environment: str = "development"
+
     # Database
     database_url: str = "postgresql+asyncpg://woobuddy:woobuddy@localhost:5432/woobuddy"
 
@@ -28,12 +34,11 @@ class Settings(BaseSettings):
     # in local development if the frontend calls the backend directly.
     proxy_shared_secret: str = ""
 
-    # Lead capture (#45 — public form). Migrated from Brevo to Dreamkit's
-    # own infra (Listmonk + Scaleway TEM) on 2026-07-08. Every submission
-    # fires a transactional email to `notification_email` via Scaleway TEM
-    # so the operator reads the message. Newsletter subscription is a
-    # separate, optional opt-in: when the submitter ticks the checkbox we
-    # also subscribe the contact to the Listmonk list `listmonk_list_uuid`.
+    # Lead capture (public contact form). Every submission fires a
+    # transactional email to `notification_email` via Scaleway TEM so the
+    # operator reads the message. Newsletter subscription is a separate,
+    # optional opt-in: when the submitter ticks the checkbox we also
+    # subscribe the contact to the Listmonk list `listmonk_list_uuid`.
 
     # Scaleway TEM (transactional email). Auth is the Scaleway secret key
     # (sent as `X-Auth-Token`); `scaleway_project_id` scopes the send. The
@@ -48,7 +53,7 @@ class Settings(BaseSettings):
     scaleway_tem_region: str = "fr-par"
     tem_from_email: str = "noreply@mail.dreamkit.eu"
     tem_from_name: str = "WOO Buddy"
-    notification_email: str = "jaapstronks@gmail.com"
+    notification_email: str = "jaap@jaapstronks.nl"
 
     # Listmonk (self-hosted, EU) — the optional newsletter list. No API token
     # is needed: we use the public subscription endpoint, and a double-opt-in

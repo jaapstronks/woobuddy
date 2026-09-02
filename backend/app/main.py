@@ -136,6 +136,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     except Exception:
         logger.warning("whitelist_engine.init_failed", reason="will_lazy_init")
 
+    # Lead capture needs a Scaleway TEM key to send the notification mail.
+    # #72: it was missing in production for months and the only symptom was
+    # a 500 the visitor saw and nobody else did. An empty key in a real
+    # deployment is a misconfiguration, so say so loudly at boot; in local
+    # development it is the expected state and stays at debug volume.
+    if not settings.scaleway_secret_key:
+        if settings.environment == "development":
+            logger.info("leads.mail_disabled", reason="no_scaleway_secret_key")
+        else:
+            logger.error(
+                "leads.mail_misconfigured",
+                environment=settings.environment,
+                reason="scaleway_secret_key_empty",
+                impact="contact form returns 500 for every submission",
+            )
+
     yield
 
     await engine.dispose()
@@ -177,8 +193,17 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:
-        """Advisory health endpoint. Always returns 200."""
-        return {"status": "ok"}
+        """Advisory health endpoint. Always returns 200.
+
+        `lead_mail` reports whether the contact form can actually send.
+        It carries no secret — only "is a key present" — so it is safe to
+        expose, and it gives the deploy script something to assert against
+        (#72) instead of waiting for a visitor to hit the 500.
+        """
+        return {
+            "status": "ok",
+            "lead_mail": "configured" if settings.scaleway_secret_key else "missing",
+        }
 
     return app
 
