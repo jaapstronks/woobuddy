@@ -19,7 +19,8 @@
 		isPickerEnabled,
 		type PickerProvider
 	} from '$lib/config/file-picker';
-	import { pickFromProvider, PickerError, trackPicker } from '$lib/services/file-picker';
+	import { pickFromProvider, PickerError } from '$lib/services/file-picker';
+	import { track } from '$lib/analytics/plausible';
 
 	let {
 		onfile,
@@ -70,7 +71,7 @@
 			totalBytes: null,
 			message: null
 		};
-		trackPicker('picker.launched', provider);
+		track('picker_launched', { provider });
 
 		try {
 			const file = await pickFromProvider(provider, {
@@ -81,12 +82,12 @@
 					phase = { ...phase, loadedBytes: loaded, totalBytes: total };
 				}
 			});
-			trackPicker('picker.completed', provider);
+			track('picker_completed', { provider });
 			resetPhase();
 			onfile(file);
 		} catch (e) {
 			if (e instanceof PickerError && e.kind === 'cancelled') {
-				trackPicker('picker.cancelled', provider);
+				track('picker_cancelled', { provider });
 				resetPhase();
 				return;
 			}

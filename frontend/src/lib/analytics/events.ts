@@ -42,8 +42,21 @@ export type LeadCapturedProps = {
 	newsletter_opt_in: boolean;
 };
 
+export type PickerProps = {
+	/** Which cloud provider the picker was opened for. Never a tenant, file or item id. */
+	provider: 'microsoft' | 'google';
+};
+
 export type PlausibleEventProps = {
 	document_converted: DocumentConvertedProps;
+	/**
+	 * #51 — cloud file picker funnel (open → picked+downloaded, or
+	 * cancelled). Until #68 these fired straight at the global Plausible function
+	 * from the picker module, bypassing this registry.
+	 */
+	picker_launched: PickerProps;
+	picker_completed: PickerProps;
+	picker_cancelled: PickerProps;
 	redaction_confirmed: RedactionReviewProps;
 	redaction_rejected: RedactionReviewProps;
 	export_completed: ExportCompletedProps;
