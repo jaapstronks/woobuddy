@@ -39,9 +39,7 @@ limiter = Limiter(
 )
 
 
-async def rate_limit_exceeded_handler(
-    request: Request, exc: RateLimitExceeded
-) -> Response:
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Response:
     """Return a 429 without echoing any request body content."""
     return Response(
         content='{"detail":"Te veel verzoeken. Probeer het later opnieuw."}',

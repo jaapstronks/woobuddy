@@ -62,10 +62,7 @@ def _merge_custom_into_existing(
 ) -> None:
     """Mutate an existing detection: the custom term's article wins."""
     existing.woo_article = match.woo_article
-    seen = {
-        (b["page"], b["x0"], b["y0"], b["x1"], b["y1"])
-        for b in existing.bounding_boxes
-    }
+    seen = {(b["page"], b["x0"], b["y0"], b["x1"], b["y1"]) for b in existing.bounding_boxes}
     for bb in term_bboxes:
         key = (bb["page"], bb["x0"], bb["y0"], bb["x1"], bb["y1"])
         if key not in seen:

@@ -148,9 +148,7 @@ def _build_tem_payload(email: str, data: LeadCreate) -> dict[str, Any]:
     rows.append(
         (
             "Nieuwsbrief",
-            "Ja — ook aangemeld voor de lijst"
-            if data.newsletter_opt_in
-            else "Nee",
+            "Ja — ook aangemeld voor de lijst" if data.newsletter_opt_in else "Nee",
         )
     )
 
@@ -222,9 +220,7 @@ def _raise_rate_limited() -> HTTPException:
     )
 
 
-async def _send_contact_email(
-    client: httpx.AsyncClient, email: str, data: LeadCreate
-) -> None:
+async def _send_contact_email(client: httpx.AsyncClient, email: str, data: LeadCreate) -> None:
     """Fire the transactional email via Scaleway TEM. Raises on failure.
 
     Success shape: `200 OK` with `{"emails": [...]}`.
@@ -236,9 +232,7 @@ async def _send_contact_email(
     """
     payload = _build_tem_payload(email, data)
     try:
-        response = await client.post(
-            _tem_url(), json=payload, headers=_tem_headers()
-        )
+        response = await client.post(_tem_url(), json=payload, headers=_tem_headers())
     except httpx.HTTPError as exc:
         logger.error("leads.tem_transport_error", error=str(exc))
         raise _raise_generic_gateway() from exc
@@ -256,9 +250,7 @@ async def _send_contact_email(
     raise _raise_generic_gateway()
 
 
-async def _add_to_list(
-    client: httpx.AsyncClient, email: str, data: LeadCreate
-) -> None:
+async def _add_to_list(client: httpx.AsyncClient, email: str, data: LeadCreate) -> None:
     """Subscribe one contact to the configured Listmonk list.
 
     Success shape: any `2xx` (the public endpoint is idempotent — an email

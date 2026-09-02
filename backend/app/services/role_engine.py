@@ -316,9 +316,9 @@ def find_function_title_near(
             if last_before is not None
             else _MAX_TOKENS_BETWEEN + 1
         )
-        narrow_accepted = last_before is not None and narrow_tokens_between <= _MAX_TOKENS_BETWEEN
         same_as_narrow = (
-            narrow_accepted
+            last_before is not None
+            and narrow_tokens_between <= _MAX_TOKENS_BETWEEN
             and list_before_hit is not None
             and list_before_hit.start() == last_before.start() + narrow_offset
         )

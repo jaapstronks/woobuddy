@@ -257,8 +257,11 @@ def _detect_bsn(text: str) -> list[NERDetection]:
     """Detect BSN numbers (9 digits, 11-proef validated)."""
     return [
         NERDetection.tier1(
-            text=m.group(1), entity_type="bsn", confidence=0.98,
-            start_char=m.start(), end_char=m.end(),
+            text=m.group(1),
+            entity_type="bsn",
+            confidence=0.98,
+            start_char=m.start(),
+            end_char=m.end(),
             reasoning="BSN-nummer gedetecteerd (voldoet aan 11-proef).",
             woo_article="5.1.1e",
         )
@@ -272,9 +275,7 @@ def _validate_iban_mod97(iban: str) -> bool:
     compact = "".join(iban.split()).upper()
     rearranged = compact[4:] + compact[:4]
     try:
-        numeric = "".join(
-            str(ord(c) - 55) if "A" <= c <= "Z" else c for c in rearranged
-        )
+        numeric = "".join(str(ord(c) - 55) if "A" <= c <= "Z" else c for c in rearranged)
         return int(numeric) % 97 == 1
     except ValueError:
         return False
@@ -284,8 +285,11 @@ def _detect_iban(text: str) -> list[NERDetection]:
     """Detect IBAN numbers (regex + mod-97 checksum)."""
     return [
         NERDetection.tier1(
-            text=m.group(1), entity_type="iban", confidence=0.97,
-            start_char=m.start(), end_char=m.end(),
+            text=m.group(1),
+            entity_type="iban",
+            confidence=0.97,
+            start_char=m.start(),
+            end_char=m.end(),
             reasoning="IBAN-nummer gedetecteerd.",
         )
         for m in _IBAN_PATTERN.finditer(text)
@@ -304,8 +308,11 @@ def _detect_telefoon(text: str) -> list[NERDetection]:
                 continue
             detections.append(
                 NERDetection.tier1(
-                    text=matched, entity_type="telefoon", confidence=0.95,
-                    start_char=m.start(), end_char=m.end(),
+                    text=matched,
+                    entity_type="telefoon",
+                    confidence=0.95,
+                    start_char=m.start(),
+                    end_char=m.end(),
                     reasoning="Telefoonnummer gedetecteerd.",
                 )
             )
@@ -316,8 +323,11 @@ def _detect_email(text: str) -> list[NERDetection]:
     """Detect email addresses."""
     return [
         NERDetection.tier1(
-            text=m.group(1), entity_type="email", confidence=0.97,
-            start_char=m.start(), end_char=m.end(),
+            text=m.group(1),
+            entity_type="email",
+            confidence=0.97,
+            start_char=m.start(),
+            end_char=m.end(),
             reasoning="E-mailadres gedetecteerd.",
         )
         for m in _EMAIL_PATTERN.finditer(text)
@@ -328,8 +338,11 @@ def _detect_postcode(text: str) -> list[NERDetection]:
     """Detect Dutch postcodes (4 digits + 2 uppercase letters)."""
     return [
         NERDetection.tier1(
-            text=m.group(1), entity_type="postcode", confidence=0.90,
-            start_char=m.start(), end_char=m.end(),
+            text=m.group(1),
+            entity_type="postcode",
+            confidence=0.90,
+            start_char=m.start(),
+            end_char=m.end(),
             reasoning="Postcode gedetecteerd.",
         )
         for m in _POSTCODE_PATTERN.finditer(text)
@@ -343,8 +356,11 @@ def _detect_kenteken(text: str) -> list[NERDetection]:
         for m in pattern.finditer(text):
             detections.append(
                 NERDetection.tier1(
-                    text=m.group(1), entity_type="kenteken", confidence=0.93,
-                    start_char=m.start(), end_char=m.end(),
+                    text=m.group(1),
+                    entity_type="kenteken",
+                    confidence=0.93,
+                    start_char=m.start(),
+                    end_char=m.end(),
                     reasoning="Kenteken gedetecteerd.",
                 )
             )
@@ -364,8 +380,11 @@ def _detect_url(text: str) -> list[NERDetection]:
             continue
         detections.append(
             NERDetection.tier1(
-                text=url, entity_type="url", confidence=0.95,
-                start_char=m.start(1), end_char=m.end(1) - end_offset,
+                text=url,
+                entity_type="url",
+                confidence=0.95,
+                start_char=m.start(1),
+                end_char=m.end(1) - end_offset,
                 reasoning="URL gedetecteerd.",
             )
         )
@@ -396,8 +415,12 @@ def _detect_kvk(text: str) -> list[NERDetection]:
         kvk_found.add(start)
         detections.append(
             NERDetection.tier1(
-                text=num.group(1), entity_type="kvk", confidence=0.90,
-                start_char=start, end_char=end, reasoning=_KVK_REASONING,
+                text=num.group(1),
+                entity_type="kvk",
+                confidence=0.90,
+                start_char=start,
+                end_char=end,
+                reasoning=_KVK_REASONING,
             )
         )
 
@@ -418,8 +441,11 @@ def _detect_kvk(text: str) -> list[NERDetection]:
             kvk_found.add(num_start)
             detections.append(
                 NERDetection.tier1(
-                    text=num.group(1), entity_type="kvk", confidence=0.85,
-                    start_char=num_start, end_char=num.end(1),
+                    text=num.group(1),
+                    entity_type="kvk",
+                    confidence=0.85,
+                    start_char=num_start,
+                    end_char=num.end(1),
                     reasoning=_KVK_REASONING,
                 )
             )
@@ -432,8 +458,11 @@ def _detect_btw(text: str) -> list[NERDetection]:
     """Detect BTW-nummers (Dutch VAT, BSN-style 11-proef on the body)."""
     return [
         NERDetection.tier1(
-            text=m.group(1), entity_type="btw", confidence=0.95,
-            start_char=m.start(1), end_char=m.end(1),
+            text=m.group(1),
+            entity_type="btw",
+            confidence=0.95,
+            start_char=m.start(1),
+            end_char=m.end(1),
             reasoning="BTW-nummer gedetecteerd (format + 11-proef).",
         )
         for m in _BTW_PATTERN.finditer(text)
@@ -459,8 +488,11 @@ def _detect_geboortedatum(text: str) -> list[NERDetection]:
         end = window_start + date_match.end()
         detections.append(
             NERDetection.tier1(
-                text=raw, entity_type="geboortedatum", confidence=0.95,
-                start_char=start, end_char=end,
+                text=raw,
+                entity_type="geboortedatum",
+                confidence=0.95,
+                start_char=start,
+                end_char=end,
                 reasoning="Geboortedatum gedetecteerd (contextanker + geldige datum).",
             )
         )
@@ -471,8 +503,11 @@ def _detect_creditcard(text: str) -> list[NERDetection]:
     """Detect credit card numbers (Luhn-validated)."""
     return [
         NERDetection.tier1(
-            text=m.group(1), entity_type="creditcard", confidence=0.95,
-            start_char=m.start(), end_char=m.end(),
+            text=m.group(1),
+            entity_type="creditcard",
+            confidence=0.95,
+            start_char=m.start(),
+            end_char=m.end(),
             reasoning="Creditcardnummer gedetecteerd (voldoet aan Luhn-check).",
         )
         for m in _CREDIT_CARD_PATTERN.finditer(text)
