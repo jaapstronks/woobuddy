@@ -1,4 +1,10 @@
-FROM python:3.14-slim
+# Pinned to 3.12 on purpose. CI (.github/workflows/test.yml), mypy
+# (pyproject.toml) and the site-packages path in the chown below all
+# target 3.12. Dependabot bumped this to 3.14 in #64; nothing builds the
+# image in CI, so it merged green and the api image has been unbuildable
+# ever since -- `regex` ships no cp314 wheel and this slim image has no
+# gcc to build one. Move all four together, or not at all.
+FROM python:3.12-slim
 
 WORKDIR /app
 
