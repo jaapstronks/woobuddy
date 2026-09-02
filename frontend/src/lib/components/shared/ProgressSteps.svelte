@@ -6,7 +6,7 @@
 	 *   empty circle  →  active indicator  →  checkmark
 	 *
 	 * The active step renders a plain CSS progress bar underneath the label
-	 * (`ui/ProgressBar`, not Shoelace: this component is reachable from the
+	 * (`ui/LinearProgress`, not Shoelace: this component is reachable from the
 	 * SSR landing page, see #68). When `percent` is null the bar is indeterminate (e.g. server detection
 	 * round-trip where we don't know how long it will take); when a number is
 	 * supplied it switches to determinate mode (e.g. per-page text extraction).

@@ -24,7 +24,11 @@ const SOURCES = import.meta.glob('/src/**/*.{ts,svelte}', {
 
 const ENTRYPOINTS = ['/src/routes/+page.svelte', '/src/routes/+layout.svelte', '/src/routes/+error.svelte'];
 
-const IMPORT_RE = /(?:^|\n)\s*(?:import|export)\b[^'"\n]*?from\s*['"]([^'"]+)['"]|(?:^|\n)\s*import\s*['"]([^'"]+)['"]/g;
+// The `from` clause may sit several lines below `import {` — a multi-line
+// named import is common in this tree (`HeroUploadPanel`, `upload-flow`).
+// So the scan runs across newlines and stops only at a quote or a `;`,
+// which keeps it from bleeding into the next statement.
+const IMPORT_RE = /(?:^|\n)\s*(?:import|export)\b[^'";]*?from\s*['"]([^'"]+)['"]|(?:^|\n)\s*import\s*['"]([^'"]+)['"]/g;
 
 function specifiers(body: string): string[] {
 	const out: string[] = [];
@@ -89,6 +93,9 @@ describe('landing page — no Shoelace in the SSR import graph (#68)', () => {
 		expect(graph.size).toBeGreaterThan(10);
 		expect(graph.has('/src/lib/components/shared/ProgressSteps.svelte')).toBe(true);
 		expect(graph.has('/src/lib/components/shared/ProviderPickerButtons.svelte')).toBe(true);
+		// Only reachable through a multi-line `import { … } from` — proves the
+		// scanner follows those, not just single-line imports.
+		expect(graph.has('/src/lib/services/upload-flow.ts')).toBe(true);
 	});
 
 	it('reaches zero @shoelace-style modules', () => {
