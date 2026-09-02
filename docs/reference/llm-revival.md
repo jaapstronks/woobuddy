@@ -56,7 +56,7 @@ It worked but it was the wrong trade-off:
    common cases the LLM used to catch.
 
 See `docs/reference/woo-redactietool-analyse.md` and
-`docs/todo/done/35-deactivate-llm.md` for the original analysis.
+`docs/plans/done/35-deactivate-llm.md` for the original analysis.
 
 ## Before you revive it
 
@@ -127,7 +127,7 @@ starting point, not gospel.
 - Do not ship model weights in the repo or in a Docker image.
 - Do not make the LLM path the default. Ever.
 - Do not log document text (client-first architecture — see
-  `docs/todo/00-client-first-architecture.md`).
+  `docs/plans/done/00-client-first-architecture.md`).
 - Do not reintroduce `llm_tier3_enabled`. Tier 3 is still reserved for
   future rule-based content signals, not for an LLM content-analysis
   pass.

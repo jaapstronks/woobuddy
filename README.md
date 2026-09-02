@@ -25,7 +25,7 @@ Elke tier krijgt een eigen UX — van automatische lakking (Tier 1) tot bulkswee
 
 ### Client-first architectuur
 
-PDF's verlaten nooit de browser van de gebruiker. De server slaat geen documentinhoud op: tekstextractie gebeurt client-side via pdf.js, de rule-based analyse is vluchtig, en alleen beslissingen (bbox-coördinaten, entiteitstype, tier, artikel) worden in de database bewaard. Zie [`docs/todo/done/00-client-first-architecture.md`](docs/todo/done/00-client-first-architecture.md) voor de volledige specificatie.
+PDF's verlaten nooit de browser van de gebruiker. De server slaat geen documentinhoud op: tekstextractie gebeurt client-side via pdf.js, de rule-based analyse is vluchtig, en alleen beslissingen (bbox-coördinaten, entiteitstype, tier, artikel) worden in de database bewaard. Zie [`docs/plans/done/00-client-first-architecture.md`](docs/plans/done/00-client-first-architecture.md) voor de volledige specificatie.
 
 **Uw documenten verlaten nooit uw infrastructuur en er komt geen taalmodel aan te pas.** Dat is de hele privacy-propositie, in één zin — geen verwerkersovereenkomst voor een modelhoster, geen GPU-beheer, geen uitleg over waar data naartoe gaat.
 
@@ -165,12 +165,12 @@ woobuddy/
 
 Issues, PRs en ideeën zijn welkom. Een paar vuistregels:
 
-- **Client-first is heilig.** Als een feature lijkt te vereisen dat PDF's op de server worden opgeslagen, is het ontwerp fout. Zie [`docs/todo/done/00-client-first-architecture.md`](docs/todo/done/00-client-first-architecture.md).
+- **Client-first is heilig.** Als een feature lijkt te vereisen dat PDF's op de server worden opgeslagen, is het ontwerp fout. Zie [`docs/plans/done/00-client-first-architecture.md`](docs/plans/done/00-client-first-architecture.md).
 - **Geen taalmodel terugbrengen** zonder expliciete productbeslissing. De LLM-laag is in april 2026 volledig verwijderd om de "uw PDF verlaat nooit uw browser"-belofte en het kostenmodel overeind te houden. Als je een lokale LLM-stap overweegt: begin bij [`docs/reference/llm-revival.md`](docs/reference/llm-revival.md).
 - **UI in het Nederlands**, code en commits in het Engels.
 - **Schrijf `WOO Buddy`** (WOO in kapitalen, Buddy met hoofdletter) in alle gebruikersgerichte tekst.
 
-De roadmap staat in [`docs/todo/README.md`](docs/todo/README.md) — genummerde markdown-bestanden per feature, gegroepeerd in fases A t/m G.
+De backlog staat in [`docs/plans/TODO.md`](docs/plans/TODO.md) (open werk op prioriteit); de uitwerking per item in `docs/plans/briefs/`, wat af is in `docs/plans/done/`.
 
 ## Licentie
 

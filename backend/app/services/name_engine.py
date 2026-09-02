@@ -10,7 +10,7 @@ that the detection is junk.
 
 The lists are loaded once at application startup from
 `backend/app/data/sources/` and cached on `app.state.name_lists`. See
-`docs/todo/done/12-name-lists-meertens-cbs.md` and
+`docs/plans/done/12-name-lists-meertens-cbs.md` and
 `backend/app/data/sources/README.md` for provenance.
 """
 

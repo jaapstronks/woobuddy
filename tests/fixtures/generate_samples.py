@@ -3,7 +3,7 @@
 These are NOT test fixtures — they are user-facing assets shipped under
 ``frontend/static/samples/``. The reviewer clicks one on the landing page
 and the PDF is loaded into the client-first upload pipeline as if they
-had dropped it themselves. See ``docs/todo/done/44-sample-documents-landing.md``.
+had dropped it themselves. See ``docs/plans/done/44-sample-documents-landing.md``.
 
 All content is fictional. Names, addresses, BSNs, IBANs, and phone
 numbers are invented — every BSN below satisfies the 11-proef, every
