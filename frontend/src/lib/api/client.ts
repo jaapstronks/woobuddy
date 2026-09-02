@@ -175,9 +175,9 @@ export interface LeadPayload {
  * Submit the public contact form.
  *
  * Every submission triggers a transactional email to the operator. If
- * `newsletterOptIn` is true, the contact is also added to the Brevo
- * newsletter list. The backend is deliberately opaque about list-state
- * so duplicate submissions cannot be used to probe membership.
+ * `newsletterOptIn` is true, the contact is also subscribed to the
+ * Listmonk newsletter list. The backend is deliberately opaque about
+ * list-state so duplicate submissions cannot be used to probe membership.
  */
 export async function submitLead(payload: LeadPayload): Promise<void> {
 	const { newsletterOptIn, ...rest } = payload;

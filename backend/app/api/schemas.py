@@ -148,8 +148,8 @@ class LeadCreate(BaseModel):
 
     Every submission fires a transactional email to the operator. The
     newsletter subscription is a separate opt-in: only when
-    `newsletter_opt_in` is true do we also push the contact into the
-    configured Brevo list.
+    `newsletter_opt_in` is true do we also subscribe the contact to the
+    configured Listmonk list.
 
     All optional fields are strings rather than nullable types because an
     HTML form sends `""` for empty inputs; the server coerces blanks to

@@ -1,27 +1,29 @@
-"""Public contact form (#45 — Brevo edition).
+"""Public contact form.
 
-The GTM plan launches WOO Buddy without auth, so this endpoint is our
-only way for interested visitors to reach us. A visitor submits
+WOO Buddy launches without auth, so this endpoint is the only way for
+interested visitors to reach us. A visitor submits
 `{email, source, newsletter_opt_in}` (plus optional name / organization
 / message). Two things can happen:
 
-1. **Always**: a transactional email is sent through Brevo's
-   `/v3/smtp/email` endpoint to `settings.brevo_notification_email`
-   with the form contents and a `Reply-To` header pointing at the
-   submitter. That is how the operator actually sees messages.
-2. **Only if `newsletter_opt_in` is true**: the contact is also pushed
-   into Brevo list `settings.brevo_list_id` via `/v3/contacts`.
+1. **Always**: a transactional email is sent through Scaleway TEM's
+   `/emails` API to `settings.notification_email` with the form contents
+   and a `Reply-To` header pointing at the submitter. That is how the
+   operator actually sees messages.
+2. **Only if `newsletter_opt_in` is true**: the contact is also subscribed
+   to Listmonk list `settings.listmonk_list_uuid` via the public
+   subscription endpoint. A double-opt-in list makes Listmonk send the
+   confirmation mail itself.
 
-Brevo is the system of record for the audience list; there is no
+Listmonk is the system of record for the audience list; there is no
 dual-write to Postgres, no CSV export, no `leads` table.
 
 Design notes:
 
 * **Unauthenticated**. This is explicitly a public form.
 * **Rate-limited** per IP via slowapi (in-memory bucket).
-* **Opaque success**. We return `{ok: true}` both for a fresh contact
-  and for a duplicate that Brevo rejects, so the form cannot be used
-  to probe list membership.
+* **Opaque success**. We return `{ok: true}` both for a fresh subscribe
+  and for a duplicate the list rejects, so the form cannot be used to
+  probe list membership.
 * **No request-body logging**. The only fact we record is "a lead was
   submitted from source X".
 * **Client-first**. This endpoint touches zero document content.
@@ -49,74 +51,90 @@ router = APIRouter(tags=["leads"])
 # contact form, not an MX validator.
 _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
-# Length caps mirror what Brevo will accept and what the form renders.
+# Length caps mirror what the providers accept and what the form renders.
 _MAX_EMAIL_LEN = 320
 _MAX_NAME_LEN = 200
 _MAX_ORG_LEN = 200
 _MAX_MESSAGE_LEN = 2000
 
-_BREVO_CONTACTS_URL = "https://api.brevo.com/v3/contacts"
-_BREVO_SMTP_URL = "https://api.brevo.com/v3/smtp/email"
-_BREVO_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
+_HTTP_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 
 
-def _clean(value: str | None, *, max_len: int) -> str | None:
-    """Trim whitespace, enforce max length, collapse blanks to None."""
+# Anything that ends up in a mail header (Subject, Reply-To) must not carry
+# control characters. A bare CR/LF in `name` or `organization` would let a
+# submitter terminate our header and append their own — a Bcc, say — to the
+# notification mail. Double quotes and backslashes go too: the display name
+# in Reply-To is wrapped in quotes, so an unescaped one breaks the address
+# out of its quoted string.
+_HEADER_UNSAFE_RE = re.compile(r'[\x00-\x1f\x7f"\\]+')
+
+
+def _clean(value: str | None, *, max_len: int, header_safe: bool = False) -> str | None:
+    """Trim whitespace, enforce max length, collapse blanks to None.
+
+    With `header_safe=True` every control character, double quote and
+    backslash collapses to a single space first, so the result is safe to
+    interpolate into a mail header. Truncation happens last, so the cap
+    still holds after substitution.
+    """
     if value is None:
         return None
     stripped = value.strip()
+    if header_safe:
+        stripped = _HEADER_UNSAFE_RE.sub(" ", stripped).strip()
     if not stripped:
         return None
     return stripped[:max_len]
 
 
-def _brevo_headers() -> dict[str, str]:
+def _tem_url() -> str:
+    return (
+        "https://api.scaleway.com/transactional-email/v1alpha1/regions/"
+        f"{settings.scaleway_tem_region}/emails"
+    )
+
+
+def _tem_headers() -> dict[str, str]:
     return {
-        "api-key": settings.brevo_api_key,
+        "X-Auth-Token": settings.scaleway_secret_key,
         "accept": "application/json",
         "content-type": "application/json",
     }
 
 
-def _build_contact_list_payload(
-    email: str, data: LeadCreate
-) -> dict[str, Any]:
-    """Shape our form fields into Brevo's `/v3/contacts` payload.
+def _listmonk_url() -> str:
+    return f"{settings.listmonk_url.rstrip('/')}/api/public/subscription"
 
-    Only called when the submitter opts in to the newsletter. Brevo
-    attribute names are uppercase by convention. Unknown attributes are
-    silently ignored by Brevo, so MESSAGE/SOURCE will start populating
-    once the account owner defines them in the dashboard.
+
+def _build_listmonk_payload(email: str, data: LeadCreate) -> dict[str, Any]:
+    """Shape our form fields into Listmonk's public-subscription payload.
+
+    Only called when the submitter opts in to the newsletter. Listmonk
+    segments by list, not by attribute-at-send, so source / organization /
+    message are deliberately not sent along: the transactional email
+    already carries the full form contents to the operator, and the list
+    only needs an address to subscribe.
     """
-    attributes: dict[str, Any] = {"SOURCE": data.source}
-    name = _clean(data.name, max_len=_MAX_NAME_LEN)
-    if name:
-        attributes["FIRSTNAME"] = name
-    organization = _clean(data.organization, max_len=_MAX_ORG_LEN)
-    if organization:
-        attributes["COMPANY"] = organization
-    message = _clean(data.message, max_len=_MAX_MESSAGE_LEN)
-    if message:
-        attributes["MESSAGE"] = message
-
+    name = _clean(data.name, max_len=_MAX_NAME_LEN, header_safe=True)
     return {
         "email": email,
-        "listIds": [settings.brevo_list_id],
-        # Idempotent re-submits: update attributes instead of 400-ing.
-        "updateEnabled": True,
-        "attributes": attributes,
+        "name": name or "",
+        "list_uuids": [settings.listmonk_list_uuid],
     }
 
 
-def _build_smtp_payload(email: str, data: LeadCreate) -> dict[str, Any]:
-    """Shape the form contents into Brevo's `/v3/smtp/email` payload.
+def _build_tem_payload(email: str, data: LeadCreate) -> dict[str, Any]:
+    """Shape the form contents into Scaleway TEM's `/emails` payload.
 
     The operator receives a plain rendering of the submitted fields with
     a `Reply-To` header set to the submitter's address, so hitting reply
     in their inbox just works.
     """
-    name = _clean(data.name, max_len=_MAX_NAME_LEN)
-    organization = _clean(data.organization, max_len=_MAX_ORG_LEN)
+    # `name` and `organization` reach the Subject and Reply-To headers, so
+    # they are cleaned header-safe. `message` only ever lands in the body,
+    # HTML-escaped and rendered `pre-wrap`, so its newlines stay meaningful.
+    name = _clean(data.name, max_len=_MAX_NAME_LEN, header_safe=True)
+    organization = _clean(data.organization, max_len=_MAX_ORG_LEN, header_safe=True)
     message = _clean(data.message, max_len=_MAX_MESSAGE_LEN)
 
     rows: list[tuple[str, str]] = [
@@ -158,23 +176,29 @@ def _build_smtp_payload(email: str, data: LeadCreate) -> dict[str, Any]:
         "</div>"
     )
 
+    # Plain-text alternative — Scaleway TEM wants both parts, and it keeps
+    # the message readable in text-only clients.
+    text_lines = [f"{label}: {value}" for label, value in rows]
+    if message:
+        text_lines.append("")
+        text_lines.append(message)
+    text_content = "Nieuw bericht via het contactformulier\n\n" + "\n".join(text_lines)
+
+    # Reply-To carries the submitter so the inbox reply button Just Works.
+    reply_to = f'"{name}" <{email}>' if name else email
+
     return {
-        "sender": {
-            "email": settings.brevo_sender_email,
-            "name": settings.brevo_sender_name,
+        "from": {
+            "email": settings.tem_from_email,
+            "name": settings.tem_from_name,
         },
-        "to": [{"email": settings.brevo_notification_email}],
-        "replyTo": {"email": email, **({"name": name} if name else {})},
+        "to": [{"email": settings.notification_email}],
         "subject": subject[:200],
-        "htmlContent": html_content,
+        "html": html_content,
+        "text": text_content,
+        "project_id": settings.scaleway_project_id,
+        "additional_headers": [{"key": "Reply-To", "value": reply_to}],
     }
-
-
-async def _post_to_brevo(
-    client: httpx.AsyncClient, url: str, payload: dict[str, Any]
-) -> httpx.Response:
-    """Thin wrapper — keeps the two Brevo calls symmetrical."""
-    return await client.post(url, json=payload, headers=_brevo_headers())
 
 
 def _raise_generic_gateway() -> HTTPException:
@@ -191,108 +215,78 @@ def _raise_generic_500() -> HTTPException:
     )
 
 
-def _error_code(response: httpx.Response) -> str | None:
-    """Pull `code` out of Brevo's JSON error envelope, tolerantly."""
-    try:
-        body = response.json()
-    except ValueError:
-        return None
-    if isinstance(body, dict):
-        raw = body.get("code")
-        if isinstance(raw, str):
-            return raw
-    return None
+def _raise_rate_limited() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Even geduld — probeer het over een minuutje opnieuw.",
+    )
 
 
 async def _send_contact_email(
     client: httpx.AsyncClient, email: str, data: LeadCreate
 ) -> None:
-    """Fire the transactional email. Raises HTTPException on failure.
+    """Fire the transactional email via Scaleway TEM. Raises on failure.
 
-    Success shape:
-    * `201 Created` with `{"messageId": "..."}`
+    Success shape: `200 OK` with `{"emails": [...]}`.
 
-    Error mapping mirrors `_add_to_list` — same user-facing surfaces so
-    the form behaves identically whether the contacts or the SMTP call
-    is the one that fails.
+    Error mapping keeps the same user-facing surfaces as the list call so
+    the form behaves identically whichever upstream is the one that fails:
+    401/403 (bad/revoked key) -> generic 500, 429 -> 503, anything else
+    -> 502.
     """
-    payload = _build_smtp_payload(email, data)
+    payload = _build_tem_payload(email, data)
     try:
-        response = await _post_to_brevo(client, _BREVO_SMTP_URL, payload)
+        response = await client.post(
+            _tem_url(), json=payload, headers=_tem_headers()
+        )
     except httpx.HTTPError as exc:
-        logger.error("leads.brevo_smtp_transport_error", error=str(exc))
+        logger.error("leads.tem_transport_error", error=str(exc))
         raise _raise_generic_gateway() from exc
 
     if response.status_code in (200, 201, 202):
         return
 
-    code = _error_code(response)
     if response.status_code in (401, 403):
-        logger.error(
-            "leads.brevo_smtp_auth_error",
-            status_code=response.status_code,
-            error_code=code,
-        )
+        logger.error("leads.tem_auth_error", status_code=response.status_code)
         raise _raise_generic_500()
     if response.status_code == 429:
-        logger.warning("leads.brevo_smtp_rate_limited")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Even geduld — probeer het over een minuutje opnieuw.",
-        )
-    logger.error(
-        "leads.brevo_smtp_unexpected_status",
-        status_code=response.status_code,
-        error_code=code,
-    )
+        logger.warning("leads.tem_rate_limited")
+        raise _raise_rate_limited()
+    logger.error("leads.tem_unexpected_status", status_code=response.status_code)
     raise _raise_generic_gateway()
 
 
 async def _add_to_list(
     client: httpx.AsyncClient, email: str, data: LeadCreate
 ) -> None:
-    """Push one contact into the configured Brevo list.
+    """Subscribe one contact to the configured Listmonk list.
 
-    Success shapes:
-    * `201 Created` — fresh contact
-    * `204 No Content` — existing contact updated (we set
-      `updateEnabled: true` so this is a normal success path)
+    Success shape: any `2xx` (the public endpoint is idempotent — an email
+    that is already a subscriber returns success too).
 
-    A `400 duplicate_parameter` response is treated as silent success
-    for the same probe-resistance reason used across the file.
+    A `4xx` (e.g. blocklisted / already-present edge cases) is treated as
+    silent success for the same probe-resistance reason used across the
+    file, and because the operator already received the notification email.
+    `429` maps to 503; `5xx` / transport failures map to 502.
     """
-    payload = _build_contact_list_payload(email, data)
+    payload = _build_listmonk_payload(email, data)
     try:
-        response = await _post_to_brevo(client, _BREVO_CONTACTS_URL, payload)
+        response = await client.post(_listmonk_url(), json=payload)
     except httpx.HTTPError as exc:
-        logger.error("leads.brevo_contacts_transport_error", error=str(exc))
+        logger.error("leads.listmonk_transport_error", error=str(exc))
         raise _raise_generic_gateway() from exc
 
-    if response.status_code in (200, 201, 204):
+    if 200 <= response.status_code < 300:
         return
-
-    code = _error_code(response)
-    if response.status_code == 400 and code == "duplicate_parameter":
-        logger.info("leads.brevo_duplicate", source=data.source)
-        return
-    if response.status_code in (401, 403):
-        logger.error(
-            "leads.brevo_contacts_auth_error",
-            status_code=response.status_code,
-            error_code=code,
-        )
-        raise _raise_generic_500()
     if response.status_code == 429:
-        logger.warning("leads.brevo_contacts_rate_limited")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Even geduld — probeer het over een minuutje opnieuw.",
-        )
-    logger.error(
-        "leads.brevo_contacts_unexpected_status",
-        status_code=response.status_code,
-        error_code=code,
-    )
+        logger.warning("leads.listmonk_rate_limited")
+        raise _raise_rate_limited()
+    if 400 <= response.status_code < 500:
+        # Probe-resistant: never let the form distinguish "already on the
+        # list" from "freshly subscribed". The notification email is out.
+        logger.info("leads.listmonk_client_error", source=data.source)
+        return
+    logger.error("leads.listmonk_unexpected_status", status_code=response.status_code)
     raise _raise_generic_gateway()
 
 
@@ -311,18 +305,18 @@ async def create_lead(
             detail="Ongeldig e-mailadres.",
         )
 
-    if not settings.brevo_api_key:
+    if not settings.scaleway_secret_key:
         # Misconfiguration, not a user error. Don't expose details.
-        logger.error("leads.brevo_api_key_missing")
+        logger.error("leads.scaleway_secret_key_missing")
         raise _raise_generic_500()
 
-    async with httpx.AsyncClient(timeout=_BREVO_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
         # Notification email comes first: it is the part the operator
         # cannot afford to miss. If subscribing to the list fails after
         # the email has already been sent the operator still knows a
         # lead came in — better than the reverse.
         await _send_contact_email(client, email, data)
-        if data.newsletter_opt_in:
+        if data.newsletter_opt_in and settings.listmonk_list_uuid:
             await _add_to_list(client, email, data)
 
     # Do NOT log email or field content — the only fact worth recording
