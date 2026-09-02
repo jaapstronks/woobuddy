@@ -63,6 +63,14 @@ python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
 
+# PyMuPDF (`fitz`) and Deduce ship neither type stubs nor a py.typed marker,
+# and neither has a stub package on typeshed. Under `strict = true` that makes
+# the bare import an error, so CI could not run mypy at all. Suppress the
+# import itself; call sites stay type-checked against `Any`.
+[[tool.mypy.overrides]]
+module = ["fitz", "deduce", "deduce.*"]
+ignore_missing_imports = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
 
