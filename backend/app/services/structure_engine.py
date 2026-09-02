@@ -102,10 +102,7 @@ def _detect_email_headers(
             if not next_line.strip():
                 break
             # A non-header-shaped line ends the block.
-            if not (
-                _EMAIL_HEADER_TRIGGER.match(next_line)
-                or _HEADER_SHAPED_LINE.match(next_line)
-            ):
+            if not (_EMAIL_HEADER_TRIGGER.match(next_line) or _HEADER_SHAPED_LINE.match(next_line)):
                 break
             block_end = next_end
             consumed += 1

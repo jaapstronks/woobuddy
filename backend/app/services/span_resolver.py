@@ -186,9 +186,7 @@ def _is_word_boundary_match(haystack: str, needle: str) -> bool:
     return _word_boundary_match_index(haystack, needle) != -1
 
 
-def count_word_boundary_matches(
-    haystack: str, needle: str, *, limit: int | None = None
-) -> int:
+def count_word_boundary_matches(haystack: str, needle: str, *, limit: int | None = None) -> int:
     """Count word-boundary matches of `needle` in `haystack`.
 
     Case-insensitive. When `limit` is supplied, only matches starting
@@ -297,8 +295,7 @@ def _try_merge_match_from_anchor(
     start = spans[i]
     start_lower = start.text.lower()
     if not (
-        _is_word_boundary_match(start_lower, first_word)
-        or search_lower.startswith(start_lower)
+        _is_word_boundary_match(start_lower, first_word) or search_lower.startswith(start_lower)
     ):
         return None
 
@@ -438,9 +435,7 @@ def find_span_for_text(
     search_stripped = _strip_ws(search_lower)
 
     if occurrence_index is not None:
-        return _find_nth_occurrence(
-            pages_to_check, search_lower, first_word, occurrence_index
-        )
+        return _find_nth_occurrence(pages_to_check, search_lower, first_word, occurrence_index)
 
     results: list[Bbox] = []
 
