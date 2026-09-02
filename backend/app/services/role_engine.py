@@ -14,8 +14,7 @@ hand-curated lists, we can classify the person's role without any model.
   pre-filled reason so the reviewer's click is a confirmation, not a
   classification from scratch.
 
-See `docs/plans/done/13-functietitel-publiek-functionaris.md` for the full
-design. The rule engine intentionally only looks at a small window
+The rule engine intentionally only looks at a small window
 around each detection — it is not a parser, and cannot reason about
 who "the wethouder" refers to in a subordinate clause. Reviewers still
 have the final say via the Tier 2 card.

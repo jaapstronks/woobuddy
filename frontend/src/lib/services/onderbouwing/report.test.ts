@@ -9,7 +9,7 @@
  * The goal is to catch regressions in the structure-tree wiring:
  * missing /StructTreeRoot, dropped /MarkInfo, footer text accidentally
  * pulled out of /Artifact, etc. Visual / Acrobat / PAC validation is
- * a manual step (see `docs/plans/done/65-onderbouwingsrapport-tagged-pdf.md`).
+ * a manual step.
  */
 
 import { describe, it, expect } from 'vitest';
