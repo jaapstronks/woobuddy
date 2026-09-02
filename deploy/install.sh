@@ -6,7 +6,8 @@
 #   1. Installs Docker Engine + compose plugin from the official repo.
 #   2. Installs the `docker-rollout` CLI plugin for zero-downtime updates.
 #   3. Expects the repo to already be at /opt/woobuddy (rsynced by the
-#      developer) and .env to already contain DBASE_PASSWORD.
+#      developer) and .env to already contain DBASE_PASSWORD plus the
+#      lead-form mail config. Refuses to deploy if either is missing.
 #   4a. First deploy — `docker compose up -d` brings the whole stack up.
 #   4b. Update deploy — builds new images, rolls `api` and `frontend`
 #       one replica at a time behind Caddy, and gracefully reloads Caddy
@@ -76,8 +77,29 @@ if [[ ! -f "${COMPOSE_FILE}" ]]; then
 	exit 1
 fi
 
-if [[ ! -f .env ]] || ! grep -q '^DBASE_PASSWORD=' .env; then
-	echo "ERROR: ${APP_DIR}/.env must exist and contain DBASE_PASSWORD." >&2
+if [[ ! -f .env ]]; then
+	echo "ERROR: ${APP_DIR}/.env not found — run deploy/deploy.sh, which writes it." >&2
+	exit 1
+fi
+
+# Required keys must be present AND non-empty. #72: the mail config was
+# absent here for months, so the api booted with an empty Scaleway key and
+# the contact form 500'd on every submission — a failure only the visitor
+# ever saw. A deploy that cannot send mail now fails here, loudly, instead.
+#
+# LISTMONK_LIST_UUID is deliberately not required: empty is a valid choice
+# that disables the newsletter opt-in and leaves notification mail working.
+missing=()
+for key in DBASE_PASSWORD SCALEWAY_SECRET_KEY SCALEWAY_PROJECT_ID \
+	TEM_FROM_EMAIL NOTIFICATION_EMAIL; do
+	if ! grep -qE "^${key}=.+$" .env; then
+		missing+=("${key}")
+	fi
+done
+
+if [[ ${#missing[@]} -gt 0 ]]; then
+	echo "ERROR: ${APP_DIR}/.env is missing or has an empty value for: ${missing[*]}" >&2
+	echo "       Fix the project-root .env on the developer machine and re-run deploy/deploy.sh." >&2
 	exit 1
 fi
 
@@ -164,6 +186,20 @@ print(d.get("Health",""))' 2>/dev/null || echo "")
 	fi
 	sleep 2
 done
+
+# The .env check above proves the key reached the box; this proves it
+# reached the *process*. Between the two sits the compose `environment:`
+# block, which is exactly where #72 went wrong.
+log "Verifying the api can send lead mail"
+lead_mail=$(docker compose -f "${COMPOSE_FILE}" exec -T api python -c \
+	"import httpx; print(httpx.get('http://localhost:8000/api/health').json().get('lead_mail',''))" \
+	2>/dev/null | tr -d '\r' | tail -n 1)
+if [[ "${lead_mail}" != "configured" ]]; then
+	echo "ERROR: api reports lead_mail='${lead_mail}' — the mail config did not reach the container." >&2
+	echo "       Check the \`environment:\` block for the api service in ${COMPOSE_FILE}." >&2
+	exit 1
+fi
+echo "  lead_mail: configured"
 
 log "Stack status"
 docker compose -f "${COMPOSE_FILE}" ps

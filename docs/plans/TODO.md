@@ -12,7 +12,7 @@ hier: één regel in _Recently done_ + de write-up in [`done/`](done/) (gesloten
 
 <!-- formaat: item — @machine — `branch` — klaar als: één toetsbare zin -->
 
-_(leeg)_
+- #72 — @mbp — `feat/brevo-to-listmonk` — klaar als: een echte inzending op woobuddy.nl geeft 200, de notificatiemail komt aan op jaap@jaapstronks.nl, en een deploy zonder mailsecrets faalt zichtbaar.
 
 ## Open werk
 

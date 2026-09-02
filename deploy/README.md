@@ -28,7 +28,7 @@ How the hosted instance at <https://woobuddy.nl> is built and updated. Today thi
 
 ## Secrets
 
-Secrets are read from the project-root `.env`. Two of them are referenced as `op://...` URIs and resolved by the 1Password CLI via `op run --env-file=.env -- …`:
+Secrets are read from the project-root `.env`. Values referenced as `op://...` URIs are resolved by the 1Password CLI via `op run --env-file=.env -- …`:
 
 | Variable | Used by | How to set |
 |----------|---------|------------|
@@ -36,6 +36,30 @@ Secrets are read from the project-root `.env`. Two of them are referenced as `op
 | `TRANSIP_ACCESS_TOKEN` | `provision.sh` | TransIP JWT (24h validity) — literal value in `.env`, refresh with TransIP UI when expired. |
 | `DBASE_PASSWORD` | `deploy.sh`, `docker-compose.prod.yml` | Postgres password baked into the prod compose file at boot. Literal value in `.env`. |
 | `HETZNER_PRIVATE_KEY` | (referenced in script header but unused; the SSH key comes from `deploy/.deploy_key` on disk) | `op://...` reference — fine to leave alone. |
+| `SCALEWAY_SECRET_KEY` | `deploy.sh`, `docker-compose.prod.yml` | Scaleway TEM secret key for the lead form. See "Lead-form mail" below. |
+| `SCALEWAY_PROJECT_ID` | `deploy.sh`, `docker-compose.prod.yml` | Scaleway project the send is billed to — not a secret, but required. |
+| `NOTIFICATION_EMAIL` | `deploy.sh`, `docker-compose.prod.yml` | Where lead notifications land. Not a secret. |
+
+`SCALEWAY_TEM_REGION`, `TEM_FROM_EMAIL`, `TEM_FROM_NAME`, `LISTMONK_URL` and `LISTMONK_LIST_UUID` are optional: `deploy.sh` falls back to the same defaults `docker-compose.prod.yml` carries. An empty `LISTMONK_LIST_UUID` is a valid choice — it turns the newsletter opt-in off and leaves the notification mail working.
+
+### Lead-form mail (#72)
+
+The contact form on the landing page is the only conversion path on woobuddy.nl, and it needs mail credentials in the running `api` container. It went to production without them once and returned a 500 on every submission for months, so this is now enforced in three places: `deploy.sh` refuses to run when a required key is unresolved, `install.sh` refuses to deploy when `/opt/woobuddy/.env` lacks one, and after the rollout `install.sh` asks the live API (`/api/health` → `lead_mail`) whether the config actually reached the process.
+
+The credentials belong to the Scaleway IAM application **`woobuddy-leads`** (`982fc6f1-fe35-4222-93f1-4d99da9cdcef`) in the Bureau Bolster organization, with policy `woobuddy-leads-tem` granting `TransactionalEmailFullAccess` scoped to project `4304a571-309f-4113-91a2-13f55f5e8bf2` and nothing else. The sender is `noreply@mail.dreamkit.eu`, a TEM domain that is already `checked`.
+
+Rotate the key with:
+
+```bash
+scw -p bolster iam api-key create \
+  application-id=982fc6f1-fe35-4222-93f1-4d99da9cdcef \
+  description="WOO Buddy lead form - Scaleway TEM (prod VPS)" \
+  default-project-id=4304a571-309f-4113-91a2-13f55f5e8bf2
+```
+
+Put the returned `secret_key` in the project-root `.env` as `SCALEWAY_SECRET_KEY` (or in 1Password, vault Bolster, and reference it as `op://...`), re-run `deploy.sh`, then delete the old key with `scw -p bolster iam api-key delete <old-access-key>`.
+
+To move the sender to `noreply@woobuddy.nl` later: `scw -p bolster tem domain create domain-name=woobuddy.nl`, add the SPF/DKIM/MX records it returns at TransIP, wait for `scw -p bolster tem domain check`, then flip `TEM_FROM_EMAIL`.
 
 If `.env` contains only literal values you can run the scripts directly without `op run`. As soon as any value is an `op://` URI, prefix the command with `op run --env-file=.env --`.
 
@@ -59,7 +83,7 @@ op run --env-file=.env -- ./deploy/deploy.sh
 1. Reads the VPS IP from `deploy/.vps-ip`.
 2. Polls SSH on port 22 until reachable.
 3. Rsyncs the repo to `/opt/woobuddy` (excluding `node_modules`, `.venv`, `.git`, `docs/`, etc.).
-4. Writes `/opt/woobuddy/.env` containing **only** `DBASE_PASSWORD`.
+4. Writes `/opt/woobuddy/.env` with `DBASE_PASSWORD` plus the lead-form mail config (piped over stdin, so no secret lands in an ssh argv). Bails out if a required value is unresolved.
 5. SSHes in and runs `/opt/woobuddy/deploy/install.sh`, which builds the new images, rolls `api` and `frontend` one replica at a time via `docker rollout`, and `caddy reload`s gracefully so any Caddyfile edits land without dropping connections. On a fresh box (no containers yet) it falls back to `docker compose up -d`.
 
 ### Migration discipline

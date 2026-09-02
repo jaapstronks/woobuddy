@@ -9,8 +9,8 @@
 #   2. Materialize the ed25519 private key to a tmp file with 0600 perms.
 #   3. Poll until SSH is accepting connections on port 22.
 #   4. rsync the repo to /opt/woobuddy on the VPS (excluding build artefacts).
-#   5. Write /opt/woobuddy/.env with only DBASE_PASSWORD (the app doesn't
-#      need the provisioning secrets).
+#   5. Write /opt/woobuddy/.env with DBASE_PASSWORD plus the lead-form mail
+#      config (the provisioning secrets stay off the box).
 #   6. SSH in and run /opt/woobuddy/deploy/install.sh.
 #
 # Idempotent: re-running syncs incremental changes and re-converges the
@@ -126,16 +126,58 @@ rsync -az --delete \
 	"${REPO_ROOT}/" "${REMOTE_USER}@${VPS_IP}:${REMOTE_DIR}/"
 
 # ---------------------------------------------------------------------------
-# Write minimal prod .env on the VPS (only DBASE_PASSWORD is needed by the
-# running stack — the provisioning secrets don't need to live on the box).
+# Write prod .env on the VPS.
+#
+# Two groups: the Postgres password, and the lead-form mail config that
+# docker-compose.prod.yml interpolates into the api service. The
+# provisioning secrets (Hetzner, TransIP) stay off the box.
+#
+# #72: the mail keys used to be missing here entirely, so the api container
+# booted with an empty Scaleway key and every contact-form submission
+# returned a 500 that only the visitor ever saw. SCALEWAY_SECRET_KEY is
+# therefore required, not optional — install.sh refuses to deploy without it.
 # ---------------------------------------------------------------------------
-log "Writing /opt/woobuddy/.env (DBASE_PASSWORD only)"
-if [[ -z "${DBASE_PASSWORD:-}" ]]; then
-	echo "ERROR: DBASE_PASSWORD not resolved." >&2
-	exit 1
-fi
-ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_IP}" \
-	"umask 077 && printf 'DBASE_PASSWORD=%s\n' '${DBASE_PASSWORD}' > ${REMOTE_DIR}/.env && chmod 600 ${REMOTE_DIR}/.env"
+log "Writing ${REMOTE_DIR}/.env (db password + lead-form mail config)"
+
+require_var() {
+	local name="$1"
+	if [[ -z "${!name:-}" ]]; then
+		echo "ERROR: ${name} not resolved — check the project-root .env (run under \`op run --env-file=.env --\` if it holds op:// references)." >&2
+		exit 1
+	fi
+}
+
+require_var DBASE_PASSWORD
+require_var SCALEWAY_SECRET_KEY
+require_var SCALEWAY_PROJECT_ID
+require_var NOTIFICATION_EMAIL
+
+# Defaults mirror docker-compose.prod.yml so a partially-filled .env still
+# produces a working stack rather than a half-configured one.
+SCALEWAY_TEM_REGION="${SCALEWAY_TEM_REGION:-fr-par}"
+TEM_FROM_EMAIL="${TEM_FROM_EMAIL:-noreply@mail.dreamkit.eu}"
+TEM_FROM_NAME="${TEM_FROM_NAME:-WOO Buddy}"
+LISTMONK_URL="${LISTMONK_URL:-https://listmonk.dreamkit.eu}"
+# Empty is a valid choice: it turns the newsletter opt-in off and leaves the
+# notification mail working.
+LISTMONK_LIST_UUID="${LISTMONK_LIST_UUID:-}"
+
+# Built locally and piped over stdin so no secret ever appears in an ssh
+# argv (visible in `ps` on the remote box) or in this script's `set -x`.
+REMOTE_ENV="$(
+	printf 'DBASE_PASSWORD=%s\n' "${DBASE_PASSWORD}"
+	printf 'SCALEWAY_SECRET_KEY=%s\n' "${SCALEWAY_SECRET_KEY}"
+	printf 'SCALEWAY_PROJECT_ID=%s\n' "${SCALEWAY_PROJECT_ID}"
+	printf 'SCALEWAY_TEM_REGION=%s\n' "${SCALEWAY_TEM_REGION}"
+	printf 'TEM_FROM_EMAIL=%s\n' "${TEM_FROM_EMAIL}"
+	printf 'TEM_FROM_NAME=%s\n' "${TEM_FROM_NAME}"
+	printf 'NOTIFICATION_EMAIL=%s\n' "${NOTIFICATION_EMAIL}"
+	printf 'LISTMONK_URL=%s\n' "${LISTMONK_URL}"
+	printf 'LISTMONK_LIST_UUID=%s\n' "${LISTMONK_LIST_UUID}"
+)"
+
+printf '%s\n' "${REMOTE_ENV}" | ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_IP}" \
+	"umask 077 && cat > ${REMOTE_DIR}/.env && chmod 600 ${REMOTE_DIR}/.env"
 
 # ---------------------------------------------------------------------------
 # Run installer
