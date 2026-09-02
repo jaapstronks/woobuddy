@@ -163,7 +163,7 @@ ssh -i deploy/.deploy_key root@$(cat deploy/.vps-ip) \
   > "backup-$(date +%Y%m%d-%H%M).sql"
 ```
 
-Scheduled off-VPS backups are open work — see [`docs/plans/briefs/39-deployment.md`](../docs/plans/briefs/39-deployment.md).
+Scheduled off-VPS backups are open work.
 
 ## Should we automate this?
 

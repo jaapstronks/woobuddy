@@ -8,15 +8,15 @@ _English version below._
 
 ## Voordat je begint
 
-1. **Lees [`README.md`](README.md) en [`CLAUDE.md`](CLAUDE.md).** Samen beschrijven ze de architectuur en de hardere ontwerpregels. Een PR die tegen die regels ingaat, halen we niet door — ongeacht hoe netjes de code is.
-2. **Check de backlog.** Open issues en [`docs/plans/TODO.md`](docs/plans/TODO.md) laten zien waar we mee bezig zijn. Werk aan iets dat al gepland staat heeft een veel grotere kans om binnen te komen dan een verrassing.
+1. **Lees [`README.md`](README.md) en [`docs/`](docs/).** Samen beschrijven ze de architectuur en de hardere ontwerpregels; de kernregels hieronder vatten ze samen. Een PR die tegen die regels ingaat, halen we niet door — ongeacht hoe netjes de code is.
+2. **Check de [issues](https://github.com/jaapstronks/woobuddy/issues).** Die laten zien waar we mee bezig zijn. Werk aan iets dat al gepland staat heeft een veel grotere kans om binnen te komen dan een verrassing.
 3. **Open eerst een issue voor niet-triviale wijzigingen.** Een tien-regels bugfix mag direct als PR. Iets wat de UX, de API of de architectuur raakt: open eerst een discussie of een issue zodat we op hoofdlijnen aligneren voor je uren investeert.
 
 ## Kernregels
 
 Deze staan niet ter discussie per PR — alleen per expliciet product-besluit.
 
-- **Client-first architectuur.** PDF's verlaten nooit de browser van de gebruiker. De server slaat geen documentinhoud op. Als je feature dit lijkt te breken, is het ontwerp fout. Zie [`docs/plans/done/00-client-first-architecture.md`](docs/plans/done/00-client-first-architecture.md).
+- **Client-first architectuur.** PDF's verlaten nooit de browser van de gebruiker. De server slaat geen documentinhoud op. Als je feature dit lijkt te breken, is het ontwerp fout. Zie [`docs/reference/client-first-architecture.md`](docs/reference/client-first-architecture.md).
 - **Geen taalmodel.** WOO Buddy draait 100% rule-based (regex + Deduce + woordenlijsten + structuurheuristieken). Voeg geen LLM-afhankelijkheid toe. Als je denkt er één nodig te hebben: lees eerst [`docs/reference/llm-revival.md`](docs/reference/llm-revival.md) en open een issue.
 - **UI in het Nederlands**, code, commits en documentatie in het Engels.
 - **Schrijf `WOO Buddy`** (WOO in kapitalen, Buddy met hoofdletter) in gebruikersgerichte tekst.
@@ -95,7 +95,7 @@ Door een PR in te dienen ga je akkoord met publicatie onder de [MIT-licentie](LI
 
 WOO Buddy is a small, opinionated codebase. Contributions welcome, but the bar is high on two axes — client-first architecture and reviewable work — because maintainer time is the scarce resource here.
 
-**Before you start:** read [`README.md`](README.md) and [`CLAUDE.md`](CLAUDE.md). For non-trivial changes, open an issue first.
+**Before you start:** read [`README.md`](README.md) and [`docs/`](docs/). For non-trivial changes, open an issue first.
 
 **Core rules** (not up for debate per PR):
 

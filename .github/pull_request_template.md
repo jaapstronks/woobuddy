@@ -9,7 +9,7 @@ PRs zonder testplan of (indien van toepassing) AI-disclosure worden teruggegeven
 
 ## Gelinkte issue / backlog-item
 
-<!-- Bv. "Closes #123" of "Refs docs/plans/briefs/XX-foo.md" -->
+<!-- Bv. "Closes #123". -->
 
 ## Testplan
 
