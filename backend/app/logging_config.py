@@ -19,8 +19,8 @@ caller having to pass them explicitly.
 
 CRITICAL: the logging pipeline deliberately does not process request bodies.
 Routes that handle document content (`/api/analyze`, `/api/export/...`) must
-never pass the raw text or PDF bytes to the logger. See `docs/plans/done/00-client-
-first-architecture.md`.
+never pass the raw text or PDF bytes to the logger. See
+`docs/reference/client-first-architecture.md`.
 """
 
 from __future__ import annotations

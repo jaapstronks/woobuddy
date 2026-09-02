@@ -14,7 +14,7 @@ salutation is a strong "private citizen is being addressed" signal,
 pre-filling `subject_role="burger"`.
 
 This is pure rule-based pattern matching. No model calls, no wordlists
-beyond what the caller already has. See `docs/plans/done/14-structuurherkenning.md`.
+beyond what the caller already has.
 """
 
 from __future__ import annotations

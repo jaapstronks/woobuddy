@@ -42,9 +42,9 @@
 				Wat er sinds de vorige update aan de tool is toegevoegd. Het volledige overzicht
 				staat in de
 				<a
-					href="https://github.com/jaapstronks/woobuddy/tree/main/docs/plans/done"
+					href="https://github.com/jaapstronks/woobuddy/commits/main"
 					target="_blank"
-					rel="noopener noreferrer">backlog</a
+					rel="noopener noreferrer">commitgeschiedenis</a
 				>.
 			</p>
 			<ul>
@@ -192,12 +192,12 @@
 
 			<h2>Volledige backlog</h2>
 			<p>
-				De volledige technische backlog — inclusief prioriteiten, afhankelijkheden en open
-				vragen — staat publiek op
+				De open punten — inclusief prioriteiten, afhankelijkheden en open vragen — staan
+				als
 				<a
-					href="https://github.com/jaapstronks/woobuddy/tree/main/docs/plans"
+					href="https://github.com/jaapstronks/woobuddy/issues"
 					target="_blank"
-					rel="noopener noreferrer">GitHub</a
+					rel="noopener noreferrer">issues op GitHub</a
 				>. Issues en pull-requests zijn welkom.
 			</p>
 		</article>

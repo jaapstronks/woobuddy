@@ -27,7 +27,12 @@ backend/dist/
 
 # Claude Code local state (per-project scratch)
 .claude/
+
+# Project instructions + working plans/briefs live in the private
+# `woobuddy-planning` sibling repo and are symlinked in (see its README).
+# No trailing slash so the symlinks themselves are ignored too.
 CLAUDE.md
+docs/plans
 
 # Docker
 docker-compose.override.yml

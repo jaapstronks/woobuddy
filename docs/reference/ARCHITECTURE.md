@@ -14,7 +14,7 @@
 >   contributor would need to satisfy to reintroduce a local LLM.
 > - **No MinIO for documents.** Client-first architecture: PDFs live
 >   in the browser's IndexedDB and stream ephemerally to the server
->   only for redaction. See `docs/plans/done/00-client-first-architecture.md`.
+>   only for redaction. See `docs/reference/client-first-architecture.md`.
 >
 > The rest of this doc is useful for context on the original design
 > decisions; trust the code, not this file, for current behavior.
