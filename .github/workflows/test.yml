@@ -76,5 +76,46 @@ jobs:
           cache-dependency-path: backend/pyproject.toml
 
       - run: pip install -e ".[dev]"
+      # Same list, same order as CONTRIBUTING.md "Checks die moeten slagen".
+      # Keep the two in sync: instructions CI does not enforce are how a
+      # broken tree merges green.
       - run: ruff check app/
+      - run: ruff format --check app/
+      - run: mypy app/
       - run: pytest tests/ -v --tb=short
+
+  # ---------------------------------------------------------------------------
+  # Images — build the production Docker images (build only, never push)
+  # ---------------------------------------------------------------------------
+  # Neither test suite touches backend/Dockerfile or frontend/Dockerfile: the
+  # backend suite runs pytest on a 3.12 runner, independent of the image. So
+  # when Dependabot lifted the base image to python:3.14-slim in #64, CI went
+  # green on an image that no longer builds (`regex` ships no cp314 wheel and
+  # the slim image has no gcc), every deploy since has died in the build step,
+  # and production kept serving a four-month-old image. This job is the gate
+  # that catches that class of breakage.
+  #
+  # No `targets:` — bake defaults to the compose file's default group, which is
+  # exactly the services that declare a `build:` section. A future buildable
+  # service is then covered without editing this file.
+  images:
+    name: Images build
+    runs-on: ubuntu-latest
+
+    # docker-compose.prod.yml interpolates this into the postgres service.
+    # Nothing built here needs it, but compose warns on an unset variable.
+    env:
+      DBASE_PASSWORD: ci
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/bake-action@v7
+        with:
+          files: docker-compose.prod.yml
+          push: false
+          set: |
+            *.cache-from=type=gha
+            *.cache-to=type=gha,mode=max

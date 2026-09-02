@@ -44,9 +44,12 @@ cd frontend && npm run check && npm test
 # Backend
 cd backend && source .venv/bin/activate
 ruff check app/ && ruff format --check app/ && mypy app/ && pytest
+
+# Docker-images — alleen nodig als je een Dockerfile of docker-compose.prod.yml raakt
+docker compose -f docker-compose.prod.yml build
 ```
 
-CI draait dezelfde checks op elke PR. Falende CI = geen review.
+CI draait dezelfde checks op elke PR, plus de image-build. Falende CI = geen review.
 
 ## PR-richtlijnen
 
