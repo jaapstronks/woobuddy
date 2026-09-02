@@ -5,8 +5,9 @@
 	 *
 	 *   empty circle  →  active indicator  →  checkmark
 	 *
-	 * The active step renders a Shoelace progress bar underneath the label.
-	 * When `percent` is null the bar is indeterminate (e.g. server detection
+	 * The active step renders a plain CSS progress bar underneath the label
+	 * (`ui/LinearProgress`, not Shoelace: this component is reachable from the
+	 * SSR landing page, see #68). When `percent` is null the bar is indeterminate (e.g. server detection
 	 * round-trip where we don't know how long it will take); when a number is
 	 * supplied it switches to determinate mode (e.g. per-page text extraction).
 	 */
@@ -23,8 +24,8 @@
 </script>
 
 <script lang="ts">
-	import '@shoelace-style/shoelace/dist/components/progress-bar/progress-bar.js';
 	import { Check } from 'lucide-svelte';
+	import LinearProgress from '$lib/components/ui/LinearProgress.svelte';
 
 	let { steps }: { steps: Step[] } = $props();
 </script>
@@ -62,11 +63,7 @@
 				</p>
 				{#if step.status === 'active'}
 					<div class="mt-1.5">
-						{#if step.percent == null}
-							<sl-progress-bar indeterminate style="--height: 4px;"></sl-progress-bar>
-						{:else}
-							<sl-progress-bar value={step.percent} style="--height: 4px;"></sl-progress-bar>
-						{/if}
+						<LinearProgress value={step.percent} label={step.label} />
 						{#if step.detail}
 							<p class="mt-1 text-xs text-ink-mute">{step.detail}</p>
 						{/if}

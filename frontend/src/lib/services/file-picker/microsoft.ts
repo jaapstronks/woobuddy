@@ -149,8 +149,19 @@ async function acquireToken(resource: string, account: MsalAccount): Promise<str
 		// Fall through to popup flow if silent refresh fails (common
 		// when the picker asks for a resource not covered by the
 		// initial login).
-		const res = await msal.acquireTokenPopup({ scopes });
-		return res.accessToken;
+		try {
+			const res = await msal.acquireTokenPopup({ scopes });
+			return res.accessToken;
+		} catch (cause) {
+			const msg = errorMessage(cause);
+			if (msg.includes('user_cancelled')) {
+				throw new PickerError('cancelled', 'microsoft', 'Aanmelding geannuleerd', cause);
+			}
+			if (msg.includes('popup')) {
+				throw new PickerError('popup-blocked', 'microsoft', 'Aanmeldvenster is geblokkeerd', cause);
+			}
+			throw new PickerError('auth', 'microsoft', 'Aanmelden bij Microsoft mislukte', cause);
+		}
 	}
 }
 
@@ -255,10 +266,17 @@ async function runPickerChannel(
 	return new Promise<PickedItem>((resolve, reject) => {
 		let port: MessagePort | null = null;
 		let settled = false;
+		let timeout = 0;
+		let closedPoll = 0;
 
+		// Every exit path (pick, cancel, error, timeout, popup closed)
+		// goes through here, so the 5-minute timeout and the 500 ms
+		// closed-poll are cleared exactly once no matter who settled.
 		function settle(fn: () => void): void {
 			if (settled) return;
 			settled = true;
+			window.clearTimeout(timeout);
+			window.clearInterval(closedPoll);
 			window.removeEventListener('message', onWindowMessage);
 			if (port) {
 				port.close();
@@ -381,7 +399,7 @@ async function runPickerChannel(
 		// Give the popup a reasonable window to contact us. If the
 		// user is still on the Microsoft login screen this can take a
 		// while, so we err on the generous side.
-		const timeout = window.setTimeout(
+		timeout = window.setTimeout(
 			() => {
 				settle(() =>
 					reject(new PickerError('network', 'microsoft', 'Picker reageerde niet op tijd'))
@@ -391,10 +409,8 @@ async function runPickerChannel(
 		);
 
 		// Detect user closing the popup manually.
-		const closedPoll = window.setInterval(() => {
+		closedPoll = window.setInterval(() => {
 			if (popup.closed) {
-				window.clearInterval(closedPoll);
-				window.clearTimeout(timeout);
 				settle(() =>
 					reject(new PickerError('cancelled', 'microsoft', 'Picker gesloten'))
 				);

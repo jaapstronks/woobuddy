@@ -25,6 +25,50 @@ export class ApiError extends Error {
 
 const RETRY_DELAY_MS = 2000;
 
+/**
+ * Turn a non-2xx response body into copy a reviewer can read (#68).
+ *
+ * FastAPI answers with `{"detail": "..."}` and our routes fill `detail`
+ * with Dutch text, so that string is the message whenever it's present.
+ * Everything else — a reverse-proxy HTML page on 502/503, FastAPI's
+ * English "Internal Server Error", a 422 validation array, an empty
+ * body — falls back to a fixed Dutch line per status class. Raw bodies
+ * never reach the UI; before this the lead form rendered the JSON blob
+ * verbatim.
+ */
+export function messageFromErrorBody(status: number, body: string): string {
+	const detail = extractDetail(body);
+	if (detail && !GENERIC_UPSTREAM_DETAILS.has(detail)) return detail;
+	if (status === 429 || status === 503) {
+		return 'De server is even druk. Probeer het over een minuut opnieuw.';
+	}
+	if (status >= 500) {
+		return 'Er ging iets mis aan onze kant. Probeer het later opnieuw.';
+	}
+	if (status === 413) return 'Het bestand is te groot voor de server.';
+	if (status === 422 || status === 400) {
+		return 'De ingevulde gegevens zijn niet geldig. Controleer ze en probeer opnieuw.';
+	}
+	return 'De aanvraag kon niet worden verwerkt. Probeer het later opnieuw.';
+}
+
+/** Default `detail` strings FastAPI/Starlette emit without our routes touching them. */
+const GENERIC_UPSTREAM_DETAILS = new Set(['Internal Server Error', 'Not Found', 'Method Not Allowed']);
+
+function extractDetail(body: string): string | null {
+	if (!body || body.length > 4096) return null;
+	try {
+		const parsed: unknown = JSON.parse(body);
+		if (parsed && typeof parsed === 'object' && 'detail' in parsed) {
+			const detail = (parsed as { detail: unknown }).detail;
+			if (typeof detail === 'string' && detail.trim()) return detail.trim();
+		}
+	} catch {
+		// HTML or plain text from a proxy — not something to show.
+	}
+	return null;
+}
+
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -47,7 +91,7 @@ async function requestOnce<T>(path: string, options?: RequestInit): Promise<T> {
 	if (!res.ok) {
 		const body = await res.text();
 		const kind = res.status >= 500 ? 'server' : 'client';
-		throw new ApiError(body || `API ${res.status}`, kind, res.status);
+		throw new ApiError(messageFromErrorBody(res.status, body), kind, res.status);
 	}
 	// 204 No Content: no body to parse. Caller receives `undefined as T`.
 	if (res.status === 204) return undefined as T;

@@ -13,13 +13,14 @@
 	 * `onfile` callback, which is the same entry point the drop
 	 * zone uses — the parent doesn't care where the file came from.
 	 */
-	import '@shoelace-style/shoelace/dist/components/progress-bar/progress-bar.js';
+	import LinearProgress from '$lib/components/ui/LinearProgress.svelte';
 	import {
 		anyPickerEnabled,
 		isPickerEnabled,
 		type PickerProvider
 	} from '$lib/config/file-picker';
-	import { pickFromProvider, PickerError, trackPicker } from '$lib/services/file-picker';
+	import { pickFromProvider, PickerError } from '$lib/services/file-picker';
+	import { track } from '$lib/analytics/plausible';
 
 	let {
 		onfile,
@@ -70,7 +71,7 @@
 			totalBytes: null,
 			message: null
 		};
-		trackPicker('picker.launched', provider);
+		track('picker_launched', { provider });
 
 		try {
 			const file = await pickFromProvider(provider, {
@@ -81,12 +82,12 @@
 					phase = { ...phase, loadedBytes: loaded, totalBytes: total };
 				}
 			});
-			trackPicker('picker.completed', provider);
+			track('picker_completed', { provider });
 			resetPhase();
 			onfile(file);
 		} catch (e) {
 			if (e instanceof PickerError && e.kind === 'cancelled') {
-				trackPicker('picker.cancelled', provider);
+				track('picker_cancelled', { provider });
 				resetPhase();
 				return;
 			}
@@ -239,16 +240,16 @@
 				</p>
 				<div class="mt-2">
 					{#if phase.kind === 'downloading' && phase.totalBytes}
-						<sl-progress-bar
-							value={Math.min(100, Math.round((phase.loadedBytes / phase.totalBytes) * 100))}
-							style="--height: 4px;"
-						></sl-progress-bar>
+						<LinearProgress
+							value={(phase.loadedBytes / phase.totalBytes) * 100}
+							label="Bestand ophalen"
+						/>
 						<p class="mt-1 text-xs text-ink-mute">
 							{formatBytes(phase.loadedBytes)} van {formatBytes(phase.totalBytes)} · passeert onze
 							servers niet
 						</p>
 					{:else}
-						<sl-progress-bar indeterminate style="--height: 4px;"></sl-progress-bar>
+						<LinearProgress label={phase.kind === 'downloading' ? 'Bestand ophalen' : 'Aanmelden'} />
 						<p class="mt-1 text-xs text-ink-mute">
 							{#if phase.kind === 'downloading'}
 								{formatBytes(phase.loadedBytes)} ontvangen · passeert onze servers niet

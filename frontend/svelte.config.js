@@ -57,8 +57,9 @@ const config = {
 					// never injected, so allowing it here is harmless.
 					'https://analytics.woobuddy.nl'
 				],
-				'style-src': ['self', 'unsafe-inline', 'https://fonts.googleapis.com', 'https://cdn.jsdelivr.net'],
-				'font-src': ['self', 'https://fonts.gstatic.com', 'https://cdn.jsdelivr.net', 'data:'],
+				// System fonts only (see app.css) — no Google Fonts origins here.
+				'style-src': ['self', 'unsafe-inline', 'https://cdn.jsdelivr.net'],
+				'font-src': ['self', 'https://cdn.jsdelivr.net', 'data:'],
 				'img-src': ['self', 'data:', 'blob:'],
 				// Backend runs in Docker with host port 8100 mapped to the
 				// container's 8000 (see docker-compose.yml). Local-only
@@ -85,6 +86,12 @@ const config = {
 					'https://*.sharepoint.com',
 					'https://*.onedrive.com',
 					'https://*.office.com',
+					// Personal (consumer) OneDrive accounts: Graph's
+					// `@microsoft.graph.downloadUrl` resolves to one of these
+					// CDN hosts, not to *.onedrive.com (#68).
+					'https://*.files.1drv.com',
+					'https://*.storage.live.com',
+					'https://*.microsoftpersonalcontent.com',
 					'https://apis.google.com',
 					'https://accounts.google.com',
 					'https://oauth2.googleapis.com',

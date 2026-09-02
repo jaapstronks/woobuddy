@@ -19,7 +19,6 @@
 
 export { pickFromMicrosoft } from './microsoft';
 export { pickFromGoogle } from './google';
-export { trackPicker } from './analytics';
 export { PickerError } from './types';
 export type { PickerHandlers, PickerResult, PickerErrorKind } from './types';
 
