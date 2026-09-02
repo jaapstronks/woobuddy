@@ -7,21 +7,25 @@
 - **Source:** tighten-scan 2026-09-02
 
 > Agent measurements on `origin/main` @ `83fecbb`; re-verify before editing.
+> Second pass (review of PR #99, 2026-09-02): all ten findings hold; one
+> pointer corrected (finding 2) and two claims narrowed (1, 4).
 
 ## Perf
 
 1. `components/review/DetectionList.svelte:286` calls `sameNameCount(det)` per
    row inside the render loop; `findSameNameDetections` scans `allDetections`.
-   O(N²) on every mutation. Hoist to one `$derived` map.
+   O(P·N) on every mutation, with P the number of `persoon` rows (non-persoon
+   rows return 0 early). Hoist to one `$derived` map.
 2. `stores/detections.svelte.ts:548-560` `acceptAllPendingTier1` /
    `acceptHighConfidenceTier2` await `accept()` per row; each `review()`
    reassigns `allDetections` (5 derived passes) and does a full IDB
    read-modify-write. 200 rows = 200 transactions. Same shape in
-   `routes/review/[docId]/log/+page.svelte:308-320`. Add a batch mutate +
-   single persist.
+   `routes/review/[docId]/log/+page.svelte:311-336` (`confirmBulk`, per-row
+   `review()`/`remove()` at 317-328). Add a batch mutate + single persist.
 3. `services/pdf-overlay-draw.ts:67` clears `innerHTML` and rebuilds every
    rectangle + listener on every detection change, including off-page flips.
-4. `log/+page.svelte` recomputes filter → sort → stats on every keystroke.
+4. `log/+page.svelte` recomputes filter → sort → stats (`:116,140,184`) on every
+   keystroke in the page-number filter (`:539-544`, the only text input).
 5. `PdfViewer.svelte:203-214` never calls `pdfDoc.destroy()` on the previous
    document; re-attaching a PDF leaks a worker per swap.
 

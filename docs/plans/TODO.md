@@ -20,10 +20,25 @@ _Ingericht bij workflow-init 2026-09-02 vanuit `docs/todo/` (fases A–G van het
 README, bewaard als [`done/backlog-README-2026-04.md`](done/backlog-README-2026-04.md)). Blokken
 top-down; binnen een blok top-down op prioriteit. #66–#71 komen uit de tighten-scan van
 2026-09-02. #62 (Notion-kruisverwijzingen) is vervallen: Notion wordt niet meer gebruikt
-voor de todo's van deze repo. Vervolgnummers: 72._
+voor de todo's van deze repo. Vervolgnummers: 73._
 
 > **A · Kapot of doctrine-schending - eerst** - verkeerde of ontbrekende zwarte balken,
 > een rode testsuite, of een trust-claim die de code niet waarmaakt.
+
+### 72. Leadformulier op woobuddy.nl geeft 500: mailconfig bereikt de api-container niet
+
+Gemeten op 2026-09-02: een geldige inzending op `POST /api/leads` eindigt in
+`leads.brevo_api_key_missing` en een 500; in de draaiende container zijn alle `BREVO_*`-
+variabelen leeg, want `docker-compose.prod.yml` geeft alleen `DATABASE_URL` door en
+`deploy.sh` schrijft alleen het DB-wachtwoord naar `.env`. Het formulier heeft op productie
+dus nooit gewerkt. Fix: `feat/brevo-to-listmonk` landen (lokaal, c1ee83d), mailconfig via
+`env_file` in de prod-compose, en een deploy-check die een lege sleutel hard laat falen.
+P0, size S + secrets. Brief: [`briefs/72-lead-form-broken-in-production.md`](briefs/72-lead-form-broken-in-production.md)
+
+**Jaap levert:** Scaleway TEM-sleutel + project-id, Listmonk-lijst-UUID, `NOTIFICATION_EMAIL`.
+
+**Klaar als:** een echte inzending op woobuddy.nl geeft 200 en de notificatiemail komt aan,
+en een deploy zonder mailsecrets faalt zichtbaar.
 
 ### 66. Redactie-correctheid: custom termen, undo van split/merge, verdwenen motivatie
 
@@ -71,8 +86,9 @@ tonen Nederlandse tekst bij 500/502/503.
 
 Drie dingen misleiden een nieuwe bijdrager vandaag: `CONTRIBUTING.md` linkt naar een
 bestand dat niet in de repo zit, CI draait niet wat CONTRIBUTING voorschrijft (`mypy` geeft
-3 fouten, `ruff format --check` 13 bestanden, frontend heeft geen lintstap), en het oude
-README beweert dat de Ollama-provider in-tree blijft terwijl die weg is. **[delegeerbaar]**
+3 fouten, `ruff format --check` 13 bestanden, frontend heeft geen lintstap), en de gearchiveerde
+backlog-index (`done/backlog-README-2026-04.md`) beweert dat de Ollama-provider in-tree blijft
+terwijl die weg is. **[delegeerbaar]**
 Verder: `ARCHITECTURE.md` is grotendeels fictie, en `scripts/woo_contacts_named.csv` bevat
 echte namen van ambtenaren in een publieke MIT-repo. P2, size S–M, vooral schrappen.
 Brief: [`briefs/71-docs-ci-and-backlog-hygiene.md`](briefs/71-docs-ci-and-backlog-hygiene.md)
@@ -421,8 +437,8 @@ anonieme en Gratis-gebruikers onbeperkt kunnen analyseren en exporteren.
 Better Auth heeft mail nodig voor verificatie, wachtwoordherstel en uitnodigingen; facturatie
 voor bonnen en mislukte betalingen. Zeven Nederlandse templates, HTML met platte-tekst-variant,
 functioneel en zonder marketing. **Inkorten vóór uitvoering:** de brief stelt Resend of
-Nodemailer voor, terwijl Scaleway TEM en Listmonk al draaien sinds de Brevo-migratie - wat
-rest is de templateset (zie #71). P2, size M.
+Nodemailer voor, terwijl Scaleway TEM en Listmonk al gebouwd zijn op de nog ongemergde branch
+`feat/brevo-to-listmonk` - wat rest is de templateset (zie #71). P2, size M.
 Brief: [`briefs/38-email-service.md`](briefs/38-email-service.md)
 
 **Klaar als:** alle auth- en facturatiemails komen betrouwbaar aan en renderen correct in

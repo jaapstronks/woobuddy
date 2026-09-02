@@ -7,6 +7,9 @@
 - **Source:** tighten-scan 2026-09-02; `/Lang` finding reproduced empirically by Fable
 
 > Line numbers verified on `origin/main` @ `83fecbb`; re-verify before editing.
+> Second pass (review of PR #99, 2026-09-02): every line reference confirmed;
+> the `/Lang` loss and the red test remain empirical (reproduced by hand, not
+> by static reading).
 
 ## Why
 

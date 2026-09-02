@@ -7,6 +7,8 @@
 - **Source:** tighten-scan 2026-09-02
 
 > Line numbers verified on `origin/main` @ `83fecbb`; re-verify before editing.
+> Second pass (review of PR #99, 2026-09-02): all claims hold; two pointers
+> corrected (4, 5) and finding 5 reworded.
 
 ## Findings
 
@@ -20,6 +22,8 @@
    render and shipped in the landing chunk. Three comments claim the opposite
    (`landing/OcrOptInDialog.svelte:10`, `marketing/LeadCaptureForm.svelte:15`,
    `routes/review/+layout.ts:2`). Fix: a plain `<div>` + CSS bar in both.
+   Nuance: importing `progress-bar.js` in Node does not throw, so this is a
+   bundle-size, eval-cost and doctrine problem, not a live SSR 500.
 2. **Raw JSON shown as Dutch copy in the lead form.** `lib/api/client.ts:48-50`
    sets `ApiError.message = await res.text()` (a FastAPI `{"detail": ...}` body);
    `marketing/LeadCaptureForm.svelte:56-59` renders it verbatim. After the
@@ -32,12 +36,14 @@
    `PickerError('network')`. Verify with a personal account, then add the hosts.
 4. **Microsoft picker robustness** (`file-picker/microsoft.ts`): `:212-223`
    `popup.document.body` used synchronously after `window.open('')`;
-   `:259-268` `settle()` never clears the 5-minute timeout (`:385`) or the
-   500 ms poll (`:395`); `:148-154` a failed `acquireTokenPopup` escapes as a
+   `:259-268` `settle()` never clears the 5-minute timeout (`:384`) or the
+   500 ms poll (`:394`; the poll callback itself does clear both, so the fix
+   belongs in `settle()`); `:148-154` a failed `acquireTokenPopup` escapes as a
    bare `Error` instead of `PickerError('popup-blocked'|'cancelled')`.
-5. **Picker files bypass PDF validation.** `google.ts:716` / `microsoft.ts:487`
-   default `type` to `application/pdf`; `FileUpload.svelte:37` checks only the
-   `.pdf` extension. `FileUpload.svelte:51-57` never calls `onfiles` when all
+5. **Picker files get an extension-only PDF check.** `google.ts:225` /
+   `microsoft.ts:487` default `type` to `application/pdf`; the files do pass
+   through `validate()` (`FileUpload.svelte:92` → `:37`), but that checks only
+   the `.pdf` extension, so the fabricated MIME type is never tested. `FileUpload.svelte:51-57` never calls `onfiles` when all
    files are invalid, so stale `pendingDocId`/`steps` survive in
    `HeroUploadPanel`.
 6. **Analytics bypass.** `file-picker/analytics.ts:23-28` writes to

@@ -8,6 +8,9 @@
 
 > Agent measurements on `origin/main` @ `83fecbb`; the LOC estimates are
 > proposals, not measurements. Re-verify line numbers before editing.
+> Second pass (review of PR #99, 2026-09-02): A, B, E confirmed; table C
+> re-based (two "uses" counts were one too high, C5 named the wrong file, C9
+> counted a non-NFKD normaliser); section F annotated.
 
 ## A. Review page decomposition (`routes/review/[docId]/+page.svelte`, 1305 lines)
 
@@ -42,15 +45,15 @@ effect at `:233-247` strips `?detection=` even when `setPage` no-ops because
 
 | Canonical | Uses | Hand-rolled | Where |
 |---|---|---|---|
-| `utils/review-status.ts` `isAcceptedRedaction` | 8 | 1 | `export-service.ts:44` (see #66) |
+| `utils/review-status.ts` `isAcceptedRedaction` | 7 | 1 | `export-service.ts:44` (see #66) |
 | page display `n+1` | 0 (no helper) | 7 | `PdfViewerToolbar:96`, `PageStrip:38,46`, `SearchPanel:221,249`, `DetectionList:156`, `log:694` |
-| `utils/format.ts` `formatDate` | 0 | 2 | `log/+page.svelte:371`, `onderbouwing/report.ts:294` |
+| `utils/format.ts` `formatDate` | 0 | 1 (+1 variant) | `log/+page.svelte:368`; `onderbouwing/report.ts:292` `formatTimestamp` returns `{utc, ams}`, a different shape |
 | `lib/api/client.ts` | 2 of 3 POSTs | 1 | `export-service.ts:11,14,87` (own `BASE`, raw fetch, no `ApiError`) |
-| `analytics/events.ts` `track()` | 2 of 3 | 1 | `file-picker/analytics.ts:23-28` |
-| `file-picker`: `parseContentLength`, `streamWithProgress` | — | byte-identical ×2 | `microsoft.ts:443,449` / `google.ts:186,192` → `file-picker/download.ts` |
+| `analytics/plausible.ts` `track()` | 4 | 1 | `file-picker/analytics.ts:23-28` |
+| `file-picker`: `parseContentLength`, `streamWithProgress` | — | byte-identical ×2 | `microsoft.ts:442,448` / `google.ts:186,192` → `file-picker/download.ts` |
 | byte formatting | 0 | 2 | `ProviderPickerButtons:116-120`, `FileUpload:159` |
-| backend `_pipeline_detection_from_ner` (`pipeline_engine.py:72`) | 8 | 3 | `title_match_rules.py:84,104`, `pipeline_custom_terms.py:29` |
-| backend NFKD-lower normaliser | — | 4 impls | `name_engine.py:228,246`, `whitelist_engine/_text.py:154,162`, `custom_term_matcher.py:44` |
+| backend `_pipeline_detection_from_ner` (`pipeline_engine.py:72`) | 7 | 3 | `title_match_rules.py:84,104`, `pipeline_custom_terms.py:29` |
+| backend NFKD-lower normaliser | — | 3 impls | `name_engine.py:228,246`, `whitelist_engine/_text.py:154` (`:162` wraps it). Not `custom_term_matcher.py:44`: that one deliberately keeps diacritics, merging it is a behaviour change |
 | backend `asyncio.to_thread` for CPU work | 1 | 2 | `export.py:166,172` (see #67) |
 
 ## D. Bigger files with natural seams
@@ -92,6 +95,12 @@ Also orphaned: `pdf_engine.extract_text` (`:128-186`, tests only),
 
 ## F. Dead exports (zero importers, verified by grep; drop `export` or delete)
 
+Most of these are still used inside their own file, so only the `export`
+keyword is dead (`pulseOverlay`, `BBOX_SLACK_PT`, `makeStatusCommand`,
+`reanalyzeWithLists`, `siteMode`, `getOverlayStyle`); genuinely unused code:
+`deleteSessionState`, `getCachedTooiVersion` (also re-exported at
+`diwoo/index.ts:14`).
+
 Frontend: `pdf-overlay-effects.ts:18` `pulseOverlay`;
 `session-state-store.ts:157` `deleteSessionState`; `pdf-store.ts` `deletePdf`,
 `getStorageEstimate`; `extraction-store.ts` `deleteExtraction`; `idb.ts`
@@ -102,10 +111,10 @@ Frontend: `pdf-overlay-effects.ts:18` `pulseOverlay`;
 `getCachedTooiVersion`; `PdfViewer.svelte:1-6` module re-exports;
 `pdf-overlay-draw.ts:178` `getOverlayStyle` ("exported for unit testing",
 no test exists). Unreachable UI: the Art. 5.3 banner (`+page.svelte:920-937`,
-`five_year_warning` hard-coded `false` at `review.svelte.ts:83`),
+`five_year_warning` hard-coded `false` at `review.svelte.ts:82` and `HeroUploadPanel.svelte:80`),
 `Tier2Card.svelte:183-187` "Gepropageerd" (`propagated_from` always null),
 the Reviewer column at `log/+page.svelte:758`.
-Deps: `@testing-library/svelte` (0 refs; `vitest.config.ts:38` is `node`
+Deps: `@testing-library/svelte` (0 refs; `vitest.config.ts:31` is `node`
 env so component tests cannot run anyway). Static: `static/samples/*.png`
 (~500 KB, 0 refs), `static/shoelace/assets/icons` (8.4 MB, bypassed by the
 jsdelivr `setBasePath` at `routes/review/+layout.svelte:8`),

@@ -26,7 +26,8 @@ Alleen beslissingen die het gedrag van toekomstige sessies sturen.
 - **2026-04 — Anonieme analyse persisteert niets** (#50): geen Document- of Detection-rijen
   voor `/api/analyze`; reviewstate leeft in IndexedDB. Zie [`50-anonymous-no-persist.md`](50-anonymous-no-persist.md).
 - **2026-07-08 — Leadformulier van Brevo naar Listmonk + Scaleway TEM** (EU-infra van
-  Dreamkit). Nog niet gemerged: branch `feat/brevo-to-listmonk`.
+  Dreamkit). Nog niet gemerged: branch `feat/brevo-to-listmonk`; landt via #72, want op
+  productie heeft het formulier nooit mailconfig gehad (gemeten 2026-09-02).
 - **2026-09-02 — Backlog van `docs/todo/` naar `docs/plans/` (universele werkwijze); Notion
   afgevoerd.** De Notion-database "Woobuddy Todos" wordt niet meer bijgehouden; #62
   (Notion-kruisverwijzingen) is zonder uitvoering afgevoerd. In-repo en getrackt ondanks

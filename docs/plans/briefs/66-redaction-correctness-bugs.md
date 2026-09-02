@@ -9,6 +9,8 @@
 > Scan output. Line numbers were verified against `origin/main` @ `83fecbb` on
 > 2026-09-02 but are agent measurements: re-verify before editing. Items marked
 > **confirmed** were checked by hand; **plausible** were read-derived only.
+> Second pass (review of PR #99, 2026-09-02): all ten findings re-verified
+> against the code; every line reference held to within ±1.
 
 ## Why
 
@@ -60,10 +62,10 @@ silently discards reviewer work. They are ordered by blast radius.
    lands at the wrong x.
 9. **Export decides "accepted" with a hand-rolled predicate.**
    `services/export-service.ts:44` re-implements `isAcceptedRedaction`
-   (`utils/review-status.ts:90`, 8 other call sites). This is the one place
+   (`utils/review-status.ts:90`, 7 other call sites). This is the one place
    where drift changes what gets burned in.
 10. **Undo `push` silently drops commands while busy.**
-    `services/review-actions.ts:56-87` call `undoStore.push` unawaited;
+    `services/review-actions.ts:56-88` call `undoStore.push` unawaited;
     `undo.svelte.ts:62` returns when `busy`. Rapid A/R/D keypresses vanish.
 
 ## What the session does

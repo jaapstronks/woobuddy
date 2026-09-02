@@ -1,4 +1,4 @@
-> **Historisch (2026-09-02).** Dit was `docs/todo/README.md`, de backlog-index van april 2026, hier bewaard om de fase-indeling, de GTM-volgorde en de "Briefings Not Adopted" niet te verliezen. Het nu-document is [`../TODO.md`](../TODO.md); beslissingen staan in [`decisions.md`](decisions.md). Links hieronder zijn niet bijgewerkt.
+> **Historisch (2026-09-02).** Dit was `docs/todo/README.md`, de backlog-index van april 2026, hier bewaard om de fase-indeling, de GTM-volgorde en de "Briefings Not Adopted" niet te verliezen. Het nu-document is [`../TODO.md`](../TODO.md); beslissingen staan in [`decisions.md`](decisions.md). Relatieve links zijn herschreven naar de nieuwe mappen (`briefs/`, `done/`).
 
 # WOO Buddy — Todo Backlog
 
@@ -31,7 +31,7 @@ Pricing principles: don't gate the core review loop, don't anchor low (€99 rea
 - **No LLM in the live pipeline.** No GPU, no model hosting, no verwerkersovereenkomst for an external model provider. Phase 2 (browser-only LLM via WebGPU) is a possibility for later, not a current dependency.
 - **We accept limitations this imposes.** Draft-saving, cross-session resume, and server-side previews are harder (or impossible) under this model. That is a deliberate trade-off. When a feature seems to require server-side document storage, the right answer is usually "keep it in IndexedDB" or "drop the feature" — not "compromise the privacy story."
 
-Full architectural specification: [#00 — Client-first architecture](done/00-client-first-architecture.md). Pivot rationale: [`docs/reference/woo-redactietool-analyse.md`](../reference/woo-redactietool-analyse.md). The pivot itself: [`done/35-deactivate-llm.md`](done/35-deactivate-llm.md).
+Full architectural specification: [#00 — Client-first architecture](00-client-first-architecture.md). Pivot rationale: [`docs/reference/woo-redactietool-analyse.md`](../../reference/woo-redactietool-analyse.md). The pivot itself: [`done/35-deactivate-llm.md`](35-deactivate-llm.md).
 
 ---
 
@@ -70,12 +70,12 @@ Small security/logging work on top of the already-done client-first architecture
 
 | # | Todo | Priority | Size | Source |
 |---|------|----------|------|--------|
-| 0 | ~~[Client-first architecture](done/00-client-first-architecture.md)~~ | P0 | XL | Architectural decision |
-| 1 | ~~[Testing foundation](done/01-testing-foundation.md)~~ | P0 | L | Testing & Polish |
-| 2 | ~~[Error handling](done/02-error-handling.md)~~ | P0 | M | Testing & Polish |
-| 3 | ~~[Security hardening](done/03-security-hardening.md)~~ | P0 | M | Testing & Polish |
-| 4 | ~~[Structured logging](done/04-structured-logging.md)~~ | P1 | S | Testing & Polish |
-| 35 | ~~[Deactivate LLM layer (dormant)](done/35-deactivate-llm.md)~~ | P0 | S | Pivot 2026-04 |
+| 0 | ~~[Client-first architecture](00-client-first-architecture.md)~~ | P0 | XL | Architectural decision |
+| 1 | ~~[Testing foundation](01-testing-foundation.md)~~ | P0 | L | Testing & Polish |
+| 2 | ~~[Error handling](02-error-handling.md)~~ | P0 | M | Testing & Polish |
+| 3 | ~~[Security hardening](03-security-hardening.md)~~ | P0 | M | Testing & Polish |
+| 4 | ~~[Structured logging](04-structured-logging.md)~~ | P1 | S | Testing & Polish |
+| 35 | ~~[Deactivate LLM layer (dormant)](35-deactivate-llm.md)~~ | P0 | S | Pivot 2026-04 |
 
 ## Phase B — Core Redaction Experience (the prototype's reason for existing)
 
@@ -83,21 +83,21 @@ This phase turns the viewer into an actual editing tool and beefs up the rule-ba
 
 | # | Todo | Priority | Size | Source |
 |---|------|----------|------|--------|
-| 5 | ~~[Review/Edit mode toggle](done/05-mode-toggle.md)~~ | P1 | M | Editing |
-| 6 | ~~[Manual text selection redaction](done/06-manual-text-redaction.md)~~ | P1 | L | Editing |
-| 7 | ~~[Area selection redaction](done/07-area-selection.md)~~ | P1 | M | Editing |
-| 8 | ~~[Undo/redo](done/08-undo-redo.md)~~ | P1 | M | Editing |
-| 9 | ~~[Search-and-redact](done/09-search-and-redact.md)~~ | P1 | L | Editing |
-| 10 | ~~[Page completeness review](done/10-page-completeness.md)~~ | P1 | M | Editing |
-| 11 | ~~[Boundary adjustment](done/11-boundary-adjustment.md)~~ | P2 | L | Editing |
-| 12 | ~~[Name lists: Meertens voornamen + CBS achternamen](done/12-name-lists-meertens-cbs.md)~~ | P1 | M | Pivot 2026-04 |
-| 13 | ~~[Functietitel + publiek-functionaris rule engine](done/13-functietitel-publiek-functionaris.md)~~ | P1 | M | Pivot 2026-04 |
-| 14 | ~~[Structuurherkenning (headers, signatures, aanhef)](done/14-structuurherkenning.md)~~ | P1 | M | Pivot 2026-04 |
-| 15 | ~~[Tier 2 suggestion card UX](done/15-tier2-suggestion-ux.md)~~ | P1 | M | Reviewer feedback 2026-04 |
-| 16 | ~~[Tier 1 gaps: KvK, BTW, geboortedatum](done/16-tier1-gaps.md)~~ | P2 | S | Pivot 2026-04 |
-| 17 | ~~[Publieke functionarissen referentielijst (per-document)](done/17-publieke-functionarissen-referentielijst.md)~~ | P2 | M | Pivot 2026-04 |
-| 18 | ~~[Split and merge detections](done/18-split-merge.md)~~ | P3 | M | Editing |
-| 48 | ~~[Non-Dutch surname coverage for Tier 2 persoon](done/48-non-dutch-surnames.md)~~ | P2 | M | Bug surfaced 2026-04 |
+| 5 | ~~[Review/Edit mode toggle](05-mode-toggle.md)~~ | P1 | M | Editing |
+| 6 | ~~[Manual text selection redaction](06-manual-text-redaction.md)~~ | P1 | L | Editing |
+| 7 | ~~[Area selection redaction](07-area-selection.md)~~ | P1 | M | Editing |
+| 8 | ~~[Undo/redo](08-undo-redo.md)~~ | P1 | M | Editing |
+| 9 | ~~[Search-and-redact](09-search-and-redact.md)~~ | P1 | L | Editing |
+| 10 | ~~[Page completeness review](10-page-completeness.md)~~ | P1 | M | Editing |
+| 11 | ~~[Boundary adjustment](11-boundary-adjustment.md)~~ | P2 | L | Editing |
+| 12 | ~~[Name lists: Meertens voornamen + CBS achternamen](12-name-lists-meertens-cbs.md)~~ | P1 | M | Pivot 2026-04 |
+| 13 | ~~[Functietitel + publiek-functionaris rule engine](13-functietitel-publiek-functionaris.md)~~ | P1 | M | Pivot 2026-04 |
+| 14 | ~~[Structuurherkenning (headers, signatures, aanhef)](14-structuurherkenning.md)~~ | P1 | M | Pivot 2026-04 |
+| 15 | ~~[Tier 2 suggestion card UX](15-tier2-suggestion-ux.md)~~ | P1 | M | Reviewer feedback 2026-04 |
+| 16 | ~~[Tier 1 gaps: KvK, BTW, geboortedatum](16-tier1-gaps.md)~~ | P2 | S | Pivot 2026-04 |
+| 17 | ~~[Publieke functionarissen referentielijst (per-document)](17-publieke-functionarissen-referentielijst.md)~~ | P2 | M | Pivot 2026-04 |
+| 18 | ~~[Split and merge detections](18-split-merge.md)~~ | P3 | M | Editing |
+| 48 | ~~[Non-Dutch surname coverage for Tier 2 persoon](48-non-dutch-surnames.md)~~ | P2 | M | Bug surfaced 2026-04 |
 
 ## Phase C — Polish & launch-ready (the "can we ship this to the public?" phase)
 
@@ -107,36 +107,36 @@ Once the core loop works, make it feel great **and** get it in front of real use
 
 | # | Todo | Priority | Size | Source |
 |---|------|----------|------|--------|
-| 19 | ~~[Redaction log & audit trail](done/19-redaction-log.md)~~ | P1 | L | Draft Workflow + Pivot 2026-04 |
-| 20 | ~~[Bulk sweep flows (header block, signature block, same-name)](done/20-bulk-sweep-flows.md)~~ | P2 | M | Pivot 2026-04 |
-| 21 | ~~[Per-document custom wordlist](done/21-per-document-custom-wordlist.md)~~ | P2 | S | Pivot 2026-04 |
-| 22 | ~~[Loading states & skeletons](done/22-loading-states.md)~~ | P2 | M | Testing & Polish |
-| 23 | ~~[Landing page animations](done/23-animations.md)~~ | P3 | S | Testing & Polish |
-| 24 | ~~[Mobile responsive polish](done/24-mobile-responsive.md)~~ | P3 | S | Testing & Polish |
-| 39 | [Deployment setup](39-deployment.md) | P1 | M | Testing & Polish |
-| 40 | ~~[Legal pages & SEO](done/40-legal-seo.md)~~ | P1 | S | Testing & Polish |
-| 41 | ~~[Analytics (Plausible, self-hosted)](done/41-analytics.md)~~ | P1 | S | Testing & Polish |
-| 43 | ~~[Open source release & self-host](done/43-open-source-release.md)~~ | P1 | M | Distribution strategy 2026-04 |
-| 44 | ~~[Sample documents on landing page](done/44-sample-documents-landing.md)~~ | P1 | S | Distribution strategy 2026-04 |
-| 45 | ~~[Lead capture email form](done/45-lead-capture.md)~~ | P1 | S | GTM plan 2026-04 |
-| 46 | [Client-side conversion pipeline (images, .txt, .docx, .zip)](46-convert-to-pdf-ingestion.md) | P1 | L | Multi-format support 2026-04 |
-| 47 | [Client-side email / .msg thread ingestion](47-email-msg-ingestion.md) | P1 | M | Multi-format support 2026-04 |
-| 48 | ~~[Accessible PDF export (lang tag, XMP, alt text, PDF/A-2b)](done/48-accessible-pdf-export.md)~~ | P1 | M | Accessibility plan 2026-04 |
-| 49 | ~~[In-browser OCR for scanned PDFs (tesseract.js)](done/49-in-browser-ocr.md)~~ | P2 | M | Multi-format support 2026-04 |
+| 19 | ~~[Redaction log & audit trail](19-redaction-log.md)~~ | P1 | L | Draft Workflow + Pivot 2026-04 |
+| 20 | ~~[Bulk sweep flows (header block, signature block, same-name)](20-bulk-sweep-flows.md)~~ | P2 | M | Pivot 2026-04 |
+| 21 | ~~[Per-document custom wordlist](21-per-document-custom-wordlist.md)~~ | P2 | S | Pivot 2026-04 |
+| 22 | ~~[Loading states & skeletons](22-loading-states.md)~~ | P2 | M | Testing & Polish |
+| 23 | ~~[Landing page animations](23-animations.md)~~ | P3 | S | Testing & Polish |
+| 24 | ~~[Mobile responsive polish](24-mobile-responsive.md)~~ | P3 | S | Testing & Polish |
+| 39 | [Deployment setup](../briefs/39-deployment.md) | P1 | M | Testing & Polish |
+| 40 | ~~[Legal pages & SEO](40-legal-seo.md)~~ | P1 | S | Testing & Polish |
+| 41 | ~~[Analytics (Plausible, self-hosted)](41-analytics.md)~~ | P1 | S | Testing & Polish |
+| 43 | ~~[Open source release & self-host](43-open-source-release.md)~~ | P1 | M | Distribution strategy 2026-04 |
+| 44 | ~~[Sample documents on landing page](44-sample-documents-landing.md)~~ | P1 | S | Distribution strategy 2026-04 |
+| 45 | ~~[Lead capture email form](45-lead-capture.md)~~ | P1 | S | GTM plan 2026-04 |
+| 46 | [Client-side conversion pipeline (images, .txt, .docx, .zip)](../briefs/46-convert-to-pdf-ingestion.md) | P1 | L | Multi-format support 2026-04 |
+| 47 | [Client-side email / .msg thread ingestion](../briefs/47-email-msg-ingestion.md) | P1 | M | Multi-format support 2026-04 |
+| 48 | ~~[Accessible PDF export (lang tag, XMP, alt text, PDF/A-2b)](48-accessible-pdf-export.md)~~ | P1 | M | Accessibility plan 2026-04 |
+| 49 | ~~[In-browser OCR for scanned PDFs (tesseract.js)](49-in-browser-ocr.md)~~ | P2 | M | Multi-format support 2026-04 |
 | 50 | [Anonymous analyze: no server persistence](50-anonymous-no-persist.md) | P1 | L | Trust story vs current persistence |
-| 51 | ~~[Microsoft 365 / Google Drive file picker (client-side)](done/51-microsoft-google-file-picker.md)~~ | P1 | L | Competitor landscape 2026-04 |
-| 52 | ~~[DiWoo / TOOI publication metadata export](done/52-diwoo-publication-metadata-export.md)~~ | P2 | M | Competitor landscape 2026-04 |
-| 60 | [Client-side PDF redaction (remove export server-touch)](60-client-side-export.md) | P2 | M–L | Trust-claim correctness 2026-04 |
-| 62 | [Notion ↔ docs/todo cross-references](62-notion-cross-references.md) | P3 | S | Process refinement 2026-04 |
-| 63 | [Frontend PUBLIC_API_URL at runtime](63-frontend-runtime-api-url.md) | P2 | S | v0.1.0 retrospective 2026-04 |
-| 64 | ~~[Onderbouwingsrapport export (audit log as Woo-besluit bijlage)](done/64-onderbouwingsrapport-export.md)~~ | P2 | M | Roadmap promise + trust story 2026-04 |
-| 65 | ~~[Tagged PDF + bookmarks for the onderbouwingsrapport (PDF/UA-1)](done/65-onderbouwingsrapport-tagged-pdf.md)~~ | P2 | S–M | Accessibility audit follow-up to #64 |
-| 66 | [Redaction-correctness bugs (custom-term pages, split/merge undo, motivation text)](66-redaction-correctness-bugs.md) | P0 | M | tighten-scan 2026-09-02 |
-| 67 | [Export chain: Ghostscript undoes /Lang, blocking I/O, disk write](67-export-chain-accessibility-and-async.md) | P1 | S–M | tighten-scan 2026-09-02 |
-| 68 | [Landing ships Shoelace, CSP gaps, raw errors in lead form](68-landing-ssr-csp-and-error-surfaces.md) | P1 | S–M | tighten-scan 2026-09-02 |
-| 69 | [Review screen perf (O(N²), bulk IDB) and a11y gaps](69-review-perf-and-a11y.md) | P2 | M | tighten-scan 2026-09-02 |
-| 70 | [Structure consolidation: review page, stores, duplicated helpers, dead DB layer](70-structure-consolidation.md) | P2 | L | tighten-scan 2026-09-02 |
-| 71 | [Docs, CI and backlog hygiene](71-docs-ci-and-backlog-hygiene.md) | P2 | S–M | tighten-scan 2026-09-02 |
+| 51 | ~~[Microsoft 365 / Google Drive file picker (client-side)](51-microsoft-google-file-picker.md)~~ | P1 | L | Competitor landscape 2026-04 |
+| 52 | ~~[DiWoo / TOOI publication metadata export](52-diwoo-publication-metadata-export.md)~~ | P2 | M | Competitor landscape 2026-04 |
+| 60 | [Client-side PDF redaction (remove export server-touch)](../briefs/60-client-side-export.md) | P2 | M–L | Trust-claim correctness 2026-04 |
+| 62 | Notion ↔ docs/todo cross-references | P3 | S | Process refinement 2026-04 |
+| 63 | [Frontend PUBLIC_API_URL at runtime](../briefs/63-frontend-runtime-api-url.md) | P2 | S | v0.1.0 retrospective 2026-04 |
+| 64 | ~~[Onderbouwingsrapport export (audit log as Woo-besluit bijlage)](64-onderbouwingsrapport-export.md)~~ | P2 | M | Roadmap promise + trust story 2026-04 |
+| 65 | ~~[Tagged PDF + bookmarks for the onderbouwingsrapport (PDF/UA-1)](65-onderbouwingsrapport-tagged-pdf.md)~~ | P2 | S–M | Accessibility audit follow-up to #64 |
+| 66 | [Redaction-correctness bugs (custom-term pages, split/merge undo, motivation text)](../briefs/66-redaction-correctness-bugs.md) | P0 | M | tighten-scan 2026-09-02 |
+| 67 | [Export chain: Ghostscript undoes /Lang, blocking I/O, disk write](../briefs/67-export-chain-accessibility-and-async.md) | P1 | S–M | tighten-scan 2026-09-02 |
+| 68 | [Landing ships Shoelace, CSP gaps, raw errors in lead form](../briefs/68-landing-ssr-csp-and-error-surfaces.md) | P1 | S–M | tighten-scan 2026-09-02 |
+| 69 | [Review screen perf (O(N²), bulk IDB) and a11y gaps](../briefs/69-review-perf-and-a11y.md) | P2 | M | tighten-scan 2026-09-02 |
+| 70 | [Structure consolidation: review page, stores, duplicated helpers, dead DB layer](../briefs/70-structure-consolidation.md) | P2 | L | tighten-scan 2026-09-02 |
+| 71 | [Docs, CI and backlog hygiene](../briefs/71-docs-ci-and-backlog-hygiene.md) | P2 | S–M | tighten-scan 2026-09-02 |
 
 Launch when all P1s in this phase are green. That is the "Phase D milestone" below.
 
@@ -158,11 +158,11 @@ Triggered by the Phase D decision gate. The ordering here reflects the real depe
 
 | # | Todo | Priority | Size | Source |
 |---|------|----------|------|--------|
-| 32 | [Authentication (Better Auth)](32-authentication.md) | P0 (once triggered) | L | Auth & Billing |
-| 33 | [Organizations & data scoping](33-organizations.md) | P0 (once triggered) | L | Auth & Billing |
-| 34 | [Roles & permissions](34-roles-permissions.md) | P1 | M | Auth & Billing |
-| 36 | [Member management & invitations](36-member-management.md) | P1 | M | Auth & Billing |
-| 53 | [Dossier / multi-document mode (spike + first slice)](53-dossier-multi-document-mode.md) | P1 (once triggered) | XL | Competitor landscape 2026-04 |
+| 32 | [Authentication (Better Auth)](../briefs/32-authentication.md) | P0 (once triggered) | L | Auth & Billing |
+| 33 | [Organizations & data scoping](../briefs/33-organizations.md) | P0 (once triggered) | L | Auth & Billing |
+| 34 | [Roles & permissions](../briefs/34-roles-permissions.md) | P1 | M | Auth & Billing |
+| 36 | [Member management & invitations](../briefs/36-member-management.md) | P1 | M | Auth & Billing |
+| 53 | [Dossier / multi-document mode (spike + first slice)](../briefs/53-dossier-multi-document-mode.md) | P1 (once triggered) | XL | Competitor landscape 2026-04 |
 
 ## Phase F — Draft workflow & export enhancements (for paying team pilots)
 
@@ -172,18 +172,18 @@ Concept export (#29) is the one arguable exception: the watermark prevents accid
 
 | # | Todo | Priority | Size | Source |
 |---|------|----------|------|--------|
-| 25 | [Document lifecycle (draft/approve)](25-document-lifecycle.md) | P2 (post-signal) | M | Draft Workflow |
-| 26 | [Draft preview & side-by-side](26-draft-preview.md) | P2 | M | Draft Workflow |
-| 27 | [Draft comments](27-draft-comments.md) | P3 | M | Draft Workflow |
-| 28 | [Export versioning & re-export](28-export-versioning.md) | P2 | M | Draft Workflow |
-| 29 | [Concept export with watermark](29-concept-export.md) | P3 | S | Draft Workflow |
-| 30 | [Redaction map generation](30-redaction-map.md) | P3 | M | Draft Workflow |
-| 31 | [Redaction inventory (CSV/XLSX)](31-redaction-inventory.md) | P3 | S | Draft Workflow |
-| 54 | [Cross-document deduplication](54-cross-document-deduplication.md) | P2 | M | Competitor landscape 2026-04 |
-| 55 | [Cross-document name propagation](55-cross-document-name-propagation.md) | P2 | M | Competitor landscape 2026-04 |
-| 56 | [Belanghebbenden-consultation workflow (art. 4.4)](56-belanghebbenden-consultation.md) | P2 | M | Competitor landscape 2026-04 |
-| 57 | [Public-official registry sync (shared org lists)](57-public-official-registry-sync.md) | P2 | M | Competitor landscape 2026-04 |
-| 58 | [Woo-jaarverslag / reporting dashboard](58-woo-jaarverslag-dashboard.md) | P3 | M | Competitor landscape 2026-04 |
+| 25 | [Document lifecycle (draft/approve)](../briefs/25-document-lifecycle.md) | P2 (post-signal) | M | Draft Workflow |
+| 26 | [Draft preview & side-by-side](../briefs/26-draft-preview.md) | P2 | M | Draft Workflow |
+| 27 | [Draft comments](../briefs/27-draft-comments.md) | P3 | M | Draft Workflow |
+| 28 | [Export versioning & re-export](../briefs/28-export-versioning.md) | P2 | M | Draft Workflow |
+| 29 | [Concept export with watermark](../briefs/29-concept-export.md) | P3 | S | Draft Workflow |
+| 30 | [Redaction map generation](../briefs/30-redaction-map.md) | P3 | M | Draft Workflow |
+| 31 | [Redaction inventory (CSV/XLSX)](../briefs/31-redaction-inventory.md) | P3 | S | Draft Workflow |
+| 54 | [Cross-document deduplication](../briefs/54-cross-document-deduplication.md) | P2 | M | Competitor landscape 2026-04 |
+| 55 | [Cross-document name propagation](../briefs/55-cross-document-name-propagation.md) | P2 | M | Competitor landscape 2026-04 |
+| 56 | [Belanghebbenden-consultation workflow (art. 4.4)](../briefs/56-belanghebbenden-consultation.md) | P2 | M | Competitor landscape 2026-04 |
+| 57 | [Public-official registry sync (shared org lists)](../briefs/57-public-official-registry-sync.md) | P2 | M | Competitor landscape 2026-04 |
+| 58 | [Woo-jaarverslag / reporting dashboard](../briefs/58-woo-jaarverslag-dashboard.md) | P3 | M | Competitor landscape 2026-04 |
 
 ## Phase G — Monetization (only after 1–3 manual-invoice pilots)
 
@@ -191,11 +191,11 @@ Don't integrate a payment processor before someone says "take my money." A manua
 
 | # | Todo | Priority | Size | Source |
 |---|------|----------|------|--------|
-| 37 | [Mollie billing integration](37-mollie-billing.md) | P2 (post-pilots) | XL | Auth & Billing |
-| 38 | [Email service (transactional)](38-email-service.md) | P2 | M | Testing & Polish |
-| 42 | [Microsoft SSO & 2FA](42-sso-2fa.md) | P3 (sales-driven) | M | Auth & Billing |
-| 59 | [Zaaksysteem connectors (plugin architecture)](59-zaaksysteem-connectors.md) | P3 (sales-driven) | L | Competitor landscape 2026-04 |
-| 61 | [Direct publish to open.overheid.nl (GPP-publicatiebank)](61-open-overheid-direct-publish.md) | P3 (sales-driven) | L | Transparency framing 2026-04 |
+| 37 | [Mollie billing integration](../briefs/37-mollie-billing.md) | P2 (post-pilots) | XL | Auth & Billing |
+| 38 | [Email service (transactional)](../briefs/38-email-service.md) | P2 | M | Testing & Polish |
+| 42 | [Microsoft SSO & 2FA](../briefs/42-sso-2fa.md) | P3 (sales-driven) | M | Auth & Billing |
+| 59 | [Zaaksysteem connectors (plugin architecture)](../briefs/59-zaaksysteem-connectors.md) | P3 (sales-driven) | L | Competitor landscape 2026-04 |
+| 61 | [Direct publish to open.overheid.nl (GPP-publicatiebank)](../briefs/61-open-overheid-direct-publish.md) | P3 (sales-driven) | L | Transparency framing 2026-04 |
 
 ---
 

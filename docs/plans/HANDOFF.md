@@ -1,52 +1,64 @@
-# Review-en-merge: PR #99 (backlog naar docs/plans + tighten-scan-briefs #66–#71)
+# Uitvoer: #72 Leadformulier op woobuddy.nl repareren (Listmonk-branch landen + Scaleway TEM via CLI)
 
-**Model: Fable.** Modelkeuze: standaard (review-en-merge draait op Fable). Inhoudelijk
-extra reden: de PR bevat naast een mechanische verhuizing zes nieuwe briefs met
-bevindingen die nog niemand tegen de code heeft nagelezen behalve de sessie die ze schreef.
+**Model: Opus.** Modelkeuze: uitvoerrepo, brief is uitvoeringsklaar met een gemeten
+oorzaak en een toetsbaar "klaar als"; geen signalen. De enige beslissing (notificatie-adres,
+afzenderdomein) staat expliciet in de brief onder "Jaap beslist"; alles daarbuiten is
+uitvoerwerk.
 
 ## Stand bij vertrek
 
-2026-09-02, avond. `origin/main` = `83fecbb`. Branch `docs/tighten-scan-2026-09`,
-**[PR #99](https://github.com/jaapstronks/woobuddy/pull/99)**: docs-only, geen productiecode.
-Claimbord leeg. `feat/brevo-to-listmonk` (c1ee83d, Listmonk-migratie) staat nog **lokaal**
-op Jaaps Mac, 20 commits achter main, niet gepusht. Open Dependabot-PR's #97/#98 en een
-**high**-alert op `pdfjs-dist` (< 6.2.108).
+2026-09-02, avond. PR #99 (backlog naar `docs/plans/`, briefs #66–#71) is gemerged;
+`origin/main` staat op de squash-commit daarvan. Claimbord leeg. **Productie-bevinding
+van vanavond:** `POST /api/leads` op woobuddy.nl geeft een 500 omdat de api-container
+geen mailconfig krijgt (alle `BREVO_*` leeg, prod-compose geeft alleen `DATABASE_URL`
+door). Jaap: verhuizen naar Scaleway TEM, inrichten mag via `scw`. Alles staat in
+`briefs/72-lead-form-broken-in-production.md`. `feat/brevo-to-listmonk` (c1ee83d) staat
+lokaal op de Mac, ongepusht, 20+ commits achter main. Twee oudere beslissingen wachten nog
+op Jaap (motivatieveld #66, PDF/A #67).
 
 ## Opdracht
 
-1. `git pull`, `gh pr checkout 99`. Lees `docs/plans/TODO.md` en `done/register.md`
-   integraal: dit is de eerste versie, geschreven door Opus-subagents op basis van de
-   briefs. Toets steekproefsgewijs vijf "Klaar als"-regels tegen de acceptatiecriteria in
-   de bijbehorende brief, en drie register-datums tegen `git log`.
-2. Lees de zes nieuwe briefs (`briefs/66-*.md` t/m `71-*.md`) met de code ernaast. Elke
-   bevinding draagt een `file:regel`; controleer er per brief minstens twee. Klopt een
-   claim niet, corrigeer de brief in de PR (geen code aanraken).
-3. Controleer dat er geen `docs/todo`-verwijzing meer over is
-   (`git grep -n docs/todo`) en dat alle relatieve links in `docs/plans/` resolven.
-4. CI groen (Frontend tests + Backend tests), dan **squash-mergen**; branch is auto-delete.
-5. `merge-housekeeping`: teller in `_reconcile/drift-log.md` op 1, register-regel voor
-   deze PR, TODO-omvang meten.
-6. Vraag Jaap om de twee open beslissingen in `done/decisions.md` (motivatieveld,
-   PDF/A): zonder antwoord kan #66 en #67 niet op Opus.
-7. **Schrijf de volgende handoff** (dit bestand overschrijven): heeft Jaap beslist →
-   uitvoer #66 (Opus); anders uitvoer #68 (Opus, delegeerbaar, geen beslissing nodig).
-   Sluit af met de sluitregel.
+1. `git pull`, lees `briefs/72-lead-form-broken-in-production.md` integraal. Claim #72 op het
+   claimbord in `TODO.md` (`#72 — @mbp — feat/brevo-to-listmonk — klaar als: …`).
+2. `git checkout feat/brevo-to-listmonk && git rebase origin/main`. Los conflicten op (de
+   branch raakt `leads.py`, `config.py`, `schemas.py`, `client.ts`, `.env.example`,
+   `test_leads_api.py`). `pytest` groen.
+3. Drie scanpunten op de branch: (a) `docker-compose.prod.yml` § `api` krijgt
+   `env_file: .env`; `deploy/deploy.sh` schrijft de mailsleutels naast `DBASE_PASSWORD`;
+   (b) CR/LF-filter op `name`/`organization` vóór ze in een mailheader gaan (test erbij);
+   (c) Brevo-narratie uit `leads.py` en de `#45`-docstring.
+4. Fail-loud: startup-warning bij lege `scaleway_secret_key` buiten dev, en een smoke-check
+   in `deploy/install.sh` die faalt als de mailconfig ontbreekt.
+5. Scaleway via CLI, profiel `bolster` (stappen in de brief): IAM-applicatie + policy +
+   API-key → 1Password (vault Bolster). Afzender voorlopig `noreply@mail.dreamkit.eu`
+   (al geverifieerd). Listmonk-lijst-UUID uit de Listmonk-admin.
+6. Push, PR openen (`feat(leads): migrate lead form to Listmonk + Scaleway TEM and wire
+   prod mail config`, template uit CLAUDE.md, < 400 regels waar mogelijk; de branch is al
+   ~250 regels, dus splits de compose/deploy-wijziging af als het boven de 400 komt).
+   `claude-notify-pr` afvuren. **Merge niet zelf.**
+7. Na Jaaps merge (of met zijn akkoord in dezelfde sessie): `deploy/deploy.sh` met de
+   nieuwe `.env`-sleutels, dan één echte testinzending → 200 en mail in
+   `NOTIFICATION_EMAIL`. Acceptatiecriteria in de brief afvinken.
+8. **Overschrijf dit bestand** met de review-en-merge-handoff voor jouw PR (model per
+   `werkwijze` § Modelkeuze per sessie; default Opus, `Modelkeuze:`-regel eronder) en sluit
+   af met de sluitregel.
 
 ## Doorgeefblok
 
-- **#66** (P0) zodra het motivatieveld beslist is; **#67** zodra PDF/A beslist is.
-- **#68** is direct delegeerbaar; **#71** deel "Now" ook (CI-stappen + CONTRIBUTING).
-- `feat/brevo-to-listmonk`: vóór pushen de drie punten uit de scan meenemen
-  (prod-compose zonder `env_file`, CR/LF-filter op `name`/`organization`, Brevo-comments).
-- Dependabot: `pdfjs-dist`-high; check of #97/#98 mergebaar zijn (Dependabot-auto-merge
-  pakt alleen minor/patch).
+- **#68** (landingspagina zonder Shoelace, Nederlandse leadform-fouten): delegeerbaar,
+  volgende na #72. Let op: #72 raakt `client.ts`; #68 bouwt daar de `detail`-parsing op.
+- **#66** (P0) zodra Jaap het motivatieveld beslist heeft; **#67** zodra PDF/A beslist is.
+- **#71** deel "Now" (CI-stappen + CONTRIBUTING gelijktrekken) en **#63** zijn klein en
+  direct delegeerbaar.
+- Dependabot: `pdfjs-dist`-high (#92); #97/#98 checken.
 
 ## Terugkeer-check
 
+- [ ] Jaap: `NOTIFICATION_EMAIL` voor leads, en afzender op `mail.dreamkit.eu` laten of
+      `woobuddy.nl` als TEM-domein inrichten? (#72)
 - [ ] Jaap: motivatieveld houden of schrappen? (#66)
 - [ ] Jaap: PDF/A-2b wel of niet? (#67)
-- [ ] Jaap: Notion-database "Woobuddy Todos" handmatig verwijderen; vanuit de
-      Claude-Code-koppeling is die niet bereikbaar (404).
+- [ ] Jaap: Notion-database "Woobuddy Todos" handmatig verwijderen (404 via de koppeling).
 
 ## Extra van Jaap
 

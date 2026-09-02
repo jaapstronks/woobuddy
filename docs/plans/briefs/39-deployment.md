@@ -10,7 +10,7 @@
 
 ## Status
 
-The hosted instance at <https://woobuddy.nl> is **live**, served from a Hetzner cx23 in `fsn1` (Falkenstein, DE) via Caddy + docker-compose. Provision and deploy are scripted in [`deploy/`](../../deploy/) — see [`deploy/README.md`](../../../deploy/README.md) for the operator documentation.
+The hosted instance at <https://woobuddy.nl> is **live**, served from a Hetzner cx23 in `fsn1` (Falkenstein, DE) via Caddy + docker-compose. Provision and deploy are scripted in [`deploy/`](../../../deploy/) — see [`deploy/README.md`](../../../deploy/README.md) for the operator documentation.
 
 What's done:
 
@@ -20,7 +20,7 @@ What's done:
 - [x] Hosting region documented as EU-only in the privacy policy.
 - [x] Domain registered (`woobuddy.nl` via TransIP), DNS A-records managed by `provision.sh`.
 - [x] TLS via Let's Encrypt, automatic via Caddy.
-- [x] Production environment variables documented (see [`deploy/README.md`](../../../deploy/README.md) and [`.env.example`](../../.env.example)) and stored in 1Password.
+- [x] Production environment variables documented (see [`deploy/README.md`](../../../deploy/README.md) and [`.env.example`](../../../.env.example)) and stored in 1Password.
 - [x] Manual deploy flow — `op run --env-file=.env -- ./deploy/deploy.sh`.
 
 ## Still open

@@ -42,7 +42,7 @@
 				Wat er sinds de vorige update aan de tool is toegevoegd. Het volledige overzicht
 				staat in de
 				<a
-					href="https://github.com/jaapstronks/woobuddy/tree/main/docs/plans/briefs/done"
+					href="https://github.com/jaapstronks/woobuddy/tree/main/docs/plans/done"
 					target="_blank"
 					rel="noopener noreferrer">backlog</a
 				>.

@@ -6,13 +6,14 @@
 - **Size:** S–M, mostly deletions and one-line edits
 - **Source:** tighten-scan 2026-09-02
 
+> Second pass (review of PR #99, 2026-09-02): 26 claims confirmed, 5 line
+> pointers corrected, item 1 closed by the migration itself.
+
 ## Now (misleading today)
 
-1. **#50 is shipped but still open.** `backend/app/api/analyze.py:7`,
-   `export.py:3`, `tests/test_analyze_api.py:136-169` all prove it. The
-   bookkeeping commit `4e322ed` sits unmerged on `origin/chore/close-50`.
-   Open the PR, merge, done. This is the exact violation CLAUDE.md's "never
-   leave a fully-implemented todo" rule names.
+1. ~~**#50 is shipped but still open.**~~ **Done in PR #99** (2026-09-02): the
+   migration folded `4e322ed` into `done/50-anonymous-no-persist.md` and the
+   register. Left to do: close the superseded PR #49 (`chore/close-50`).
 2. **CONTRIBUTING links a file that is not in the repo.** `CONTRIBUTING.md:11,98`
    link `CLAUDE.md`, which `.gitignore:30` ignores (untracked since #51).
    Either track a scrubbed public copy or point contributors at README only.
@@ -24,15 +25,17 @@
    - `ruff format --check app/ tests/` → 13 files would reformat.
    - `ruff check tests/` → 5 findings (4 auto-fixable import sorting, 1 unused
      variable at `tests/test_pdf_engine.py:71`).
-   - Frontend has no lint or format step at all, yet `microsoft.ts:51,406,457`
-     and `google.ts:30,147,200` carry six `eslint-disable` pragmas for an
-     ESLint that is not installed.
+   - Frontend has no lint or format step at all, yet `microsoft.ts:50,456`,
+     `google.ts:30,200` and `upload-flow.test.ts:92` carry five `eslint-disable`
+     pragmas for an ESLint that is not installed.
    - `scripts/bump-tooi-lists.mjs --check` is documented but not in CI.
    Add the steps or delete the instructions; do not leave both.
-4. **`docs/plans/TODO.md:7,212` say the Ollama provider "stays in-tree as a
-   dormant revival path"**; `CLAUDE.md:17` and commit `62a4b53` say it was
-   removed. Code agrees with CLAUDE.md. `done/WOO_BUDDY_TODO.md` still points
-   at `backend/app/llm/`.
+4. **The archived April index says the Ollama provider "stays in-tree as a
+   dormant revival path"** (`done/backlog-README-2026-04.md:220,222`; before
+   the migration this was `docs/todo/README.md:7,212`); `CLAUDE.md:17` and
+   commit `62a4b53` say it was removed. Code agrees with CLAUDE.md. The new
+   `TODO.md` is clean. `done/WOO_BUDDY_TODO.md` still points at
+   `backend/app/llm/` (historical, flagged as such in the register).
 
 ## Backlog rewrite (assume a shape the code no longer has)
 
@@ -43,10 +46,10 @@
 | 27 draft comments | `draft_comments` keyed on server detection IDs (gone post-#50) | rewrite or drop |
 | 28 export versioning | `exports` table + removed `/api/documents/{id}/export` route | rewrite |
 | 31 redaction inventory | ~70% shipped (`diwoo/csv.ts:53`, bundled at `onderbouwing/bundle.ts:72-77`) | shrink to XLSX + a button on the log page |
-| 38 email service | proposes Resend/Nodemailer; Scaleway TEM + Listmonk already shipped | shrink to what is left |
+| 38 email service | proposes Resend/Nodemailer; Scaleway TEM + Listmonk are built on `feat/brevo-to-listmonk` (local, unmerged) | shrink to what is left once that branch lands |
 | 46 | line ref `FileUpload.svelte:26` is wrong (`:37`) | fix ref |
 | 58 | depends on `RedactionLogEntry` + `Dossier` tables that do not exist | mark the data section as fiction |
-| two `48-*.md` in `done/` | number collision, both legitimate | renumber one to 72 |
+| two `48-*.md` in `done/` | number collision, both legitimate | renumber one to the next free number in `TODO.md` |
 
 ## Reference docs
 
@@ -61,7 +64,7 @@
   anymore), `:68` (`/try` is a redirect).
 - `CLAUDE.md` (local, untracked): `:39,236` and `:86` link todos that moved to
   `done/`; the Hero-video section points at `Hero.svelte` but the `<video>`
-  lives in `MarketingIntro.svelte:88`; the Shoelace list misses 7 components
+  lives in `MarketingIntro.svelte:76` (source at `:88`); the Shoelace list misses 7 components
   in use (`sl-button-group`, `sl-divider`, `sl-dropdown`, `sl-icon`,
   `sl-menu`, `sl-menu-item`, `sl-option`).
 - Docs missing for self-hosters: `PUBLIC_SITE_MODE` (the `(hosted)/+layout.ts:12`
@@ -70,16 +73,16 @@
 
 ## Repo hygiene
 
-- `scripts/woo_contacts_named.csv`: real named municipal officials,
-  referenced by nothing, in a public MIT repo. Delete (the inbox variant is
-  department labels only and harmless; `split_woo_contacts.py` and
-  `create-test-pdfs.py` are also unreferenced).
+- `scripts/woo_contacts_named.csv`: real named municipal officials, read by
+  nothing, in a public MIT repo. Delete it together with its producer
+  `split_woo_contacts.py:5,24` (the inbox variant is department labels only
+  and harmless; `create-test-pdfs.py` is also unreferenced).
 - `tests/test-jsons/` (8 files, 117 KB): debug downloads from
   `debug-export.ts:121`, referenced by no test. `besluit_ambtenaar.detections (2).json`
   is the only copy (browser collision suffix). Delete or wire as golden files.
 - `tests/fixtures/README.md` omits `demo-video.pdf`,
   `woo-testbestand-vertrouwelijk.txt` (0 references) and the two generator scripts.
-- Root `.gitignore:60` `/*.png` currently hides 5 screenshots (1 MB); point
+- Root `.gitignore:67` `/*.png` currently hides 5 screenshots (1 MB); point
   the screenshot workflow at a scratch dir instead.
 - Backend has no lockfile (`pip install .` resolves fresh per build);
   `routes/review/+layout.svelte:8` pins Shoelace CDN `@2.20.1` while
@@ -88,12 +91,14 @@
 ## Comment hygiene (inventory, not urgent)
 
 - Stale and wrong: `pipeline_types.py:21-22,48,61,66-68` (talk of persisting
-  rows), `export.py:5-7` (no disk writes), `deploy/Caddyfile:32` (old route),
+  rows), `export.py:5` ("nothing is written to disk": false once Ghostscript
+  is present, see #67), `deploy/Caddyfile:32` (old route),
   `middleware/request_id.py:32-35` (`SENSITIVE_PATH_PREFIXES` lists a deleted
   route, misses `/api/export`, and is never read), `boundary-edit-geometry.ts:11`
   (page 1-based: it is 0-based), `review-pdf-loader.ts:88-91`,
   `log/+page.svelte:295-298` (backend 4xx on delete: no such route),
-  `leads.py:97` ("the Brevo attributes"), `idb.ts:44-46` (v3 vs v4).
+  `leads.py:86-89` ("the Brevo attributes": stale only once
+  `feat/brevo-to-listmonk` merges), `idb.ts:44-46` (v3 vs v4).
 - Provenance narration (~22 sites): "extracted from …", "previously owned …",
   "as we used to", "moved to pipeline_types.py". Delete; git has it.
 - Issue-number tags inline: 135 in the review tree, 69 in the rest of the
@@ -104,11 +109,12 @@
 
 - CI runs `mypy`, `ruff format --check`, `ruff check app/ tests/`, and a
   frontend formatter; `CONTRIBUTING.md` lists exactly those commands.
-- A CI grep that fails on `backend/app/llm`, `Brevo`, `CIIIC` outside `done/`.
+- A CI grep that fails on `backend/app/llm`, `Brevo`, `CIIIC` outside `done/`
+  (the `Brevo` grep only after `feat/brevo-to-listmonk` has merged).
 
 ## Acceptance criteria
 
-- [ ] `chore/close-50` merged; #50 struck in README.
+- [x] #50 closed in `done/` (PR #99); PR #49 `chore/close-50` closed as superseded.
 - [ ] CI and CONTRIBUTING agree on the exact command list; all green on `main`.
 - [ ] #25–#28, #31, #38 rewritten or deleted with a note in "Briefings Not Adopted".
 - [ ] `scripts/woo_contacts_named.csv` and `tests/test-jsons/` gone or wired.

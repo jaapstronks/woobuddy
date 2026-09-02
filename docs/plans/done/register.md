@@ -106,7 +106,8 @@ onderaan per maand. De write-ups zelf blijven als bestand in deze map staan.
   [`44-sample-documents-landing.md`](44-sample-documents-landing.md). (2026-04-15)
 - **#45 Lead Capture Email Form** — leadformulier dat contacten rechtstreeks naar Brevo
   lijst 4 duwt, zonder Postgres-persistentie of CSV-export; DNS voor `hoi@woobuddy.nl`
-  via TransIP geregeld. (Inmiddels vervangen door Listmonk + Scaleway TEM.) PR #4.
+  via TransIP geregeld. (Vervanging door Listmonk + Scaleway TEM staat op de nog
+  ongemergde branch `feat/brevo-to-listmonk`, zie `decisions.md`.) PR #4.
   Zie [`45-lead-capture.md`](45-lead-capture.md). (2026-04-15)
 - **#48 Non-Dutch surname coverage for Tier 2 persoon detection** — tweede regelpad dat
   namen als "de familie El Khatib" herkent zonder dat de achternaam in de CBS-lijst
@@ -155,6 +156,13 @@ onderaan per maand. De write-ups zelf blijven als bestand in deze map staan.
   Geleverd in PR #47 en PR #48; de bijbehorende boekhoudcommit `4e322ed` bleef ongemergd
   op `chore/close-50` staan tot de migratie hem op 2026-09-02 alsnog meenam. Zie
   [`50-anonymous-no-persist.md`](50-anonymous-no-persist.md). (2026-04-28)
+
+## 2026-09
+
+- **Backlog-migratie `docs/todo/` → `docs/plans/` + tighten-scan-briefs #66–#71** — de
+  universele werkwijze ingericht (TODO/briefs/done/HANDOFF/_reconcile), 39 write-ups en
+  34 open items verhuisd, #50 administratief gesloten, #62 afgevoerd. Zes nieuwe briefs uit
+  de scan van 2026-09-02, bij review op alle `file:regel`-claims nagelezen. PR #99. (2026-09-02)
 
 ## Historisch
 
