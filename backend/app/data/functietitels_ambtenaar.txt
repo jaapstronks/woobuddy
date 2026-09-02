@@ -5,7 +5,7 @@
 # detection preceded by one of these titles stays `pending` for reviewer
 # confirmation, but the reasoning surfaces that the name is almost
 # certainly an ambtenaar so the reviewer's click is a confirmation, not
-# a classification. See docs/todo/done/13-functietitel-publiek-functionaris.md.
+# a classification. See docs/plans/done/13-functietitel-publiek-functionaris.md.
 #
 # Curation notes:
 # - `directeur`, `secretaris`, and similar are context-dependent — a

@@ -6,7 +6,7 @@ in a fixed input string so the assertions stay deterministic regardless
 of how Deduce tokenizes.
 
 Covers the six scenarios listed in
-`docs/todo/done/13-functietitel-publiek-functionaris.md`, plus a
+`docs/plans/done/13-functietitel-publiek-functionaris.md`, plus a
 pipeline-level smoke test that verifies the rule engine hooks into
 `run_pipeline` correctly for the "Wethouder Jan de Vries" canonical
 case.

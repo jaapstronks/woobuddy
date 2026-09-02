@@ -42,7 +42,7 @@
 				Wat er sinds de vorige update aan de tool is toegevoegd. Het volledige overzicht
 				staat in de
 				<a
-					href="https://github.com/jaapstronks/woobuddy/tree/main/docs/todo/done"
+					href="https://github.com/jaapstronks/woobuddy/tree/main/docs/plans/done"
 					target="_blank"
 					rel="noopener noreferrer">backlog</a
 				>.
@@ -195,7 +195,7 @@
 				De volledige technische backlog — inclusief prioriteiten, afhankelijkheden en open
 				vragen — staat publiek op
 				<a
-					href="https://github.com/jaapstronks/woobuddy/tree/main/docs/todo"
+					href="https://github.com/jaapstronks/woobuddy/tree/main/docs/plans"
 					target="_blank"
 					rel="noopener noreferrer">GitHub</a
 				>. Issues en pull-requests zijn welkom.
