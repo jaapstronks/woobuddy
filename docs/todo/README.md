@@ -129,6 +129,12 @@ Once the core loop works, make it feel great **and** get it in front of real use
 | 63 | [Frontend PUBLIC_API_URL at runtime](63-frontend-runtime-api-url.md) | P2 | S | v0.1.0 retrospective 2026-04 |
 | 64 | ~~[Onderbouwingsrapport export (audit log as Woo-besluit bijlage)](done/64-onderbouwingsrapport-export.md)~~ | P2 | M | Roadmap promise + trust story 2026-04 |
 | 65 | ~~[Tagged PDF + bookmarks for the onderbouwingsrapport (PDF/UA-1)](done/65-onderbouwingsrapport-tagged-pdf.md)~~ | P2 | S–M | Accessibility audit follow-up to #64 |
+| 66 | [Redaction-correctness bugs (custom-term pages, split/merge undo, motivation text)](66-redaction-correctness-bugs.md) | P0 | M | tighten-scan 2026-09-02 |
+| 67 | [Export chain: Ghostscript undoes /Lang, blocking I/O, disk write](67-export-chain-accessibility-and-async.md) | P1 | S–M | tighten-scan 2026-09-02 |
+| 68 | [Landing ships Shoelace, CSP gaps, raw errors in lead form](68-landing-ssr-csp-and-error-surfaces.md) | P1 | S–M | tighten-scan 2026-09-02 |
+| 69 | [Review screen perf (O(N²), bulk IDB) and a11y gaps](69-review-perf-and-a11y.md) | P2 | M | tighten-scan 2026-09-02 |
+| 70 | [Structure consolidation: review page, stores, duplicated helpers, dead DB layer](70-structure-consolidation.md) | P2 | L | tighten-scan 2026-09-02 |
+| 71 | [Docs, CI and backlog hygiene](71-docs-ci-and-backlog-hygiene.md) | P2 | S–M | tighten-scan 2026-09-02 |
 
 Launch when all P1s in this phase are green. That is the "Phase D milestone" below.
 
