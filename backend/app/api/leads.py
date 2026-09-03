@@ -1,4 +1,4 @@
-"""Public contact form.
+"""Public contact form and the newsletter double opt-in.
 
 WOO Buddy launches without auth, so this endpoint is the only way for
 interested visitors to reach us. A visitor submits
@@ -9,21 +9,32 @@ interested visitors to reach us. A visitor submits
    `/emails` API to `settings.notification_email` with the form contents
    and a `Reply-To` header pointing at the submitter. That is how the
    operator actually sees messages.
-2. **Only if `newsletter_opt_in` is true**: the contact is also subscribed
-   to Listmonk list `settings.listmonk_list_uuid` via the public
-   subscription endpoint. A double-opt-in list makes Listmonk send the
-   confirmation mail itself.
+2. **Only if `newsletter_opt_in` is true**: a confirmation mail goes to
+   the *submitter*, carrying a signed link back to the site. Nothing
+   reaches the mailing list until that link is clicked — which happens
+   at `POST /api/leads/confirm`.
 
-Listmonk is the system of record for the audience list; there is no
-dual-write to Postgres, no CSV export, no `leads` table.
+**Why WOO Buddy runs its own double opt-in** (#76): Listmonk's opt-in
+mail, sender address and public pages are instance-global, and the
+instance is shared with another brand, so a signup here used to receive
+a mail headed "DREAMKIT UPDATES" from `noreply@mail.dreamkit.eu`
+announcing a list called "WOO Buddy — leads". That reads as a sales
+list from a stranger, which is the opposite of what the landing page
+promises. Sending the confirmation ourselves is the only way to control
+the sender, the copy and the page behind the button.
+
+Listmonk is still the system of record for the audience list; there is
+no dual-write to Postgres, no CSV export, no `leads` table. The
+confirmation link is stateless (see `app/services/lead_tokens.py`), so
+an address in flight lives in exactly one place: the recipient's inbox.
 
 Design notes:
 
 * **Unauthenticated**. This is explicitly a public form.
 * **Rate-limited** per IP via slowapi (in-memory bucket).
-* **Opaque success**. We return `{ok: true}` both for a fresh subscribe
-  and for a duplicate the list rejects, so the form cannot be used to
-  probe list membership.
+* **Opaque success**. We return `{ok: true}` whether or not the opt-in
+  path did anything, so the form cannot be used to probe list membership
+  or to find out whether the integration is configured.
 * **No request-body logging**. The only fact we record is "a lead was
   submitted from source X".
 * **Client-first**. This endpoint touches zero document content.
@@ -38,10 +49,18 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
-from app.api.schemas import LeadCreate, LeadResponse
+from app.api.schemas import LeadConfirm, LeadConfirmResponse, LeadCreate, LeadResponse
 from app.config import settings
 from app.logging_config import get_logger
 from app.security import limiter
+from app.services import listmonk
+from app.services.lead_mail import build_confirmation_payload
+from app.services.lead_tokens import (
+    ExpiredTokenError,
+    InvalidTokenError,
+    make_token,
+    read_token,
+)
 
 logger = get_logger(__name__)
 
@@ -99,27 +118,6 @@ def _tem_headers() -> dict[str, str]:
         "X-Auth-Token": settings.scaleway_secret_key,
         "accept": "application/json",
         "content-type": "application/json",
-    }
-
-
-def _listmonk_url() -> str:
-    return f"{settings.listmonk_url.rstrip('/')}/api/public/subscription"
-
-
-def _build_listmonk_payload(email: str, data: LeadCreate) -> dict[str, Any]:
-    """Shape our form fields into Listmonk's public-subscription payload.
-
-    Only called when the submitter opts in to the newsletter. Listmonk
-    segments by list, not by attribute-at-send, so source / organization /
-    message are deliberately not sent along: the transactional email
-    already carries the full form contents to the operator, and the list
-    only needs an address to subscribe.
-    """
-    name = _clean(data.name, max_len=_MAX_NAME_LEN, header_safe=True)
-    return {
-        "email": email,
-        "name": name or "",
-        "list_uuids": [settings.listmonk_list_uuid],
     }
 
 
@@ -250,36 +248,48 @@ async def _send_contact_email(client: httpx.AsyncClient, email: str, data: LeadC
     raise _raise_generic_gateway()
 
 
-async def _add_to_list(client: httpx.AsyncClient, email: str, data: LeadCreate) -> None:
-    """Subscribe one contact to the configured Listmonk list.
+def opt_in_available() -> bool:
+    """True when a confirmation mail can actually be sent and honoured.
 
-    Success shape: any `2xx` (the public endpoint is idempotent — an email
-    that is already a subscriber returns success too).
-
-    A `4xx` (e.g. blocklisted / already-present edge cases) is treated as
-    silent success for the same probe-resistance reason used across the
-    file, and because the operator already received the notification email.
-    `429` maps to 503; `5xx` / transport failures map to 502.
+    Both halves have to be present: a secret to sign the link with, and
+    Listmonk credentials to act on it afterwards. Mailing someone a link
+    that will fail when they click it is worse than quietly skipping the
+    opt-in, so this gate covers the whole round trip rather than just the
+    send.
     """
-    payload = _build_listmonk_payload(email, data)
-    try:
-        response = await client.post(_listmonk_url(), json=payload)
-    except httpx.HTTPError as exc:
-        logger.error("leads.listmonk_transport_error", error=str(exc))
-        raise _raise_generic_gateway() from exc
+    return bool(settings.leads_confirm_secret) and listmonk.is_configured()
 
-    if 200 <= response.status_code < 300:
-        return
-    if response.status_code == 429:
-        logger.warning("leads.listmonk_rate_limited")
-        raise _raise_rate_limited()
-    if 400 <= response.status_code < 500:
-        # Probe-resistant: never let the form distinguish "already on the
-        # list" from "freshly subscribed". The notification email is out.
-        logger.info("leads.listmonk_client_error", source=data.source)
-        return
-    logger.error("leads.listmonk_unexpected_status", status_code=response.status_code)
-    raise _raise_generic_gateway()
+
+async def _send_confirmation_email(client: httpx.AsyncClient, email: str) -> bool:
+    """Mail the submitter a signed confirmation link. Returns whether it went.
+
+    Deliberately non-fatal in every failure mode. The operator's
+    notification has already been sent by the time this runs, so the form
+    submission succeeded in the way that matters; losing the newsletter
+    opt-in is a smaller harm than showing the visitor an error for a
+    checkbox they ticked in passing.
+    """
+    try:
+        token = make_token(email, secret=settings.leads_confirm_secret)
+    except ValueError:
+        logger.warning("leads.opt_in_skipped", reason="no_confirm_secret")
+        return False
+
+    try:
+        response = await client.post(
+            _tem_url(),
+            json=build_confirmation_payload(email, token),
+            headers=_tem_headers(),
+        )
+    except httpx.HTTPError as exc:
+        logger.error("leads.confirmation_transport_error", error=str(exc))
+        return False
+
+    if response.status_code in (200, 201, 202):
+        return True
+
+    logger.error("leads.confirmation_send_failed", status_code=response.status_code)
+    return False
 
 
 @router.post("/api/leads", response_model=LeadResponse)
@@ -289,7 +299,7 @@ async def create_lead(
     response: Response,
     data: LeadCreate,
 ) -> LeadResponse:
-    """Send the operator a transactional email; optionally subscribe."""
+    """Mail the operator; optionally start the newsletter double opt-in."""
     email = (data.email or "").strip().lower()
     if not email or len(email) > _MAX_EMAIL_LEN or not _EMAIL_RE.match(email):
         raise HTTPException(
@@ -302,14 +312,17 @@ async def create_lead(
         logger.error("leads.scaleway_secret_key_missing")
         raise _raise_generic_500()
 
+    confirmation_sent = False
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
         # Notification email comes first: it is the part the operator
-        # cannot afford to miss. If subscribing to the list fails after
-        # the email has already been sent the operator still knows a
-        # lead came in — better than the reverse.
+        # cannot afford to miss. If the confirmation mail fails after the
+        # notification has gone out, the operator still knows a lead came
+        # in — better than the reverse.
         await _send_contact_email(client, email, data)
-        if data.newsletter_opt_in and settings.listmonk_list_uuid:
-            await _add_to_list(client, email, data)
+        if data.newsletter_opt_in and opt_in_available():
+            confirmation_sent = await _send_confirmation_email(client, email)
+        elif data.newsletter_opt_in:
+            logger.warning("leads.opt_in_skipped", reason="listmonk_not_configured")
 
     # Do NOT log email or field content — the only fact worth recording
     # is "a lead came in from source X".
@@ -317,5 +330,53 @@ async def create_lead(
         "leads.created",
         source=data.source,
         newsletter_opt_in=data.newsletter_opt_in,
+        confirmation_sent=confirmation_sent,
     )
     return LeadResponse(ok=True)
+
+
+@router.post("/api/leads/confirm", response_model=LeadConfirmResponse)
+@limiter.limit("20/minute")
+async def confirm_lead(
+    request: Request,
+    response: Response,
+    data: LeadConfirm,
+) -> LeadConfirmResponse:
+    """Redeem a confirmation token and put the address on the list.
+
+    Always 200 — the caller is the SvelteKit confirmation page, which
+    renders a different sentence per `status` rather than an HTTP error.
+    A bad token is an ordinary outcome here (a stale link, a mail client
+    that mangled the URL), not an exceptional one.
+
+    `already_known` is not distinguished from `confirmed` in the
+    response: only the token holder ever gets here, but there is no
+    reason to tell them anything beyond "it worked".
+    """
+    token = (data.token or "").strip()
+
+    try:
+        email = read_token(token, secret=settings.leads_confirm_secret)
+    except ExpiredTokenError:
+        logger.info("leads.confirm_expired")
+        return LeadConfirmResponse(status="expired")
+    except InvalidTokenError:
+        # Covers a tampered link and an unconfigured secret alike; the
+        # visitor can do nothing about either, so they see one message.
+        logger.info("leads.confirm_invalid")
+        return LeadConfirmResponse(status="invalid")
+
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        try:
+            outcome = await listmonk.subscribe_confirmed(client, email)
+        except listmonk.ListmonkNotConfiguredError:
+            logger.error("leads.confirm_listmonk_unconfigured")
+            return LeadConfirmResponse(status="unavailable")
+        except (listmonk.ListmonkError, httpx.HTTPError) as exc:
+            logger.error("leads.confirm_listmonk_failed", error=str(exc))
+            return LeadConfirmResponse(status="unavailable")
+
+    # `outcome` says whether Listmonk created the subscriber or already
+    # had them; neither is worth an address in the log line.
+    logger.info("leads.confirmed", outcome=outcome)
+    return LeadConfirmResponse(status="confirmed")

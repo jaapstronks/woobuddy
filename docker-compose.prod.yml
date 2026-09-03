@@ -110,6 +110,15 @@ services:
       - NOTIFICATION_EMAIL=${NOTIFICATION_EMAIL:-jaap@jaapstronks.nl}
       - LISTMONK_URL=${LISTMONK_URL:-https://listmonk.dreamkit.eu}
       - LISTMONK_LIST_UUID=${LISTMONK_LIST_UUID:-}
+      # #76 — WOO Buddy runs the newsletter double opt-in itself, so it
+      # needs an API user to write the confirmed address to Listmonk and a
+      # secret to sign the confirmation link with. All three empty is a
+      # valid state: the opt-in is then skipped and the contact form keeps
+      # working, which is why install.sh does not gate on them.
+      - LISTMONK_API_USER=${LISTMONK_API_USER:-}
+      - LISTMONK_API_TOKEN=${LISTMONK_API_TOKEN:-}
+      - LEADS_CONFIRM_SECRET=${LEADS_CONFIRM_SECRET:-}
+      - PUBLIC_SITE_URL=${PUBLIC_SITE_URL:-https://woobuddy.nl}
     depends_on:
       postgres:
         condition: service_healthy

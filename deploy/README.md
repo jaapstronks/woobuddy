@@ -39,8 +39,10 @@ Secrets are read from the project-root `.env`. Values referenced as `op://...` U
 | `SCALEWAY_SECRET_KEY` | `deploy.sh`, `docker-compose.prod.yml` | Scaleway TEM secret key for the lead form. See "Lead-form mail" below. |
 | `SCALEWAY_PROJECT_ID` | `deploy.sh`, `docker-compose.prod.yml` | Scaleway project the send is billed to — not a secret, but required. |
 | `NOTIFICATION_EMAIL` | `deploy.sh`, `docker-compose.prod.yml` | Where lead notifications land. Not a secret. |
+| `LISTMONK_API_USER` / `LISTMONK_API_TOKEN` | `deploy.sh`, `docker-compose.prod.yml` | Listmonk API user for the newsletter opt-in. See "Newsletter opt-in" below. |
+| `LEADS_CONFIRM_SECRET` | `deploy.sh`, `docker-compose.prod.yml` | HMAC secret signing the confirmation link. |
 
-`SCALEWAY_TEM_REGION`, `TEM_FROM_EMAIL`, `TEM_FROM_NAME`, `LISTMONK_URL` and `LISTMONK_LIST_UUID` are optional: `deploy.sh` falls back to the same defaults `docker-compose.prod.yml` carries. An empty `LISTMONK_LIST_UUID` is a valid choice — it turns the newsletter opt-in off and leaves the notification mail working.
+`SCALEWAY_TEM_REGION`, `TEM_FROM_EMAIL`, `TEM_FROM_NAME`, `LISTMONK_URL`, `LISTMONK_LIST_UUID` and `PUBLIC_SITE_URL` are optional: `deploy.sh` falls back to the same defaults `docker-compose.prod.yml` carries. An empty `LISTMONK_LIST_UUID` — or an empty API user, token or confirm secret — is a valid choice: it turns the newsletter opt-in off and leaves the notification mail working.
 
 ### Lead-form mail (#72)
 
@@ -62,6 +64,40 @@ Put the returned `secret_key` in the project-root `.env` as `SCALEWAY_SECRET_KEY
 To move the sender to `noreply@woobuddy.nl` later: `scw -p bolster tem domain create domain-name=woobuddy.nl`, add the SPF/DKIM/MX records it returns at TransIP, wait for `scw -p bolster tem domain check`, then flip `TEM_FROM_EMAIL`.
 
 If `.env` contains only literal values you can run the scripts directly without `op run`. As soon as any value is an `op://` URI, prefix the command with `op run --env-file=.env --`.
+
+### Newsletter opt-in (#76)
+
+WOO Buddy runs the double opt-in itself: the backend mails the confirmation, and only
+when the recipient clicks the signed link does the address reach Listmonk. That needs
+four values, none of which `install.sh` gates on — leave any of them empty and the opt-in
+checkbox degrades to a no-op while the contact form keeps working.
+
+| Variable | What it is |
+|----------|------------|
+| `LISTMONK_API_USER` / `LISTMONK_API_TOKEN` | A Listmonk **API user**: Admin → Users → New → type *API*, with a role granting `lists:get` and `subscribers:get` / `subscribers:manage`. Nothing else. |
+| `LEADS_CONFIRM_SECRET` | HMAC secret for the confirmation link. Any long random string (`openssl rand -base64 32`). Rotating it invalidates links still in flight — a 48-hour window at most. |
+| `PUBLIC_SITE_URL` | Where the confirmation link points. The public frontend origin, not the API. |
+
+`/api/health` reports `newsletter_opt_in: configured` once all four are present and a list
+UUID is set. It is advisory only, unlike `lead_mail`.
+
+**Why not Listmonk's own double opt-in.** Listmonk's opt-in mail, sender address and
+public pages are instance-global, and `listmonk.dreamkit.eu` is shared with Dreamkit. A
+WOO Buddy signup therefore received a mail headed "DREAMKIT UPDATES" from
+`noreply@mail.dreamkit.eu`, announcing a list named "WOO Buddy — leads", and landed on a
+Dreamkit confirmation page. Sending our own confirmation is the only way to control all
+three. `preconfirm_subscriptions` on the write keeps Listmonk from sending a second mail
+regardless of how the list's opt-in setting is configured later.
+
+**List hygiene, as a working agreement.** The list is named "WOO Buddy updates", is of
+type *private*, and its opt-in is set to *single* — the confirmation is ours now, so
+Listmonk must not send one of its own. Campaigns from this list get the sender
+`WOO Buddy <hallo@woobuddy.nl>` set per campaign, because the instance default is
+Dreamkit's.
+
+**Known remaining gap:** the unsubscribe page at the bottom of a Listmonk campaign is
+still Dreamkit-branded. That page comes from Listmonk's own campaign footer and cannot be
+themed per list; a WOO Buddy unsubscribe endpoint would be its own piece of work.
 
 ## Routine deploy (every change)
 

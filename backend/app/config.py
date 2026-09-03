@@ -55,12 +55,28 @@ class Settings(BaseSettings):
     tem_from_name: str = "WOO Buddy"
     notification_email: str = "jaap@jaapstronks.nl"
 
-    # Listmonk (self-hosted, EU) — the optional newsletter list. No API token
-    # is needed: we use the public subscription endpoint, and a double-opt-in
-    # list makes Listmonk send the confirmation mail itself. Leave
-    # `listmonk_list_uuid` empty to disable the newsletter subscribe entirely.
+    # Listmonk (self-hosted, EU) — the optional newsletter list. WOO Buddy
+    # runs the double opt-in itself (#76) and writes to Listmonk through the
+    # admin API only after the recipient confirmed, so an API user is needed
+    # (Listmonk → Admin → Users → type API, with `lists:get` and
+    # `subscribers:get`/`subscribers:manage`). Leave `listmonk_list_uuid`
+    # empty — or the credentials empty — to disable the newsletter opt-in
+    # entirely; the contact form keeps working either way.
     listmonk_url: str = "https://listmonk.dreamkit.eu"
     listmonk_list_uuid: str = ""
+    listmonk_api_user: str = ""
+    listmonk_api_token: str = ""
+
+    # HMAC secret for the newsletter confirmation link (#76). Any long random
+    # string; rotating it invalidates confirmation links that are still in
+    # flight, which is a 48-hour window at most. Empty disables the opt-in
+    # rather than minting forgeable tokens.
+    leads_confirm_secret: str = ""
+
+    # Where the confirmation link points. The mail is sent by the backend but
+    # the link must land on the site the visitor recognises, so this is the
+    # public origin of the frontend, not the API.
+    public_site_url: str = "https://woobuddy.nl"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

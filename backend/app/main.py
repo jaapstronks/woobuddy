@@ -199,10 +199,20 @@ def create_app() -> FastAPI:
         It carries no secret — only "is a key present" — so it is safe to
         expose, and it gives the deploy script something to assert against
         (#72) instead of waiting for a visitor to hit the 500.
+
+        `newsletter_opt_in` does the same for the double opt-in (#76).
+        It is deliberately *not* a deploy gate: the opt-in degrades to
+        "skipped" rather than failing the form, and a self-hoster running
+        without a mailing list is a supported configuration. It is here so
+        a missing Listmonk token is visible before someone notices that no
+        confirmations are arriving.
         """
+        from app.api.leads import opt_in_available  # noqa: PLC0415
+
         return {
             "status": "ok",
             "lead_mail": "configured" if settings.scaleway_secret_key else "missing",
+            "newsletter_opt_in": "configured" if opt_in_available() else "disabled",
         }
 
     return app
