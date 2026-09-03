@@ -129,6 +129,11 @@
 	);
 	const totalPages = $derived(pdfDoc?.numPages ?? 0);
 	let rendering = false; // not reactive — just a guard flag
+	// Trailing-edge slot for a render requested while one was in flight.
+	// Dropping such a request left the overlays — which draw for the new
+	// `currentPage` at `renderedScale` — sitting on the previous page's
+	// canvas until some unrelated input forced another render (#66/7).
+	let pendingRenderPage: number | null = null;
 	// Reactive so the overlay/search-highlight effects re-run once renderPdf
 	// finishes and updates the current viewport dimensions. Without this the
 	// overlays would read stale container sizes after a zoom or resize.
@@ -214,7 +219,13 @@
 	});
 
 	async function renderPdf(pageNum: number) {
-		if (!pdfDoc || !canvasEl || rendering) return;
+		if (!pdfDoc || !canvasEl) return;
+		if (rendering) {
+			// Keep only the newest request: intermediate pages a reviewer
+			// scrolled past are not worth painting.
+			pendingRenderPage = pageNum;
+			return;
+		}
 		rendering = true;
 		// Snapshot the scale we're about to paint so later `renderedScale`
 		// update matches what actually landed on the canvas — reading `scale`
@@ -238,6 +249,12 @@
 			onPageNaturalSize?.({ width: result.naturalWidth, height: result.naturalHeight });
 		} finally {
 			rendering = false;
+			const queued = pendingRenderPage;
+			pendingRenderPage = null;
+			// Re-run unconditionally when something was queued: the queued
+			// request may differ from what we just painted in page, in
+			// scale, or in both.
+			if (queued !== null) void renderPdf(queued);
 		}
 	}
 
@@ -253,8 +270,13 @@
 		// fall through to their normal behavior.
 		if (splitPendingId === det.id && onSplitPointClick && stageEl) {
 			const stageRect = stageEl.getBoundingClientRect();
-			const pdfX = (e.clientX - stageRect.left) / scale;
-			const pdfY = (e.clientY - stageRect.top) / scale;
+			// `renderedScale`, not the live `scale` prop: the overlay the
+			// reviewer just clicked was drawn at the scale that actually
+			// landed on the canvas. During a fit recompute `scale` is one
+			// render ahead, which put the split at the wrong x (#66/8).
+			const activeScale = renderedScale > 0 ? renderedScale : scale;
+			const pdfX = (e.clientX - stageRect.left) / activeScale;
+			const pdfY = (e.clientY - stageRect.top) / activeScale;
 			onSplitPointClick({ detectionId: det.id, bboxIndex: bboxIdx, pdfX, pdfY });
 			return;
 		}
@@ -476,6 +498,17 @@
 	export function flashDetections(ids: string[]) {
 		if (!overlayEl || ids.length === 0) return;
 		flashOverlays(overlayEl, ids, 'overlay-flash');
+	}
+
+	/**
+	 * True while the reviewer is dragging or nudging a detection's
+	 * boundary. The review page hands this to `KeyboardShortcuts` so the
+	 * arrow keys can't both nudge the box and jump to the next detection
+	 * (#66/4) — asking the owner beats relying on listener registration
+	 * order.
+	 */
+	export function isBoundaryEditing(): boolean {
+		return boundaryEdit.isEditing;
 	}
 </script>
 

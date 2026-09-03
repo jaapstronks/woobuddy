@@ -114,7 +114,10 @@
 	let pdfScrollEl = $state<HTMLDivElement | null>(null);
 	// PdfViewer exposes `flashDetections` via `bind:this` for the undo effect
 	// below — the viewer flashes affected overlays after each undo/redo push.
-	let pdfViewerRef = $state<{ flashDetections: (ids: string[]) => void } | null>(null);
+	let pdfViewerRef = $state<{
+		flashDetections: (ids: string[]) => void;
+		isBoundaryEditing: () => boolean;
+	} | null>(null);
 	// Sidebar scroll container — passed down to DetectionList so the
 	// selection-follow effect can center the chosen card. Keeping the
 	// reference here avoids ancestor DOM queries from inside the child.
@@ -629,6 +632,7 @@
 </svelte:head>
 
 <KeyboardShortcuts
+	isBoundaryEditing={() => pdfViewerRef?.isBoundaryEditing() ?? false}
 	onAccept={handleKeyAccept}
 	onReject={handleKeyReject}
 	onDefer={handleKeyDefer}
