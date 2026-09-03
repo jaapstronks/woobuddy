@@ -13,8 +13,9 @@
  * 2. Lowercase the page string and the query, collapsing runs of whitespace
  *    in the query (the concatenation already produces single spaces).
  * 3. `indexOf` scan; for each match, collect the items whose offsets overlap
- *    the match range and merge their bboxes into one box per visual line
- *    (same rule as manual text selection in #06).
+ *    the match range, narrow each item's box to the matched characters
+ *    (AFM-weighted, see `segmentToBox`), and merge those into one box per
+ *    visual line (same rule as manual text selection in #06).
  * 4. Flag matches whose bboxes *all* overlap ≥50% with an existing detection
  *    that will actually produce a black bar — the UI shows those as "already
  *    redacted" so the reviewer doesn't double-redact.
@@ -29,6 +30,7 @@ import type {
 	ExtractionResult,
 	ReviewStatus
 } from '$lib/types';
+import { charIndexAtOffset, measureText } from './glyph-metrics';
 
 export interface SearchOccurrence {
 	/** Stable id derived from page + offset — safe as a list key and as a Set entry. */
@@ -89,8 +91,52 @@ function indexPage(page: ExtractionResult['pages'][number]): PageIndex {
 	};
 }
 
-function itemToBox(item: ExtractedTextItem, page: number): BoundingBox {
-	return { page, x0: item.x0, y0: item.y0, x1: item.x1, y1: item.y1 };
+/**
+ * Box the part of `segment` that the match `[matchStart, matchEnd)` actually
+ * covers, in page-string offsets.
+ *
+ * pdf.js hands back one text item per *line* for plenty of real documents
+ * (scanner output, most letter templates), so taking the item's own box would
+ * black out the whole sentence around the hit — redacting without grounds.
+ * The item's characters are weighted by AFM advance widths, the same
+ * weighting `sliceItemTextByBbox` uses for the reverse translation, and the
+ * box is cut back to the matched span.
+ *
+ * A match that runs over a line end gets one narrowed box per item: the first
+ * from the start of the match to the end of its item, the second from the
+ * start of its item to the end of the match. That falls out of clamping the
+ * match range to the segment rather than being a separate case.
+ */
+function segmentToBox(
+	segment: PageIndex['segments'][number],
+	page: number,
+	matchStart: number,
+	matchEnd: number
+): BoundingBox {
+	const item = segment.item;
+	const fullBox = { page, x0: item.x0, y0: item.y0, x1: item.x1, y1: item.y1 };
+
+	const startInItem = Math.max(0, matchStart - segment.start);
+	const endInItem = Math.min(item.text.length, matchEnd - segment.start);
+	// The whole item is inside the match — nothing to narrow, and skipping
+	// the measurement keeps the common word-per-item case exact.
+	if (startInItem <= 0 && endInItem >= item.text.length) return fullBox;
+	if (endInItem <= startInItem) return fullBox;
+
+	const ruler = measureText(item.text, item.x1 - item.x0);
+	if (!ruler) return fullBox;
+
+	const startIdx = charIndexAtOffset(ruler, startInItem);
+	const endIdx = charIndexAtOffset(ruler, endInItem);
+	if (endIdx <= startIdx) return fullBox;
+
+	return {
+		page,
+		x0: item.x0 + ruler.cumulative[startIdx],
+		y0: item.y0,
+		x1: item.x0 + ruler.cumulative[endIdx],
+		y1: item.y1
+	};
 }
 
 /**
@@ -195,7 +241,7 @@ export function searchDocument(
 				continue;
 			}
 
-			const itemBboxes = hits.map((h) => itemToBox(h.item, pageIndex.pageNumber));
+			const itemBboxes = hits.map((h) => segmentToBox(h, pageIndex.pageNumber, found, matchEnd));
 			const bboxes = mergeLineBboxes(itemBboxes);
 
 			// Every line has to be covered, not just one. A name broken over
