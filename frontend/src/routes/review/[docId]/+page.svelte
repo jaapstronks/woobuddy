@@ -855,6 +855,13 @@
 				</button>
 			</div>
 		{/if}
+		{#if reviewExportStore.exportWarning}
+			<!-- The download succeeded but lost redactions (#66/5). Amber, not
+			     red: there is a file, it just can't be trusted as-is. -->
+			<div class="mx-4 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+				{reviewExportStore.exportWarning}
+			</div>
+		{/if}
 		{#if reviewExportStore.showAccessibilityBanner}
 			<!-- #48 — confirms the accessibility guarantees of the export
 			     so the work the post-processing pipeline does is visible

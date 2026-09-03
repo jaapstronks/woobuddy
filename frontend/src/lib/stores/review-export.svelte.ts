@@ -31,6 +31,12 @@ import { bucketPages, bucketRedactions } from '$lib/analytics/events';
 
 let exporting = $state(false);
 let exportError = $state<string | null>(null);
+/**
+ * Non-fatal problem with the last export: the download happened, but not
+ * every redaction made it in. Kept separate from `exportError` because
+ * the reviewer still has a file — they just can't trust it (#66/5).
+ */
+let exportWarning = $state<string | null>(null);
 let showPostExportLead = $state(false);
 // #52 — separate state for the publication-export bundle: the dialog
 // open/close flag is decoupled from the simple-export busy flag so the
@@ -86,16 +92,23 @@ async function runExport({
 }: RunExportArgs): Promise<void> {
 	exporting = true;
 	exportError = null;
+	exportWarning = null;
 	showAccessibilityBanner = false;
 	try {
 		const redacted = await exportRedactedPdf(pdfBytes, filename, detections, { title });
-		downloadBlob(redacted, `gelakt_${filename}`);
+		downloadBlob(redacted.blob, `gelakt_${filename}`);
+		if (redacted.skipped > 0) {
+			exportWarning =
+				`Let op: ${redacted.skipped} van de ${redacted.skipped + redacted.applied} ` +
+				'lakvlakken viel buiten het document en is niet toegepast. ' +
+				'Controleer het gelakte bestand voordat u het publiceert.';
+		}
 		// Cache the redacted PDF hash so a follow-up onderbouwingsrapport
 		// can include it in its provenance block. We deliberately hash
 		// after a successful download so a failed export doesn't poison
 		// the cache with a stale value.
 		try {
-			const redactedBytes = await redacted.arrayBuffer();
+			const redactedBytes = await redacted.blob.arrayBuffer();
 			redactedPdfHash = await sha256Hex(redactedBytes);
 		} catch (hashErr) {
 			console.warn('Failed to hash redacted PDF for onderbouwing provenance', hashErr);
@@ -182,6 +195,7 @@ export interface RunPublicationExportArgs {
 async function runPublicationExport(args: RunPublicationExportArgs): Promise<void> {
 	publicationBundling = true;
 	exportError = null;
+	exportWarning = null;
 	try {
 		const redactedBlob = await exportRedactedPdf(
 			args.pdfBytes,
@@ -189,7 +203,14 @@ async function runPublicationExport(args: RunPublicationExportArgs): Promise<voi
 			args.detections,
 			{ title: args.input.officieleTitel }
 		);
-		const redactedBytes = new Uint8Array(await redactedBlob.arrayBuffer());
+		if (redactedBlob.skipped > 0) {
+			exportWarning =
+				`Let op: ${redactedBlob.skipped} van de ` +
+				`${redactedBlob.skipped + redactedBlob.applied} lakvlakken viel buiten het ` +
+				'document en is niet toegepast. Controleer het gelakte bestand voordat u het ' +
+				'publiceert.';
+		}
+		const redactedBytes = new Uint8Array(await redactedBlob.blob.arrayBuffer());
 		try {
 			redactedPdfHash = await sha256Hex(redactedBytes);
 		} catch (hashErr) {
@@ -312,6 +333,9 @@ export const reviewExportStore = {
 	},
 	get exportError() {
 		return exportError;
+	},
+	get exportWarning() {
+		return exportWarning;
 	},
 	get showPostExportLead() {
 		return showPostExportLead;
