@@ -37,6 +37,7 @@ export {
 	SameNameSweepCommand,
 	BatchCommand
 } from './undo/sweep-commands';
+export { SplitCommand, MergeCommand } from './undo/split-merge-commands';
 
 // ---------------------------------------------------------------------------
 // Stacks
@@ -54,67 +55,97 @@ const canUndo = $derived(undoStack.length > 0 && !busy);
 const canRedo = $derived(redoStack.length > 0 && !busy);
 
 /**
+ * Serialisation queue. Every mutation runs to completion before the next
+ * one starts, so a reviewer hammering A/R/D gets one command per keypress
+ * instead of losing every keypress that landed while the previous one was
+ * still awaiting IndexedDB. The old guard (`if (busy) return`) dropped
+ * those silently — the row kept its old status and the undo stack had no
+ * record that anything was attempted (#66/10).
+ */
+let tail: Promise<unknown> = Promise.resolve();
+
+function enqueue<T>(work: () => Promise<T>): Promise<T> {
+	// Chain off the settled tail so one rejected command doesn't wedge the
+	// queue; the caller still sees its own rejection.
+	const run = tail.then(work, work);
+	tail = run.then(
+		() => undefined,
+		() => undefined
+	);
+	return run;
+}
+
+/**
  * Run `cmd.forward()` and, on success, push it onto the undo stack.
  * Throws if the forward fails — callers can surface the error and the
  * stack stays clean (no half-applied commands).
  */
-async function push(cmd: Command): Promise<void> {
-	if (busy) return;
-	busy = true;
-	try {
-		await cmd.forward();
-	} catch (e) {
-		// Don't pollute the stack with a command that didn't take effect.
-		throw e;
-	} finally {
-		busy = false;
-	}
-	undoStack = [...undoStack, cmd];
-	if (undoStack.length > MAX_STACK) {
-		undoStack = undoStack.slice(undoStack.length - MAX_STACK);
-	}
-	// Any new action invalidates the redo branch — standard undo semantics.
-	redoStack = [];
-	lastAffected = cmd.affectedDetectionIds;
+function push(cmd: Command): Promise<void> {
+	return enqueue(async () => {
+		busy = true;
+		try {
+			await cmd.forward();
+		} finally {
+			// Don't pollute the stack with a command that didn't take
+			// effect: the throw propagates before the push below.
+			busy = false;
+		}
+		undoStack = [...undoStack, cmd];
+		if (undoStack.length > MAX_STACK) {
+			undoStack = undoStack.slice(undoStack.length - MAX_STACK);
+		}
+		// Any new action invalidates the redo branch — standard undo semantics.
+		redoStack = [];
+		lastAffected = cmd.affectedDetectionIds;
+	});
 }
 
-async function undo(): Promise<void> {
-	if (!canUndo) return;
-	const cmd = undoStack[undoStack.length - 1];
-	busy = true;
-	// Set `lastAffected` *before* running reverse() so the flash effect
-	// fires on the current (pre-reverse) DOM — important for
-	// `CreateManualCommand` where the overlay disappears once the row is
-	// deleted. Commands that delete rows pre-delay their reverse so the
-	// flash actually has something to land on.
-	lastAffected = cmd.affectedDetectionIds;
-	try {
-		await cmd.reverse();
-	} finally {
-		busy = false;
-	}
-	undoStack = undoStack.slice(0, -1);
-	redoStack = [...redoStack, cmd];
+function undo(): Promise<void> {
+	return enqueue(async () => {
+		if (undoStack.length === 0) return;
+		const cmd = undoStack[undoStack.length - 1];
+		busy = true;
+		// Set `lastAffected` *before* running reverse() so the flash effect
+		// fires on the current (pre-reverse) DOM — important for
+		// `CreateManualCommand` where the overlay disappears once the row is
+		// deleted. Commands that delete rows pre-delay their reverse so the
+		// flash actually has something to land on.
+		lastAffected = cmd.affectedDetectionIds;
+		try {
+			await cmd.reverse();
+		} finally {
+			busy = false;
+		}
+		undoStack = undoStack.slice(0, -1);
+		redoStack = [...redoStack, cmd];
+	});
 }
 
-async function redo(): Promise<void> {
-	if (!canRedo) return;
-	const cmd = redoStack[redoStack.length - 1];
-	busy = true;
-	try {
-		await cmd.forward();
-	} finally {
-		busy = false;
-	}
-	redoStack = redoStack.slice(0, -1);
-	undoStack = [...undoStack, cmd];
-	lastAffected = cmd.affectedDetectionIds;
+function redo(): Promise<void> {
+	return enqueue(async () => {
+		if (redoStack.length === 0) return;
+		const cmd = redoStack[redoStack.length - 1];
+		busy = true;
+		try {
+			await cmd.forward();
+		} finally {
+			busy = false;
+		}
+		redoStack = redoStack.slice(0, -1);
+		undoStack = [...undoStack, cmd];
+		lastAffected = cmd.affectedDetectionIds;
+	});
 }
 
 function clear() {
 	undoStack = [];
 	redoStack = [];
 	lastAffected = [];
+}
+
+/** Resolves once every queued command has settled. Test seam. */
+function settled(): Promise<void> {
+	return tail.then(() => undefined);
 }
 
 // ---------------------------------------------------------------------------
@@ -143,5 +174,6 @@ export const undoStore = {
 	push,
 	undo,
 	redo,
-	clear
+	clear,
+	settled
 };

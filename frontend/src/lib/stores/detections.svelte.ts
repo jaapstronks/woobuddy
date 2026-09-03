@@ -300,6 +300,14 @@ async function review(id: string, data: UpdateDetectionRequest) {
 	} else if (data.clear_subject_role) {
 		next.subject_role = null;
 	}
+	if (data.motivation_text !== undefined) {
+		// The reviewer's justification for a Tier 3 judgment call. It used
+		// to be sent by `handleSaveMotivation` and dropped on the floor
+		// here, so "Opslaan" only flipped the status and the typed text was
+		// gone on the next render (#66/3). Stays client-side: it is part of
+		// the onderbouwing, never a log line and never a request body.
+		next.motivation_text = data.motivation_text;
+	}
 
 	allDetections = allDetections.map((d) => (d.id === id ? next : d));
 	await persistDetections();
@@ -462,12 +470,15 @@ async function split(
  * matches the reviewer's "click this one first, then Ctrl+click the
  * others" mental model. The originals are dropped.
  */
-async function merge(): Promise<Detection | null> {
-	if (multiSelectedIds.length < 2) {
+async function merge(explicitIds?: string[]): Promise<Detection | null> {
+	// `explicitIds` lets the undo stack redo a merge after the multi-select
+	// has been cleared; without it, redo silently merged nothing.
+	const source = explicitIds ?? multiSelectedIds;
+	if (source.length < 2) {
 		error = 'Selecteer ten minste twee detecties om samen te voegen.';
 		return null;
 	}
-	const ids = [...multiSelectedIds];
+	const ids = [...source];
 	const ordered = ids.map((id) => byId[id]).filter((d): d is Detection => d !== undefined);
 	if (ordered.length !== ids.length) {
 		error = 'Detectie niet gevonden';
@@ -503,6 +514,32 @@ async function merge(): Promise<Detection | null> {
 	multiSelectedIds = [];
 	await persistDetections();
 	return merged;
+}
+
+/**
+ * Swap one set of detection rows for another in a single mutation.
+ *
+ * The undo counterpart of `split` and `merge` (#18): both actions delete
+ * their inputs and insert freshly generated rows, so rolling them back
+ * means putting the captured originals back and dropping the products.
+ * Doing it as one mutation (rather than remove-then-insert) keeps
+ * `allDetections` from flickering through a state where the detection
+ * exists nowhere, which the overlay effect would happily paint.
+ */
+async function replaceRows(args: {
+	removeIds: string[];
+	insert: Detection[];
+	select?: string | null;
+}): Promise<void> {
+	const gone = new Set(args.removeIds);
+	allDetections = [...allDetections.filter((d) => !gone.has(d.id)), ...args.insert];
+	if (args.select !== undefined) {
+		selectedId = args.select;
+	} else if (selectedId && gone.has(selectedId)) {
+		selectedId = null;
+	}
+	multiSelectedIds = multiSelectedIds.filter((id) => !gone.has(id));
+	await persistDetections();
 }
 
 function toggleMultiSelect(id: string) {
@@ -626,6 +663,7 @@ export const detectionStore = {
 	remove,
 	split,
 	merge,
+	replaceRows,
 	toggleMultiSelect,
 	clearMultiSelect,
 	acceptAllPendingTier1,

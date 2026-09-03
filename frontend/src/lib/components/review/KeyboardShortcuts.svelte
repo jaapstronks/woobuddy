@@ -35,6 +35,16 @@
 		 * sync with this one's typing-target guard.
 		 */
 		onOpenSearch?: () => void;
+		/**
+		 * True while a boundary edit owns the arrow keys (#11). Both this
+		 * component and PdfViewer register window keydown listeners; the
+		 * controller's `stopImmediatePropagation` only stops listeners
+		 * registered *after* its own, and PdfViewer mounts second. So an
+		 * arrow key nudged the bbox *and* jumped to the next detection
+		 * (#66/4). Asking the viewer directly removes the dependency on
+		 * listener order.
+		 */
+		isBoundaryEditing?: () => boolean;
 	}
 
 	let {
@@ -50,7 +60,8 @@
 		onFlagPage,
 		onSweepHeader,
 		onSweepSignature,
-		onOpenSearch
+		onOpenSearch,
+		isBoundaryEditing
 	}: Props = $props();
 
 	let showHelp = $state(false);
@@ -81,6 +92,11 @@
 		// them to fight the browser's native undo inside a text field —
 		// so bail out of undo/redo too when focus is in an input.
 		const typing = isTypingTarget(e);
+		// While a boundary edit is active the reviewer is manipulating one
+		// detection's box; none of the shortcuts below should fire, least of
+		// all the arrow keys that would move the selection out from under
+		// the edit. Ctrl+Z stays available — undo works everywhere.
+		const editingBoundary = isBoundaryEditing?.() ?? false;
 
 		// Ctrl/Cmd + Z / Shift+Z / Y → undo/redo.
 		// Ctrl/Cmd + F → open search (handled here so there is a single
@@ -111,7 +127,7 @@
 			}
 		}
 
-		if (typing) return;
+		if (typing || editingBoundary) return;
 
 		// #20 — Shift+H / Shift+S sweep the block containing the currently
 		// selected detection. These fire before the letter-key branch below

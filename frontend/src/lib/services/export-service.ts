@@ -10,6 +10,7 @@
 
 import { PUBLIC_API_URL } from '$env/static/public';
 import type { Detection } from '$lib/types';
+import { isAcceptedRedaction } from '$lib/utils/review-status';
 
 const BASE = PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -33,15 +34,17 @@ interface InlineRedaction {
 }
 
 /**
- * Flatten the accepted detections into per-bbox redaction records. Mirrors
- * the server-side `_build_redactions` helper so both sides agree on the
- * field shape; only `accepted` and `auto_accepted` rows produce
- * redactions, exactly as in the legacy DB-lookup mode.
+ * Flatten the accepted detections into per-bbox redaction records.
+ *
+ * "Accepted" is decided by `isAcceptedRedaction`, the same predicate the
+ * redaction log and the card UI use. This function used to re-implement
+ * it inline, and this is the one place in the app where drift changes
+ * what actually gets burned into the PDF (#66/9).
  */
-function buildRedactionList(detections: Detection[]): InlineRedaction[] {
+export function buildRedactionList(detections: Detection[]): InlineRedaction[] {
 	const redactions: InlineRedaction[] = [];
 	for (const det of detections) {
-		if (det.review_status !== 'accepted' && det.review_status !== 'auto_accepted') continue;
+		if (!isAcceptedRedaction(det.review_status)) continue;
 		if (!det.bounding_boxes) continue;
 		for (const bbox of det.bounding_boxes) {
 			redactions.push({
@@ -57,6 +60,20 @@ function buildRedactionList(detections: Detection[]): InlineRedaction[] {
 	return redactions;
 }
 
+export interface RedactedExport {
+	/** The redacted PDF, ready for download. */
+	blob: Blob;
+	/** Rectangles the server actually burned in. */
+	applied: number;
+	/**
+	 * Rectangles the server dropped because their page index fell outside
+	 * the document. Non-zero means the download is missing black boxes and
+	 * the reviewer has to be told (#66/5). Zero when the server predates
+	 * the counting headers.
+	 */
+	skipped: number;
+}
+
 /**
  * Redact a single document via the inline-redactions endpoint. Sends
  * the PDF bytes alongside the accepted detection list as multipart
@@ -68,7 +85,7 @@ export async function exportRedactedPdf(
 	filename: string,
 	detections: Detection[],
 	options: ExportRedactedOptions = {}
-): Promise<Blob> {
+): Promise<RedactedExport> {
 	const headers: Record<string, string> = {};
 	const trimmedTitle = options.title?.trim();
 	if (trimmedTitle) {
@@ -81,7 +98,8 @@ export async function exportRedactedPdf(
 		new Blob([pdfBytes], { type: 'application/pdf' }),
 		filename
 	);
-	form.set('redactions', JSON.stringify(buildRedactionList(detections)));
+	const requested = buildRedactionList(detections);
+	form.set('redactions', JSON.stringify(requested));
 	form.set('filename', filename);
 
 	const response = await fetch(`${BASE}/api/export/redact-stream`, {
@@ -94,8 +112,27 @@ export async function exportRedactedPdf(
 		throw new Error(`Redactie mislukt: ${response.status}`);
 	}
 
+	const skipped = readCountHeader(response, 'X-Redactions-Skipped', 0);
+	const applied = readCountHeader(
+		response,
+		'X-Redactions-Applied',
+		requested.length - skipped
+	);
+
 	const redactedBytes = await response.arrayBuffer();
-	return new Blob([redactedBytes], { type: 'application/pdf' });
+	return {
+		blob: new Blob([redactedBytes], { type: 'application/pdf' }),
+		applied,
+		skipped
+	};
+}
+
+/** Read a non-negative integer response header, or `fallback`. */
+function readCountHeader(response: Response, name: string, fallback: number): number {
+	const raw = response.headers.get(name);
+	if (raw === null) return fallback;
+	const parsed = Number.parseInt(raw, 10);
+	return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 /**

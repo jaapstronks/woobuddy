@@ -206,6 +206,14 @@ export interface Detection {
 	 */
 	start_char?: number | null;
 	end_char?: number | null;
+	/**
+	 * Reviewer-typed justification for a Tier 3 judgment call. Lives only
+	 * in the browser (store + IndexedDB session cache) and is surfaced in
+	 * the onderbouwingsrapport. It is a reviewer *decision*, not document
+	 * content — but a reviewer can paste document text into it, so it must
+	 * never be logged or sent anywhere.
+	 */
+	motivation_text?: string | null;
 }
 
 // ---------------------------------------------------------------------------

@@ -114,7 +114,10 @@
 	let pdfScrollEl = $state<HTMLDivElement | null>(null);
 	// PdfViewer exposes `flashDetections` via `bind:this` for the undo effect
 	// below — the viewer flashes affected overlays after each undo/redo push.
-	let pdfViewerRef = $state<{ flashDetections: (ids: string[]) => void } | null>(null);
+	let pdfViewerRef = $state<{
+		flashDetections: (ids: string[]) => void;
+		isBoundaryEditing: () => boolean;
+	} | null>(null);
 	// Sidebar scroll container — passed down to DetectionList so the
 	// selection-follow effect can center the chosen card. Keeping the
 	// reference here avoids ancestor DOM queries from inside the child.
@@ -470,13 +473,13 @@
 	});
 
 	function handleKeyAccept() {
-		if (detectionStore.selectedId) handleAccept(detectionStore.selectedId);
+		if (detectionStore.selectedId) void handleAccept(detectionStore.selectedId);
 	}
 	function handleKeyReject() {
-		if (detectionStore.selectedId) handleReject(detectionStore.selectedId);
+		if (detectionStore.selectedId) void handleReject(detectionStore.selectedId);
 	}
 	function handleKeyDefer() {
-		if (detectionStore.selectedId) handleDefer(detectionStore.selectedId);
+		if (detectionStore.selectedId) void handleDefer(detectionStore.selectedId);
 	}
 
 	// Bulk sweeps (#20) — real logic lives in $lib/services/bulk-sweep. These
@@ -629,6 +632,7 @@
 </svelte:head>
 
 <KeyboardShortcuts
+	isBoundaryEditing={() => pdfViewerRef?.isBoundaryEditing() ?? false}
 	onAccept={handleKeyAccept}
 	onReject={handleKeyReject}
 	onDefer={handleKeyDefer}
@@ -849,6 +853,13 @@
 					<RotateCw size={14} />
 					Opnieuw proberen
 				</button>
+			</div>
+		{/if}
+		{#if reviewExportStore.exportWarning}
+			<!-- The download succeeded but lost redactions (#66/5). Amber, not
+			     red: there is a file, it just can't be trusted as-is. -->
+			<div class="mx-4 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+				{reviewExportStore.exportWarning}
 			</div>
 		{/if}
 		{#if reviewExportStore.showAccessibilityBanner}

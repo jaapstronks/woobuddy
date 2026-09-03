@@ -139,3 +139,30 @@ describe('articlesForToelichting', () => {
 		expect(articlesForToelichting(rows)).toEqual(['5.1.1e', '5.1.2e']);
 	});
 });
+
+describe('motivationFor with a reviewer-typed motivation (#66/3)', () => {
+	it('appends the typed text after the templated Woo ground', () => {
+		const det = makeDetection({
+			woo_article: '5.1.2e',
+			motivation_text: 'Naam van een melder; anonimiteit toegezegd.'
+		});
+		const text = motivationFor(det);
+		expect(text).toContain('Art. 5.1.2e');
+		expect(text).toContain('Naam van een melder; anonimiteit toegezegd.');
+	});
+
+	it('falls back to the ground alone when nothing was typed', () => {
+		const withNull = motivationFor(makeDetection({ motivation_text: null }));
+		const withBlank = motivationFor(makeDetection({ motivation_text: '   ' }));
+		const without = motivationFor(makeDetection());
+		expect(withNull).toBe(without);
+		expect(withBlank).toBe(without);
+	});
+
+	it('carries the typed text into the report rows', () => {
+		const rows = buildReportRows([
+			makeDetection({ id: 'a', motivation_text: 'Handmatig beoordeeld door de behandelaar.' })
+		]);
+		expect(rows[0].motivation).toContain('Handmatig beoordeeld door de behandelaar.');
+	});
+});

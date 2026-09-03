@@ -50,44 +50,52 @@ export function makeStatusCommand(
 	);
 }
 
-export function handleAccept(id: string): void {
-	const cmd = makeStatusCommand(id, 'accepted');
-	if (cmd) {
-		undoStore.push(cmd);
+/**
+ * Push a status command and touch the pages it covers.
+ *
+ * The push is awaited. The undo store serialises commands, so an
+ * unawaited push used to be dropped whenever the previous one was still
+ * settling — a reviewer holding A/R/D lost keypresses with no error and
+ * no stack entry (#66/10). Errors are swallowed here because
+ * `detectionStore.error` already carries the message to the UI; letting
+ * them escape would only produce an unhandled rejection in a DOM handler.
+ */
+async function pushStatus(
+	id: string,
+	nextStatus: 'accepted' | 'rejected' | 'deferred' | 'pending',
+	nextArticle?: WooArticleCode
+): Promise<void> {
+	const cmd = makeStatusCommand(id, nextStatus, nextArticle);
+	if (!cmd) return;
+	try {
+		await undoStore.push(cmd);
 		touchDetectionPages(id);
+	} catch {
+		// detectionStore.error carries the message.
 	}
 }
 
-export function handleRedactWithArticle(id: string, article: WooArticleCode): void {
-	const cmd = makeStatusCommand(id, 'accepted', article);
-	if (cmd) {
-		undoStore.push(cmd);
-		touchDetectionPages(id);
-	}
+export function handleAccept(id: string): Promise<void> {
+	return pushStatus(id, 'accepted');
 }
 
-export function handleReject(id: string): void {
-	const cmd = makeStatusCommand(id, 'rejected');
-	if (cmd) {
-		undoStore.push(cmd);
-		touchDetectionPages(id);
-	}
+export function handleRedactWithArticle(
+	id: string,
+	article: WooArticleCode
+): Promise<void> {
+	return pushStatus(id, 'accepted', article);
 }
 
-export function handleDefer(id: string): void {
-	const cmd = makeStatusCommand(id, 'deferred');
-	if (cmd) {
-		undoStore.push(cmd);
-		touchDetectionPages(id);
-	}
+export function handleReject(id: string): Promise<void> {
+	return pushStatus(id, 'rejected');
 }
 
-export function handleReopen(id: string): void {
-	const cmd = makeStatusCommand(id, 'pending');
-	if (cmd) {
-		undoStore.push(cmd);
-		touchDetectionPages(id);
-	}
+export function handleDefer(id: string): Promise<void> {
+	return pushStatus(id, 'deferred');
+}
+
+export function handleReopen(id: string): Promise<void> {
+	return pushStatus(id, 'pending');
 }
 
 export async function handleChangeArticle(id: string, nextArticle: WooArticleCode): Promise<void> {
@@ -120,8 +128,18 @@ export async function handleSetSubjectRole(id: string, role: SubjectRole): Promi
 	}
 }
 
-export function handleSaveMotivation(id: string, text: string): void {
-	detectionStore.review(id, { review_status: 'edited', motivation_text: text });
+/**
+ * Persist the reviewer's justification for a Tier 3 judgment call.
+ *
+ * Deliberately does not touch `review_status`. It used to set `edited`,
+ * which is not an accepted status — so typing a justification for a
+ * detection the reviewer had just accepted quietly removed it from both
+ * the export and the onderbouwingsrapport. A note about a decision is
+ * not a change of that decision; the Lakken / Niet lakken buttons stay
+ * the single source of truth for status.
+ */
+export function handleSaveMotivation(id: string, text: string): Promise<void> {
+	return detectionStore.review(id, { motivation_text: text });
 }
 
 function buildAcceptBatch(dets: typeof detectionStore.all): Command[] {
