@@ -577,6 +577,29 @@
 
 	// Search highlights consumed by PdfViewer — strip the UI-only fields
 	// (context, matchText) so the viewer stays agnostic of the store.
+	// #78 — detections the resolver could not place on a page. The terms
+	// are recovered client-side from character offsets, deduped so a name
+	// that failed on three pages is offered once, and capped so a
+	// pathological document cannot turn the banner into the page.
+	const UNPLACED_TERM_LIMIT = 12;
+	const unplacedDetections = $derived(detectionStore.unplaced);
+	const unplacedUniqueTerms = $derived.by(() => {
+		const seen = new Set<string>();
+		for (const u of unplacedDetections) {
+			if (u.text) seen.add(u.text);
+		}
+		return [...seen];
+	});
+	const unplacedTerms = $derived(unplacedUniqueTerms.slice(0, UNPLACED_TERM_LIMIT));
+	const unplacedTermsHidden = $derived(unplacedUniqueTerms.length - unplacedTerms.length);
+	const unplacedUnnamedCount = $derived(unplacedDetections.filter((u) => !u.text).length);
+
+	function searchForUnplacedTerm(term: string) {
+		searchStore.setQuery(term);
+		searchStore.setOpen(true);
+		if (!reviewStore.sidebarOpen) reviewStore.toggleSidebar();
+	}
+
 	const searchHighlights = $derived(
 		searchStore.open
 			? searchStore.results.map((r) => ({
@@ -931,6 +954,61 @@
 		<!-- Art. 5.3 Woo — contextual reminder, not a declarative claim. The
 		     date heuristic can be fooled by cited dates or form fields, so we
 		     pitch this as a general hint and let the reviewer dismiss it. -->
+		<!-- #78 — detections the analyzer found but the client could not
+		     place on a page (a name broken over a line end, an occurrence
+		     pdf.js tokenizes differently). They are deliberately not shown
+		     as cards — a card without a box is not actionable — but the
+		     reviewer has to know they exist, and search-and-redact is the
+		     way to place them by hand. -->
+		{#if unplacedDetections.length > 0}
+			<div class="mx-4 mt-3">
+				<Alert
+					variant="warning"
+					closable
+					onsl-after-hide={() => detectionStore.dismissUnplaced()}
+				>
+					<strong>
+						{unplacedDetections.length}
+						{unplacedDetections.length === 1 ? 'detectie kon' : 'detecties konden'}
+						niet op de pagina worden geplaatst.
+					</strong>
+					{#if unplacedTerms.length > 0}
+						<span>
+							Zoek {unplacedTerms.length === 1 ? 'de term' : 'de termen'} op en lak
+							{unplacedTerms.length === 1 ? 'hem' : 'ze'} handmatig:
+						</span>
+						<span class="mt-1 flex flex-wrap gap-1.5">
+							{#each unplacedTerms as term (term)}
+								<button
+									type="button"
+									class="rounded border border-amber-300 bg-white px-1.5 py-0.5 font-mono text-xs text-ink hover:bg-amber-50"
+									onclick={() => searchForUnplacedTerm(term)}
+								>
+									{term}
+								</button>
+							{/each}
+							{#if unplacedTermsHidden > 0}
+								<span class="self-center text-xs text-ink-soft">
+									+{unplacedTermsHidden} meer
+								</span>
+							{/if}
+						</span>
+					{:else}
+						<span>
+							De termen zijn niet te herleiden uit de lokale tekstextractie. Loop het
+							document na met zoek-en-lak (Ctrl+F) als je iets mist.
+						</span>
+					{/if}
+					{#if unplacedUnnamedCount > 0 && unplacedTerms.length > 0}
+						<span class="mt-1 block text-xs text-ink-soft">
+							Van {unplacedUnnamedCount}
+							{unplacedUnnamedCount === 1 ? 'detectie' : 'detecties'} is de term niet te
+							herleiden uit de lokale tekstextractie.
+						</span>
+					{/if}
+				</Alert>
+			</div>
+		{/if}
 		{#if reviewStore.document?.five_year_warning && !fiveYearHintDismissed}
 			<div class="mx-4 mt-3">
 				<Alert

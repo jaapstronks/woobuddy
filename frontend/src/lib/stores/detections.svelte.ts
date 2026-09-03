@@ -12,7 +12,10 @@
 import { analyzeDocument } from '$lib/api/client';
 import { HIGH_CONFIDENCE_THRESHOLD } from '$lib/config/thresholds';
 import { structureSpansStore } from '$lib/stores/structure-spans.svelte';
-import { resolveEntityTexts } from '$lib/services/bbox-text-resolver';
+import {
+	resolveEntityTexts,
+	type UnplacedDetection
+} from '$lib/services/bbox-text-resolver';
 import {
 	readSessionState,
 	writeSessionState,
@@ -66,6 +69,15 @@ let multiSelectedIds = $state<string[]>([]);
 let loading = $state(false);
 let error = $state<string | null>(null);
 let currentExtraction = $state<ExtractionResult | null>(null);
+/**
+ * #78 — detections the server found but the client could not place on a
+ * page. `resolveEntityTexts` drops them (a card with no box is not
+ * actionable), and this is the record of what was dropped so the review
+ * screen can name the terms and point at search-and-redact. Reset on
+ * every full resolve; dismissible by the reviewer.
+ */
+let unplaced = $state<UnplacedDetection[]>([]);
+let unplacedDismissed = $state(false);
 
 // Filters
 let filterTier = $state<DetectionTier | null>(null);
@@ -156,6 +168,38 @@ async function persistDetections(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
+ * Run the bbox → text resolution and store both halves: the placeable
+ * detections and the record of what was dropped (#78). Without an
+ * extraction there is nothing to resolve against, so the rows are kept
+ * as-is and no claim is made about what is unplaceable.
+ */
+function applyResolution(detections: Detection[], mode: 'replace' | 'merge' = 'replace'): void {
+	if (!currentExtraction) {
+		allDetections = detections;
+		if (mode === 'replace') unplaced = [];
+		return;
+	}
+	const result = resolveEntityTexts(detections, currentExtraction);
+	allDetections = result.detections;
+	if (mode === 'replace') {
+		unplaced = result.unplaced;
+		unplacedDismissed = false;
+		return;
+	}
+	// Merge: a re-resolve runs over rows the previous pass already
+	// filtered, so it can only ever *add* to the record — replacing it
+	// would silently erase what the first pass found.
+	const known = new Set(unplaced.map((u) => u.id));
+	const added = result.unplaced.filter((u) => u.id === null || !known.has(u.id));
+	if (added.length > 0) unplaced = [...unplaced, ...added];
+}
+
+/** Hide the "kon niet geplaatst worden" notice for this session. */
+function dismissUnplaced(): void {
+	unplacedDismissed = true;
+}
+
+/**
  * Replace the in-memory state with detections produced for `docId` and
  * write through the IDB session cache. Called by the upload flow with
  * the full {@link analyzeDocument} response.
@@ -172,8 +216,7 @@ async function setFromAnalyze(
 	multiSelectedIds = [];
 	selectedId = null;
 	const withLevels = detections.map(withConfidenceLevel);
-	const resolved = currentExtraction ? resolveEntityTexts(withLevels, currentExtraction) : withLevels;
-	allDetections = resolved;
+	applyResolution(withLevels);
 	structureSpansStore.set(docId, structureSpans);
 	// `detections` and `structureSpans` come straight from a fetch
 	// response so they are plain objects — no $state.snapshot needed
@@ -206,8 +249,7 @@ async function hydrate(docId: string): Promise<boolean> {
 		return false;
 	}
 	const withLevels = state.detections.map(withConfidenceLevel);
-	const resolved = currentExtraction ? resolveEntityTexts(withLevels, currentExtraction) : withLevels;
-	allDetections = resolved;
+	applyResolution(withLevels);
 	structureSpansStore.set(docId, state.structureSpans);
 	return true;
 }
@@ -238,9 +280,15 @@ async function analyze(
 
 function setExtraction(extraction: ExtractionResult) {
 	currentExtraction = extraction;
-	// Re-resolve entity texts for any already-loaded detections
-	if (allDetections.length > 0 && currentExtraction) {
-		allDetections = resolveEntityTexts(allDetections, currentExtraction);
+	// Re-resolve entity texts for any already-loaded detections. On a
+	// refresh this runs *before* `hydrate()` (the review page loads the
+	// PDF first) and finds an empty list, so the unplaced set is filled
+	// by `hydrate()` in replace mode. The merge path is for the upload
+	// flow, where the store is already populated when the review page
+	// re-extracts: re-resolving there runs over rows the first pass
+	// already filtered, so it can only add to the record.
+	if (allDetections.length > 0) {
+		applyResolution(allDetections, 'merge');
 	}
 }
 
@@ -610,6 +658,9 @@ export const detectionStore = {
 	get extraction() {
 		return currentExtraction;
 	},
+	get unplaced() {
+		return unplacedDismissed ? [] : unplaced;
+	},
 	get filtered() {
 		return filtered;
 	},
@@ -651,6 +702,7 @@ export const detectionStore = {
 	hydrate,
 	analyze,
 	setExtraction,
+	dismissUnplaced,
 	select,
 	selectNext,
 	selectPrevious,

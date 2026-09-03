@@ -213,8 +213,9 @@ describe('resolveEntityTexts', () => {
 		const detections = [
 			{ id: '1', entity_text: undefined, bounding_boxes: [box(0, 0, 72)] }
 		];
-		const resolved = resolveEntityTexts(detections, ext);
+		const { detections: resolved, unplaced } = resolveEntityTexts(detections, ext);
 		expect(resolved[0].entity_text).toBe('Jan de Vries');
+		expect(unplaced).toHaveLength(0);
 	});
 
 	it('drops detections when no text items match the bbox', () => {
@@ -222,14 +223,14 @@ describe('resolveEntityTexts', () => {
 		const detections = [
 			{ id: '1', entity_text: undefined, bounding_boxes: [box(0, 500, 600)] }
 		];
-		const resolved = resolveEntityTexts(detections, ext);
+		const { detections: resolved } = resolveEntityTexts(detections, ext);
 		expect(resolved).toHaveLength(0);
 	});
 
 	it('drops detections that carry no bounding boxes at all', () => {
 		const ext = makeExtraction([[{ text: 'Jan', x0: 0, x1: 18 }]]);
 		const detections = [{ id: '1', entity_text: undefined, bounding_boxes: [] }];
-		const resolved = resolveEntityTexts(detections, ext);
+		const { detections: resolved } = resolveEntityTexts(detections, ext);
 		expect(resolved).toHaveLength(0);
 	});
 
@@ -238,7 +239,139 @@ describe('resolveEntityTexts', () => {
 		const detections = [
 			{ id: '1', entity_text: 'reviewer typed this', bounding_boxes: [box(0, 0, 48)] }
 		];
-		const resolved = resolveEntityTexts(detections, ext);
+		const { detections: resolved } = resolveEntityTexts(detections, ext);
 		expect(resolved[0].entity_text).toBe('reviewer typed this');
+	});
+});
+
+// #78 — a dropped detection is a detection the reviewer never sees. These
+// cover the reporting side: what got dropped, why, and with which term.
+describe('resolveEntityTexts — unplaced reporting', () => {
+	it('reports a detection without bboxes and recovers its term from the offsets', () => {
+		const ext = makeExtraction([[{ text: 'Jan de Vries werkt hier', x0: 0, x1: 138 }]]);
+		const detections = [
+			{
+				id: 'd1',
+				entity_text: undefined,
+				entity_type: 'person',
+				tier: '2',
+				bounding_boxes: [],
+				start_char: 0,
+				end_char: 12
+			}
+		];
+		const { detections: resolved, unplaced } = resolveEntityTexts(detections, ext);
+		expect(resolved).toHaveLength(0);
+		expect(unplaced).toEqual([
+			{
+				id: 'd1',
+				entity_type: 'person',
+				tier: '2',
+				page: null,
+				text: 'Jan de Vries',
+				reason: 'no_bbox'
+			}
+		]);
+	});
+
+	it('reports a bbox that lands outside the page, with its page number', () => {
+		const ext = makeExtraction([[{ text: 'Jan de Vries', x0: 0, x1: 72 }]]);
+		const detections = [
+			{
+				id: 'd2',
+				entity_text: undefined,
+				bounding_boxes: [box(0, -40, -10)],
+				start_char: 0,
+				end_char: 12
+			}
+		];
+		const { detections: resolved, unplaced } = resolveEntityTexts(detections, ext);
+		expect(resolved).toHaveLength(0);
+		expect(unplaced).toHaveLength(1);
+		expect(unplaced[0]).toMatchObject({
+			id: 'd2',
+			page: 0,
+			text: 'Jan de Vries',
+			reason: 'no_text_match'
+		});
+	});
+
+	it('offsets index the untrimmed page join, matching the server', () => {
+		const ext = makeExtraction([
+			[{ text: 'pagina een', x0: 0, x1: 60 }],
+			[{ text: 'Jan de Vries', x0: 0, x1: 72 }]
+		]);
+		// "pagina een" (10) + "\n\n" (2) = offset 12 for page two.
+		const detections = [
+			{ id: 'd3', entity_text: undefined, bounding_boxes: [], start_char: 12, end_char: 24 }
+		];
+		const { unplaced } = resolveEntityTexts(detections, ext);
+		expect(unplaced[0].text).toBe('Jan de Vries');
+	});
+
+	it('reports the drop without a term when the offsets are missing or out of range', () => {
+		const ext = makeExtraction([[{ text: 'Jan', x0: 0, x1: 18 }]]);
+		const detections = [
+			{ id: 'no-offsets', entity_text: undefined, bounding_boxes: [] },
+			{
+				id: 'out-of-range',
+				entity_text: undefined,
+				bounding_boxes: [],
+				start_char: 900,
+				end_char: 950
+			}
+		];
+		const { unplaced } = resolveEntityTexts(detections, ext);
+		expect(unplaced.map((u) => u.text)).toEqual([null, null]);
+		expect(unplaced.map((u) => u.id)).toEqual(['no-offsets', 'out-of-range']);
+	});
+
+	it('keeps an area redaction that has neither text nor overlapping items', () => {
+		// A Shift+drag over a signature is stored with `entity_text: ''`,
+		// and IDB strips the field anyway — dropping it on hydrate would
+		// lose a redaction the reviewer drew by hand.
+		const ext = makeExtraction([[{ text: 'Met vriendelijke groet', x0: 0, x1: 120 }]]);
+		const detections = [
+			{
+				id: 'area',
+				entity_text: undefined,
+				source: 'manual',
+				bounding_boxes: [{ page: 0, x0: 20, y0: 400, x1: 160, y1: 460 }]
+			}
+		];
+		const { detections: resolved, unplaced } = resolveEntityTexts(detections, ext);
+		expect(resolved).toHaveLength(1);
+		expect(unplaced).toHaveLength(0);
+	});
+
+	it('restores the label of a reviewer-authored row from its bbox after a refresh', () => {
+		// `persistDetections` strips `entity_text` before writing to IDB, so
+		// a split half or a search-and-redact hit comes back textless. Its
+		// bbox does sit on real text, and the sidebar label depends on that
+		// resolution still happening. The left half of a split resolves to
+		// its own part of the name, not the whole original.
+		const ext = makeExtraction([[{ text: 'Pieter de Vries', x0: 0, x1: 90 }]]);
+		const detections = [
+			{
+				id: 'half',
+				entity_text: undefined,
+				source: 'manual',
+				bounding_boxes: [box(0, 0, 36)]
+			}
+		];
+		const { detections: resolved, unplaced } = resolveEntityTexts(detections, ext);
+		expect(resolved).toHaveLength(1);
+		expect(resolved[0].entity_text).toBe('Pieter');
+		expect(unplaced).toHaveLength(0);
+	});
+
+	it('does not report reviewer-authored rows, which never resolve', () => {
+		const ext = makeExtraction([[{ text: 'Jan', x0: 0, x1: 18 }]]);
+		const detections = [
+			{ id: 'manual', entity_text: 'handmatig gelakt', bounding_boxes: [] }
+		];
+		const { detections: resolved, unplaced } = resolveEntityTexts(detections, ext);
+		expect(resolved).toHaveLength(1);
+		expect(unplaced).toHaveLength(0);
 	});
 });
