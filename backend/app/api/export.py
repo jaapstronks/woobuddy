@@ -199,12 +199,13 @@ async def redact_stream_inline(
 
     # The client needs to know when boxes were dropped: a "successful"
     # export that quietly lost redactions is worse than a failed one
-    # (#66/5). The header is metadata only — counts, never coordinates.
+    # (#66/5). The headers are metadata only — counts, never coordinates.
+    # Cross-origin they are readable through `expose_headers` on the CORS
+    # middleware in `main.py`.
     headers = {
         "Content-Disposition": f'attachment; filename="gelakt_{safe_filename}"',
         "X-Redactions-Applied": str(len(redaction_list) - skipped_redactions),
         "X-Redactions-Skipped": str(skipped_redactions),
-        "Access-Control-Expose-Headers": "X-Redactions-Applied, X-Redactions-Skipped",
     }
 
     return StreamingResponse(
