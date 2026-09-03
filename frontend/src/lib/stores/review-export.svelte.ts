@@ -45,8 +45,10 @@ let showPostExportLead = $state(false);
 let publicationDialogOpen = $state(false);
 let publicationBundling = $state(false);
 // Inline accessibility-confirmation banner that appears once after a
-// successful export. Communicates the PDF/A-2b + Dutch language tag
+// successful export. Communicates the Dutch language tag + XMP + alt-text
 // guarantee so the work the post-processing pipeline does is visible.
+// PDF/A-2b used to be part of that claim; #67 dropped it because the
+// conversion never ran in production and stripped /Lang where it did.
 // Auto-dismisses on the next export run.
 let showAccessibilityBanner = $state(false);
 
