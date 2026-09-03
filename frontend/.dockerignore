@@ -3,3 +3,8 @@ build
 .svelte-kit
 .env
 .env.*
+
+# Derived OCR assets: the build stage runs `npm run setup:tesseract` itself,
+# so keeping a developer's local copy (~32 MB) out of the context makes every
+# build produce them the same way and keeps the context small.
+static/tesseract

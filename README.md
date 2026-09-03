@@ -48,6 +48,9 @@ De snelste weg naar een draaiende instantie. Werkt op Mac, Linux en Windows zola
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Mac/Windows) of Docker Engine + compose plugin (Linux)
 - Git
 - ~2 GB vrije schijfruimte voor de images
+- Internet tijdens de build: de frontend-image haalt de Nederlandse OCR-taalmodule
+  (`npm run setup:tesseract`, ~32 MB worker + wasm + model) op zodat tekstherkenning
+  daarna volledig in de browser draait, zonder externe CDN
 
 ### Starten
 
@@ -100,10 +103,12 @@ Frontend en backend kun je bare-metal draaien. Je hebt alleen nog een draaiende 
 ```bash
 cd frontend
 npm install
+npm run setup:tesseract   # eenmalig: OCR-worker, wasm en het Nederlandse model
 npm run dev
 ```
 
-Draait op <http://localhost:5173>.
+Draait op <http://localhost:5173>. Zonder `setup:tesseract` werkt alles behalve OCR;
+de Docker-image doet deze stap zelf tijdens de build.
 
 #### Backend
 
