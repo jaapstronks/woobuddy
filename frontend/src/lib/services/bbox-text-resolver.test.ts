@@ -374,4 +374,32 @@ describe('resolveEntityTexts — unplaced reporting', () => {
 		expect(resolved).toHaveLength(1);
 		expect(unplaced).toHaveLength(0);
 	});
+
+	// #85 — the caller has to be able to write the dropped rows back to the
+	// session cache, so it needs the rows themselves, aligned with the
+	// summaries it renders.
+	it('hands back the dropped rows verbatim, aligned with `unplaced`', () => {
+		const ext = makeExtraction([[{ text: 'Jan de Vries werkt hier', x0: 0, x1: 138 }]]);
+		const placed = {
+			id: 'ok',
+			entity_text: undefined,
+			bounding_boxes: [box(0, 0, 18)],
+			start_char: 0,
+			end_char: 3
+		};
+		const droppedRow = {
+			id: 'gone',
+			entity_text: undefined,
+			bounding_boxes: [],
+			start_char: 0,
+			end_char: 12
+		};
+		const { detections: resolved, unplaced, dropped } = resolveEntityTexts(
+			[placed, droppedRow],
+			ext
+		);
+		expect(resolved.map((d) => d.id)).toEqual(['ok']);
+		expect(dropped).toEqual([droppedRow]);
+		expect(unplaced.map((u) => u.id)).toEqual(dropped.map((d) => d.id));
+	});
 });

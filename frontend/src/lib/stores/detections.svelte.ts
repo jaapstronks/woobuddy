@@ -78,6 +78,15 @@ let currentExtraction = $state<ExtractionResult | null>(null);
  */
 let unplaced = $state<UnplacedDetection[]>([]);
 let unplacedDismissed = $state(false);
+/**
+ * #85 — the rows behind `unplaced`, kept verbatim so `persistDetections`
+ * can write them back alongside the placed ones. `setFromAnalyze` already
+ * caches the server's full answer; without this the first accept/reject
+ * narrowed the cache to the placed rows and the banner disappeared on the
+ * next refresh — the same silent loss #78 set out to end. Never rendered:
+ * a row with no usable box is not a card.
+ */
+let unplacedRows = $state<Detection[]>([]);
 
 // Filters
 let filterTier = $state<DetectionTier | null>(null);
@@ -154,7 +163,14 @@ async function persistDetections(): Promise<void> {
 	// extraction layer. Keeping them in IDB would make refresh-restored
 	// state diverge subtly from a fresh analyze when the extraction
 	// layer changes its resolver heuristics.
-	const sanitized: Detection[] = $state.snapshot(allDetections).map((d) => {
+	//
+	// #85 — the unplaceable rows ride along. They are not part of
+	// `allDetections` (the resolver dropped them), but they *are* part of
+	// what the analyzer found, and `hydrate` rebuilds the "kon niet
+	// geplaatst worden" banner by re-running the resolver over whatever
+	// this writes. Leaving them out let one accept erase the record.
+	const persistable = [...$state.snapshot(allDetections), ...$state.snapshot(unplacedRows)];
+	const sanitized: Detection[] = persistable.map((d) => {
 		const { entity_text: _et, confidence_level: _cl, ...rest } = d;
 		void _et;
 		void _cl;
@@ -176,13 +192,17 @@ async function persistDetections(): Promise<void> {
 function applyResolution(detections: Detection[], mode: 'replace' | 'merge' = 'replace'): void {
 	if (!currentExtraction) {
 		allDetections = detections;
-		if (mode === 'replace') unplaced = [];
+		if (mode === 'replace') {
+			unplaced = [];
+			unplacedRows = [];
+		}
 		return;
 	}
 	const result = resolveEntityTexts(detections, currentExtraction);
 	allDetections = result.detections;
 	if (mode === 'replace') {
 		unplaced = result.unplaced;
+		unplacedRows = result.dropped;
 		unplacedDismissed = false;
 		return;
 	}
@@ -190,8 +210,14 @@ function applyResolution(detections: Detection[], mode: 'replace' | 'merge' = 'r
 	// filtered, so it can only ever *add* to the record — replacing it
 	// would silently erase what the first pass found.
 	const known = new Set(unplaced.map((u) => u.id));
-	const added = result.unplaced.filter((u) => u.id === null || !known.has(u.id));
-	if (added.length > 0) unplaced = [...unplaced, ...added];
+	const addedIdx: number[] = [];
+	result.unplaced.forEach((u, i) => {
+		if (u.id === null || !known.has(u.id)) addedIdx.push(i);
+	});
+	if (addedIdx.length > 0) {
+		unplaced = [...unplaced, ...addedIdx.map((i) => result.unplaced[i])];
+		unplacedRows = [...unplacedRows, ...addedIdx.map((i) => result.dropped[i])];
+	}
 }
 
 /** Hide the "kon niet geplaatst worden" notice for this session. */
@@ -246,6 +272,8 @@ async function hydrate(docId: string): Promise<boolean> {
 	const state = await readSessionState(docId);
 	if (!state) {
 		allDetections = [];
+		unplaced = [];
+		unplacedRows = [];
 		return false;
 	}
 	const withLevels = state.detections.map(withConfidenceLevel);

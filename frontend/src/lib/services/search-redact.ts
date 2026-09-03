@@ -15,15 +15,20 @@
  * 3. `indexOf` scan; for each match, collect the items whose offsets overlap
  *    the match range and merge their bboxes into one box per visual line
  *    (same rule as manual text selection in #06).
- * 4. Flag matches whose bboxes overlap ≥50% with any existing detection —
- *    the UI shows those as "already redacted" so the reviewer doesn't
- *    double-redact.
+ * 4. Flag matches whose bboxes *all* overlap ≥50% with an existing detection
+ *    that will actually produce a black bar — the UI shows those as "already
+ *    redacted" so the reviewer doesn't double-redact.
  *
  * This is an exact-match search with case-insensitive + whitespace-normalized
  * matching only. The todo defers fuzzy Dutch name-particle matching to P3.
  */
 
-import type { BoundingBox, ExtractedTextItem, ExtractionResult } from '$lib/types';
+import type {
+	BoundingBox,
+	ExtractedTextItem,
+	ExtractionResult,
+	ReviewStatus
+} from '$lib/types';
 
 export interface SearchOccurrence {
 	/** Stable id derived from page + offset — safe as a list key and as a Set entry. */
@@ -35,7 +40,11 @@ export interface SearchOccurrence {
 	context: string;
 	/** Merged per-line bboxes in PDF points, ready to post as a manual detection. */
 	bboxes: BoundingBox[];
-	/** True if the match's area is already covered by an existing detection. */
+	/**
+	 * True if *every* line of the match is already covered by a detection
+	 * that will be redacted. A match that is only partly covered stays
+	 * redactable: see {@link searchDocument}.
+	 */
 	alreadyRedacted: boolean;
 }
 
@@ -146,20 +155,25 @@ function buildContext(text: string, start: number, end: number): string {
  *               would match hundreds of times on any page and swamp the UI.
  * @param extraction  The per-page text + item bboxes from `pdf-text-extractor`.
  * @param existingDetections  Existing detections to flag overlap against.
+ *               Rows the reviewer rejected are skipped — see below.
  */
 export function searchDocument(
 	query: string,
 	extraction: ExtractionResult | null,
-	existingDetections: { bounding_boxes: BoundingBox[] | null }[]
+	existingDetections: { bounding_boxes: BoundingBox[] | null; review_status?: ReviewStatus }[]
 ): SearchOccurrence[] {
 	if (!extraction) return [];
 	const needle = normalizeQuery(query);
 	if (needle.length < 2) return [];
 
-	// Flatten existing detection bboxes once so we don't re-scan for every match.
+	// Flatten existing detection bboxes once so we don't re-scan for every
+	// match. A rejected row is the reviewer saying "leave this visible", so
+	// its box covers nothing: counting it would answer a search for that
+	// very term with "al gelakt" while the page stays readable (#85).
 	const existingBoxes: BoundingBox[] = [];
 	for (const det of existingDetections) {
 		if (!det.bounding_boxes) continue;
+		if (det.review_status === 'rejected') continue;
 		for (const b of det.bounding_boxes) existingBoxes.push(b);
 	}
 
@@ -184,7 +198,14 @@ export function searchDocument(
 			const itemBboxes = hits.map((h) => itemToBox(h.item, pageIndex.pageNumber));
 			const bboxes = mergeLineBboxes(itemBboxes);
 
-			const alreadyRedacted = bboxes.some((bb) =>
+			// Every line has to be covered, not just one. A name broken over
+			// a line end is exactly the case the "kon niet geplaatst worden"
+			// banner sends the reviewer here for (#78/#85): the second half
+			// often shares a line with an auto-redacted e-mail or phone
+			// number, and with `.some()` that one covered line marked the
+			// whole match handled — leaving the first half unredacted with
+			// no way left to act on it.
+			const alreadyRedacted = bboxes.every((bb) =>
 				existingBoxes.some((db) => bboxesOverlap(bb, db))
 			);
 
