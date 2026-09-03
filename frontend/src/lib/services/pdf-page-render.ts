@@ -66,7 +66,7 @@ export async function renderPdfPage({
 	const offscreen = document.createElement('canvas');
 	offscreen.width = viewport.width;
 	offscreen.height = viewport.height;
-	// pdfjs v5 takes the canvas directly and manages its own 2d context.
+	// pdf.js takes the canvas directly and manages its own 2d context.
 	await page.render({ canvas: offscreen, viewport }).promise;
 
 	canvas.width = viewport.width;
@@ -84,7 +84,7 @@ export async function renderPdfPage({
 	};
 }
 
-async function renderTextLayer(
+export async function renderTextLayer(
 	page: any,
 	viewport: any,
 	container: HTMLDivElement | null,
@@ -96,10 +96,25 @@ async function renderTextLayer(
 	// text layer half-painted if we don't explicitly abort.
 	previous?.cancel();
 	container.innerHTML = '';
+	// pdf.js 6 overwrites both of these with
+	// `round(down, var(--total-scale-factor) * <page>px, var(--scale-round-x))`
+	// the moment `new TextLayer(...)` runs, so these values only cover the
+	// window before that. The CSS vars below are what decide the rendered size.
 	container.style.width = `${viewport.width}px`;
 	container.style.height = `${viewport.height}px`;
-	// pdf.js expects this CSS var to equal the current scale so it can size glyphs.
+	// Text-layer geometry is driven entirely by CSS custom properties, and
+	// pdf.js 6 renamed the one that matters: spans are positioned in percent
+	// of the container, and the container sizes itself off
+	// `--total-scale-factor`. Leave it unset and the width/height calc is
+	// invalid at computed-value time, the container collapses to 0px, and
+	// every span stacks on the left edge — invisible under `overflow: clip`
+	// and unselectable. `--scale-round-{x,y}` are the rounding steps in that
+	// same calc and are equally mandatory. `--scale-factor` stays alongside
+	// for anything still reading the pdf.js 5 name.
 	container.style.setProperty('--scale-factor', String(scale));
+	container.style.setProperty('--total-scale-factor', String(scale));
+	container.style.setProperty('--scale-round-x', '1px');
+	container.style.setProperty('--scale-round-y', '1px');
 
 	const pdfjsLib = await import('pdfjs-dist');
 	const textContent = await page.getTextContent();

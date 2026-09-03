@@ -668,10 +668,25 @@
 		overflow: clip;
 		opacity: 1;
 		line-height: 1;
+		letter-spacing: normal;
+		word-spacing: normal;
+		text-size-adjust: none;
+		forced-color-adjust: none;
 		transform-origin: 0 0;
 		user-select: none;
 		pointer-events: none;
 		z-index: 1;
+
+		/* pdf.js 6 sizes every span through this chain instead of writing
+		   px font sizes into the inline style. `--total-scale-factor` and the
+		   per-span `--font-height` / `--scale-x` / `--rotate` come from
+		   `renderTextLayer`; `--min-font-size` is written onto the container
+		   by pdf.js itself (it measures the browser's minimum font size and
+		   divides it back out via the transform below). The fallback of 1
+		   keeps the math valid if pdf.js ever stops setting it. */
+		--min-font-size: 1;
+		--text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+		--min-font-size-inv: calc(1 / var(--min-font-size));
 	}
 	/* Text layer is interactive in both modes — a drag produces a manual
 	   redaction whether the reviewer is in Beoordelen or Bewerken. The mode
@@ -689,6 +704,26 @@
 		white-space: pre;
 		cursor: inherit;
 		transform-origin: 0% 0%;
+	}
+	/* Per-span sizing and shaping. pdf.js 6 writes `--font-height` (unscaled
+	   px), `--scale-x` (horizontal squeeze so the run matches the canvas
+	   width) and `--rotate` onto each span and leaves the arithmetic to CSS;
+	   without these rules every span falls back to the inherited 16px and no
+	   transform, and a mouse selection lands nowhere near the glyphs. */
+	.textLayer > :global(:not(.markedContent)),
+	.textLayer :global(.markedContent span:not(.markedContent)) {
+		z-index: 1;
+		--font-height: 0;
+		--scale-x: 1;
+		--rotate: 0deg;
+		font-size: calc(var(--text-scale-factor) * var(--font-height));
+		transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+	}
+	/* Structure-tag wrappers are grouping only — they must not take part in
+	   layout, or their children inherit the wrapper's box instead of the
+	   text layer's. */
+	.textLayer :global(.markedContent) {
+		display: contents;
 	}
 	.textLayer :global(.endOfContent) {
 		display: block;
