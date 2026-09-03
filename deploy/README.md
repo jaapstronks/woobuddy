@@ -65,7 +65,8 @@ Put the returned `secret_key` in the project-root `.env` as `SCALEWAY_SECRET_KEY
 
 `woobuddy.nl` is a verified Scaleway TEM sending domain (id
 `546b876b-e199-4fb5-a08e-7bb091e6b874`, project `4304a571-309f-4113-91a2-13f55f5e8bf2`).
-Two DNS records at TransIP carry it:
+Two DNS records at INWX (the DNS host for `woobuddy.nl`; managed with
+`bolster-admin/scripts/inwx/inwx.py`, not the TransIP token) carry it:
 
 - **DKIM** — `TXT 4304a571-309f-4113-91a2-13f55f5e8bf2._domainkey` with the key from
   `scw -p bolster tem domain get <id>`.
