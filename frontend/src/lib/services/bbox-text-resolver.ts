@@ -317,6 +317,19 @@ export interface UnplacedDetection {
 export interface ResolvedDetections<T> {
 	detections: T[];
 	unplaced: UnplacedDetection[];
+	/**
+	 * The rows behind `unplaced`, verbatim and in the same order — what was
+	 * dropped from `detections`, not a summary of it.
+	 *
+	 * #85 — the caller has to be able to persist them. `setFromAnalyze`
+	 * writes the server's full answer to IndexedDB, but every later
+	 * `persistDetections` writes only the placed rows, so a single
+	 * accept/reject silently narrowed the cache and the banner was gone
+	 * after the next refresh. Handing the rows back lets the store keep
+	 * the cache complete and rebuild the banner on hydrate instead of
+	 * remembering it separately.
+	 */
+	dropped: T[];
 }
 
 type Resolvable = {
@@ -336,11 +349,13 @@ export function resolveEntityTexts<T extends Resolvable>(
 ): ResolvedDetections<T> {
 	const out: T[] = [];
 	const unplaced: UnplacedDetection[] = [];
+	const dropped: T[] = [];
 	// Only built when something actually goes unplaced — the join is a
 	// full-document string copy and the happy path never needs it.
 	let joined: string | null = null;
 	const report = (det: T, reason: UnplacedDetection['reason']) => {
 		joined ??= serverJoinedText(extraction);
+		dropped.push(det);
 		unplaced.push({
 			id: det.id ?? null,
 			entity_type: det.entity_type ?? null,
@@ -389,5 +404,5 @@ export function resolveEntityTexts<T extends Resolvable>(
 		}
 		out.push({ ...det, entity_text: text });
 	}
-	return { detections: out, unplaced };
+	return { detections: out, unplaced, dropped };
 }

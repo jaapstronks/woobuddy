@@ -38,6 +38,31 @@ function box(page: number, x0: number, x1: number): BoundingBox {
 	return { page, x0, y0: 100, x1, y1: 110 };
 }
 
+/**
+ * Single-page extraction with items spread over several visual lines,
+ * 20px apart starting at y=100. Needed for the line-break cases in #85 —
+ * `makeExtraction` puts everything on one line, which cannot express a
+ * name that runs past the right margin onto the next.
+ */
+function makeLines(lines: { text: string; x: number }[][]): ExtractionResult {
+	const textItems = lines.flatMap((items, lineIdx) =>
+		items.map((it) => ({
+			text: it.text,
+			x0: it.x,
+			y0: 100 + lineIdx * 20,
+			x1: it.x + it.text.length * 6,
+			y1: 110 + lineIdx * 20
+		}))
+	);
+	const fullText = textItems.map((it) => it.text).join(' ');
+	const page = { pageNumber: 0, fullText, textItems };
+	return { pages: [page], pageCount: 1, fullText };
+}
+
+function lineBox(page: number, line: number, x0: number, x1: number): BoundingBox {
+	return { page, x0, y0: 100 + line * 20, x1, y1: 110 + line * 20 };
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -133,6 +158,65 @@ describe('searchDocument', () => {
 		// Existing box far to the right of the actual match (0..84).
 		const existing = [{ bounding_boxes: [box(0, 500, 600)] }];
 		const occs = searchDocument('Van der Berg', extraction, existing);
+		expect(occs[0].alreadyRedacted).toBe(false);
+	});
+
+	// #85 — the "kon niet geplaatst worden" banner sends the reviewer here
+	// with exactly this shape of term: a name the analyzer found across a
+	// line end, which therefore has no box of its own. Marking it handled
+	// because the tail happens to share a line with an auto-redacted
+	// e-mail leaves the head of the name readable and takes away the only
+	// route the banner offered.
+	it('keeps a match redactable when only some of its lines are covered', () => {
+		const extraction = makeLines([
+			[
+				{ text: 'medewerker', x: 0 },
+				{ text: 'Pieter', x: 70 }
+			],
+			[
+				{ text: 'de', x: 0 },
+				{ text: 'Vries,', x: 20 },
+				{ text: 'p.devries@voorbeeld.nl', x: 60 }
+			]
+		]);
+		// Auto-redacted e-mail: covers the whole second line, nothing of the first.
+		const existing = [
+			{ bounding_boxes: [lineBox(0, 1, 0, 200)], review_status: 'auto_accepted' as const }
+		];
+		const occs = searchDocument('Pieter de Vries', extraction, existing);
+		expect(occs).toHaveLength(1);
+		expect(occs[0].bboxes).toHaveLength(2);
+		expect(occs[0].alreadyRedacted).toBe(false);
+	});
+
+	it('flags a multi-line match when every line is covered', () => {
+		const extraction = makeLines([
+			[{ text: 'Pieter', x: 0 }],
+			[{ text: 'de Vries', x: 0 }]
+		]);
+		const existing = [
+			{ bounding_boxes: [lineBox(0, 0, 0, 200)], review_status: 'accepted' as const },
+			{ bounding_boxes: [lineBox(0, 1, 0, 200)], review_status: 'accepted' as const }
+		];
+		const occs = searchDocument('Pieter de Vries', extraction, existing);
+		expect(occs).toHaveLength(1);
+		expect(occs[0].alreadyRedacted).toBe(true);
+	});
+
+	// A rejected row is the reviewer saying "leave this readable". Counting
+	// its box as cover answered a search for that very term with "al
+	// gelakt" while the page stayed readable.
+	it('ignores rejected detections when flagging alreadyRedacted', () => {
+		const extraction = makeExtraction([
+			[
+				{ text: 'Van', x: 0 },
+				{ text: 'der', x: 30 },
+				{ text: 'Berg', x: 60 }
+			]
+		]);
+		const existing = [{ bounding_boxes: [box(0, 0, 200)], review_status: 'rejected' as const }];
+		const occs = searchDocument('Van der Berg', extraction, existing);
+		expect(occs).toHaveLength(1);
 		expect(occs[0].alreadyRedacted).toBe(false);
 	});
 
