@@ -66,9 +66,8 @@
 				<li>
 					<strong>Toegankelijke PDF-export.</strong> Elke gelakte PDF heeft een taal-tag
 					(<code>nl-NL</code>), XMP-metadata, screenreader-vriendelijke alt-teksten op elke
-					redactie (<em>"Gelakt — Artikel 5.1.2e — Persoonlijke levenssfeer"</em>) en wordt
-					optioneel als PDF/A-2b geëxporteerd. Voldoet aan de digitale-toegankelijkheidseisen
-					van de overheid.
+					redactie (<em>"Gelakt — Artikel 5.1.2e — Persoonlijke levenssfeer"</em>). Voldoet aan
+					de digitale-toegankelijkheidseisen van de overheid.
 				</li>
 				<li>
 					<strong>Publicatieklare DiWoo-bundel.</strong> Een <code>.zip</code> met gelakte PDF,

@@ -18,21 +18,25 @@ content streams.
 
 PDF/UA-1 (full structure-tree conformance) is intentionally out of scope —
 it requires a tagged source document, which PyMuPDF cannot synthesize from
-a flat PDF. PDF/A-2b *archival* conformance is supported via Ghostscript
-when available, with a graceful fallback for self-hosters who skipped that
-optional dependency.
+a flat PDF.
+
+PDF/A-2b archival conformance is out of scope too, deliberately (#67,
+decided 2026-09-02). It used to be attempted via a Ghostscript subprocess,
+which (a) was never installed in the api image or in CI, so production
+never produced PDF/A, and (b) rewrote the catalog on the machines that
+*did* have it — stripping the `/Lang` tag that is the single biggest
+accessibility win here. It also needed a tempfile, which contradicts the
+export contract that document bytes never touch disk. Everything this
+module does now happens in memory. Reviving PDF/A is allowed, but only
+with a real archival requirement behind it and without a disk round-trip.
 """
 
 from __future__ import annotations
 
 import io
 import re
-import shutil
-import subprocess
-import tempfile
 from collections.abc import Iterable
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 import pikepdf
@@ -103,6 +107,51 @@ def describe_redaction(woo_article: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _pdf_rect_from_viewer_box(
+    page: pikepdf.Page,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+) -> tuple[float, float, float, float]:
+    """Map a viewer-space box onto a PDF `/Rect` in user space.
+
+    The redaction boxes travel through the app in *viewer* space: origin
+    top-left, y growing downward, rotation already applied. That is what
+    pdf.js hands the client and what `pdf_engine.apply_redactions`
+    derotates for PyMuPDF (whose annotation API expects *unrotated* page
+    coordinates). A PDF `/Rect`, however, is user space:
+    origin bottom-left, y growing upward, rotation *not* applied. Writing
+    the viewer values straight into `/Rect` mirrors every annotation
+    vertically, which is what this codebase did until #67 — the black box
+    landed correctly (PyMuPDF did the transform) while the screen-reader
+    annotation describing it sat on the opposite side of the page.
+
+    The four `/Rotate` cases are spelled out rather than folded into a
+    matrix because each one is a corner correspondence that can be checked
+    by hand: for `/Rotate 90` (page displayed a quarter turn clockwise)
+    the viewer's top-left corner is the unrotated page's bottom-left, so
+    the viewer's x axis runs along the page's y axis and vice versa.
+    """
+    # CropBox (pikepdf falls back to MediaBox when absent) rather than
+    # MediaBox, because that is the box pdf.js builds its viewport from —
+    # so it is the box the reviewer's coordinates are relative to.
+    box = page.cropbox
+    llx, lly = float(box[0]), float(box[1])
+    urx, ury = float(box[2]), float(box[3])
+    raw_rotate = page.obj.get("/Rotate")
+    rotate = (int(raw_rotate) if raw_rotate is not None else 0) % 360
+
+    if rotate == 90:
+        return (llx + y0, lly + x0, llx + y1, lly + x1)
+    if rotate == 180:
+        return (urx - x1, lly + y0, urx - x0, lly + y1)
+    if rotate == 270:
+        return (urx - y1, ury - x1, urx - y0, ury - x0)
+    # rotate == 0, and anything not a multiple of 90 (invalid per spec).
+    return (llx + x0, ury - y1, llx + x1, ury - y0)
+
+
 def add_accessible_redaction_annots(
     pdf_bytes: bytes,
     redactions: Iterable[dict[str, Any]],
@@ -134,17 +183,17 @@ def add_accessible_redaction_annots(
                 continue
             label = describe_redaction(r.get("woo_article"))
             page = pdf.pages[page_num]
+            rect = _pdf_rect_from_viewer_box(
+                page,
+                float(r.get("x0", 0)),
+                float(r.get("y0", 0)),
+                float(r.get("x1", 0)),
+                float(r.get("y1", 0)),
+            )
             annot = pikepdf.Dictionary(
                 Type=pikepdf.Name("/Annot"),
                 Subtype=pikepdf.Name("/Square"),
-                Rect=pikepdf.Array(
-                    [
-                        float(r.get("x0", 0)),
-                        float(r.get("y0", 0)),
-                        float(r.get("x1", 0)),
-                        float(r.get("y1", 0)),
-                    ]
-                ),
+                Rect=pikepdf.Array(list(rect)),
                 # /Contents is the field screen readers announce.
                 Contents=pikepdf.String(label),
                 # /Alt mirrors /Contents — some readers prefer one over the
@@ -262,73 +311,6 @@ def build_redaction_summary(
 
 
 # ---------------------------------------------------------------------------
-# PDF/A-2b conversion via Ghostscript
-# ---------------------------------------------------------------------------
-
-
-def _ghostscript_path() -> str | None:
-    """Return the path to a `gs` binary, or None if not installed.
-
-    Ghostscript is an optional dependency. Self-hosters who skipped it
-    still get a working export; they just don't get archival conformance.
-    """
-    return shutil.which("gs")
-
-
-def convert_to_pdfa(pdf_bytes: bytes, *, conformance: str = "2") -> bytes:
-    """Convert the PDF to PDF/A-2b via Ghostscript.
-
-    Returns the original bytes unchanged when Ghostscript is unavailable
-    or the conversion fails — PDF/A is an *enhancement*, not a blocker.
-    The caller still gets a working redacted PDF, just without archival
-    conformance, and a warning ends up in the logs so operators can spot
-    the missing dependency.
-    """
-    gs = _ghostscript_path()
-    if gs is None:
-        logger.warning("export.pdfa.ghostscript_missing")
-        return pdf_bytes
-
-    with tempfile.TemporaryDirectory(prefix="woobuddy_pdfa_") as tmp:
-        in_path = Path(tmp) / "in.pdf"
-        out_path = Path(tmp) / "out.pdf"
-        in_path.write_bytes(pdf_bytes)
-        cmd = [
-            gs,
-            f"-dPDFA={conformance}",
-            "-dPDFACompatibilityPolicy=1",
-            "-sProcessColorModel=DeviceRGB",
-            "-sDEVICE=pdfwrite",
-            "-dBATCH",
-            "-dNOPAUSE",
-            "-dQUIET",
-            f"-sOutputFile={out_path}",
-            str(in_path),
-        ]
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                check=False,
-                timeout=60,
-            )
-        except (subprocess.TimeoutExpired, OSError) as exc:
-            logger.warning(
-                "export.pdfa.ghostscript_failed",
-                error=type(exc).__name__,
-            )
-            return pdf_bytes
-
-        if result.returncode != 0 or not out_path.exists():
-            logger.warning(
-                "export.pdfa.ghostscript_nonzero",
-                returncode=result.returncode,
-            )
-            return pdf_bytes
-        return out_path.read_bytes()
-
-
-# ---------------------------------------------------------------------------
 # Convenience: full post-processing chain
 # ---------------------------------------------------------------------------
 
@@ -338,14 +320,14 @@ def post_process_for_accessibility(
     *,
     redactions: Iterable[dict[str, Any]] = (),
     title: str | None = None,
-    enable_pdfa: bool = True,
 ) -> bytes:
     """Run the full accessibility chain on a redacted PDF.
 
-    Order matches the todo: accessible annotations → /Lang → XMP →
-    PDF/A-2b. The XMP step is *after* annotations because Ghostscript
-    rewrites the catalog and metadata in one pass; we want our metadata
-    to be the source-of-truth that Ghostscript carries forward.
+    Accessible annotations → /Lang → XMP, three pikepdf round-trips, all
+    in memory. `/Lang` lands last of the two catalog writers on purpose:
+    `write_xmp_metadata` only touches the metadata stream, so the tag it
+    sets survives. This is CPU-bound work — callers on the event loop
+    must hand it to a worker thread (see `api/export.py`).
     """
     redactions = list(redactions)
     out = pdf_bytes
@@ -356,6 +338,4 @@ def post_process_for_accessibility(
         title=title,
         description=build_redaction_summary(redactions),
     )
-    if enable_pdfa:
-        out = convert_to_pdfa(out)
     return out
