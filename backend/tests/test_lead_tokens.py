@@ -131,6 +131,8 @@ def test_a_different_secret_does_not_verify() -> None:
         ".onlysignature",
         "onlypayload.",
         "!!!not-base64!!!.abc",
+        "payload.sign\u00e9ture",
+        "p\u00e9yload.signature",
     ],
 )
 def test_malformed_tokens_are_rejected(token: str) -> None:

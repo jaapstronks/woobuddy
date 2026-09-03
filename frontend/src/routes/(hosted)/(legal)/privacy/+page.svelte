@@ -130,8 +130,8 @@
 	<li>
 		<strong>Verzendlijst (alleen bij aanmelding):</strong> Listmonk, zelf gehost binnen de EER.
 		Je adres komt daar pas op te staan nadat je de bevestigingslink in onze e-mail hebt
-		aangeklikt, en alleen je e-mailadres en de naam die je zelf invulde gaan mee. Uitschrijven
-		kan met één klik onderaan elk bericht.
+		aangeklikt, en alleen je e-mailadres gaat mee. Uitschrijven kan met één klik onderaan
+		elk bericht.
 	</li>
 	<li>
 		<strong>Analytics:</strong> Plausible (zonder cookies, zonder persoonsgegevens). We tellen

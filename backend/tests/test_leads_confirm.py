@@ -274,7 +274,7 @@ async def test_token_signed_with_another_secret_reports_invalid(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("token", ["", "   ", "garbage", "a.b"])
+@pytest.mark.parametrize("token", ["", "   ", "garbage", "a.b", "a.\u00e9", "\u00e9.b"])
 async def test_malformed_tokens_report_invalid(client: AsyncClient, token: str) -> None:
     resp = await client.post("/api/leads/confirm", json={"token": token})
     assert resp.json() == {"status": "invalid"}

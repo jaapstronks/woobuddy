@@ -1,10 +1,8 @@
 """Stateless confirmation tokens for the newsletter double opt-in (#76).
 
-WOO Buddy sends its own confirmation mail rather than letting Listmonk
-send one (Listmonk's opt-in mail, sender and public pages are
-instance-global, and the instance is shared with another brand). That
-means we need to recognise the address again when the recipient clicks
-the link in that mail, minutes or hours later.
+WOO Buddy sends its own confirmation mail (why: `app/api/leads.py`), so
+it has to recognise the address again when the recipient clicks the
+link in that mail, minutes or hours later.
 
 We do that **without storing anything**. The token carries the address
 and an expiry, signed with an HMAC over a server-side secret:
@@ -103,6 +101,12 @@ def read_token(token: str, *, secret: str, now: int | None = None) -> str:
     """
     if not secret:
         raise InvalidTokenError("no confirmation secret configured")
+
+    # Both halves are base64url, so anything outside ASCII is not ours.
+    # `compare_digest` refuses non-ASCII str input outright, so this
+    # check keeps a mangled link an `invalid`, not a 500.
+    if not token.isascii():
+        raise InvalidTokenError("token carries non-ASCII characters")
 
     encoded, separator, signature = token.partition(".")
     if not separator or not encoded or not signature:
