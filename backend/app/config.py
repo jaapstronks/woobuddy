@@ -42,16 +42,18 @@ class Settings(BaseSettings):
 
     # Scaleway TEM (transactional email). Auth is the Scaleway secret key
     # (sent as `X-Auth-Token`); `scaleway_project_id` scopes the send. The
-    # From-address must sit on a verified TEM sending domain — the shared
-    # `mail.dreamkit.eu` works out of the box. Switch `tem_from_email` to a
-    # verified `woobuddy.nl` address if own-domain branding is wanted (needs
-    # SPF/DKIM set up in Scaleway first). Leave `scaleway_secret_key` empty in
-    # local dev — the endpoint then returns a generic 500 so the form shows a
-    # retry rather than silently dropping signups.
+    # From-address must sit on a verified TEM sending domain. The hosted
+    # tier sends as `hallo@woobuddy.nl` (#74): the sender domain is part of
+    # the trust story the landing page sells, and the address is a real
+    # forwarding alias, so replying to a WOO Buddy mail reaches a human.
+    # Self-hosters point `tem_from_email` at their own verified domain.
+    # Leave `scaleway_secret_key` empty in local dev — the endpoint then
+    # returns a generic 500 so the form shows a retry rather than silently
+    # dropping signups.
     scaleway_secret_key: str = ""
     scaleway_project_id: str = ""
     scaleway_tem_region: str = "fr-par"
-    tem_from_email: str = "noreply@mail.dreamkit.eu"
+    tem_from_email: str = "hallo@woobuddy.nl"
     tem_from_name: str = "WOO Buddy"
     notification_email: str = "jaap@jaapstronks.nl"
 

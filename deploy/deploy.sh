@@ -155,7 +155,7 @@ require_var NOTIFICATION_EMAIL
 # Defaults mirror docker-compose.prod.yml so a partially-filled .env still
 # produces a working stack rather than a half-configured one.
 SCALEWAY_TEM_REGION="${SCALEWAY_TEM_REGION:-fr-par}"
-TEM_FROM_EMAIL="${TEM_FROM_EMAIL:-noreply@mail.dreamkit.eu}"
+TEM_FROM_EMAIL="${TEM_FROM_EMAIL:-hallo@woobuddy.nl}"
 TEM_FROM_NAME="${TEM_FROM_NAME:-WOO Buddy}"
 LISTMONK_URL="${LISTMONK_URL:-https://listmonk.dreamkit.eu}"
 # Empty is a valid choice: it turns the newsletter opt-in off and leaves the
