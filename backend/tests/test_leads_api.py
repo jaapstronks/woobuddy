@@ -1,16 +1,20 @@
-"""HTTP tests for the public contact endpoint (Listmonk + Scaleway TEM).
+"""HTTP tests for the public contact endpoint (Scaleway TEM).
 
-`backend/app/api/leads.py` is public, unauthenticated, and fires two
-upstream calls in a specific order:
+`backend/app/api/leads.py` is public, unauthenticated, and fires up to
+two upstream calls in a specific order, both to Scaleway TEM `/emails`:
 
-1. Scaleway TEM `/emails` — always, so the operator sees the message.
-2. Listmonk `/api/public/subscription` — only when `newsletter_opt_in`
-   is true.
+1. The operator notification — always, so a message is never lost.
+2. The newsletter confirmation to the *submitter* — only when
+   `newsletter_opt_in` is true and the opt-in is fully configured.
 
-These tests fake both upstreams with a tiny `_FakeAsyncClient` that
-records calls and returns canned responses — one per URL — so we can
-exercise the happy path and the error mapping for each endpoint in
-isolation.
+Nothing reaches Listmonk from this endpoint any more (#76): the address
+only gets to the list once the recipient clicks the signed link, which
+`test_leads_confirm.py` covers.
+
+The upstream is faked with a tiny `_FakeAsyncClient` that records calls
+and returns canned responses. Because both sends go to the same URL,
+tests that need the two calls to differ push a queue of responses for
+that URL rather than a single one.
 """
 
 from __future__ import annotations
@@ -26,6 +30,7 @@ from httpx import AsyncClient
 
 from app.config import settings
 from app.security import limiter
+from app.services.lead_tokens import read_token
 
 # ---------------------------------------------------------------------------
 # Rate limiter bypass
@@ -66,13 +71,15 @@ class _FakeResponse:
 class _FakeAsyncClient:
     """Records every POST and returns a canned response per URL.
 
-    leads.py issues two distinct calls (TEM email + Listmonk subscribe).
-    Tests set per-URL responses via `responses[url] = _FakeResponse(...)`.
-    A missing entry falls back to `default_response`.
+    Tests set per-URL responses via `responses[url] = _FakeResponse(...)`,
+    or a per-call sequence via `response_queues[url] = [...]` when the
+    same URL is hit twice and the two answers must differ. A missing
+    entry falls back to `default_response`.
     """
 
     default_response: _FakeResponse = _FakeResponse(200)
     responses: dict[str, _FakeResponse] = {}
+    response_queues: dict[str, list[_FakeResponse]] = {}
     raise_on_post: httpx.HTTPError | None = None
     calls: list[dict[str, Any]] = []
 
@@ -90,22 +97,19 @@ class _FakeAsyncClient:
     ) -> None:
         return None
 
-    async def post(
-        self, url: str, *, json: Any = None, headers: Any = None
-    ) -> _FakeResponse:
+    async def post(self, url: str, *, json: Any = None, headers: Any = None) -> _FakeResponse:
         _FakeAsyncClient.calls.append({"url": url, "json": json, "headers": headers})
         if _FakeAsyncClient.raise_on_post is not None:
             raise _FakeAsyncClient.raise_on_post
+        queue = _FakeAsyncClient.response_queues.get(url)
+        if queue:
+            return queue.pop(0)
         return _FakeAsyncClient.responses.get(url, _FakeAsyncClient.default_response)
 
 
 _TEM_REGION = "fr-par"
-_TEM_URL = (
-    "https://api.scaleway.com/transactional-email/v1alpha1/regions/"
-    f"{_TEM_REGION}/emails"
-)
+_TEM_URL = f"https://api.scaleway.com/transactional-email/v1alpha1/regions/{_TEM_REGION}/emails"
 _LISTMONK_BASE = "https://listmonk.dreamkit.eu"
-_LISTMONK_URL = f"{_LISTMONK_BASE}/api/public/subscription"
 _LIST_UUID = "test-uuid-abc"
 
 
@@ -113,6 +117,7 @@ _LIST_UUID = "test-uuid-abc"
 def _patch_upstreams(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     _FakeAsyncClient.default_response = _FakeResponse(200)
     _FakeAsyncClient.responses = {}
+    _FakeAsyncClient.response_queues = {}
     _FakeAsyncClient.raise_on_post = None
     _FakeAsyncClient.calls = []
     monkeypatch.setattr("app.api.leads.httpx.AsyncClient", _FakeAsyncClient)
@@ -121,11 +126,17 @@ def _patch_upstreams(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setattr(settings, "scaleway_secret_key", "test-key-xyz")
     monkeypatch.setattr(settings, "scaleway_project_id", "proj-123")
     monkeypatch.setattr(settings, "scaleway_tem_region", _TEM_REGION)
-    monkeypatch.setattr(settings, "tem_from_email", "noreply@example.nl")
+    monkeypatch.setattr(settings, "tem_from_email", "hallo@example.nl")
     monkeypatch.setattr(settings, "tem_from_name", "WOO Buddy")
     monkeypatch.setattr(settings, "notification_email", "ops@example.nl")
     monkeypatch.setattr(settings, "listmonk_url", _LISTMONK_BASE)
     monkeypatch.setattr(settings, "listmonk_list_uuid", _LIST_UUID)
+    # Opt-in needs both halves configured; individual tests unset one to
+    # exercise the degradation path.
+    monkeypatch.setattr(settings, "listmonk_api_user", "woobuddy-api")
+    monkeypatch.setattr(settings, "listmonk_api_token", "listmonk-token")
+    monkeypatch.setattr(settings, "leads_confirm_secret", "confirm-secret")
+    monkeypatch.setattr(settings, "public_site_url", "https://woobuddy.test")
     yield
 
 
@@ -157,15 +168,14 @@ async def test_contact_only_sends_email_and_skips_list(
     assert resp.status_code == 200, resp.text
     assert resp.json() == {"ok": True}
 
-    # Exactly one upstream call — the transactional email. No subscribe.
+    # Exactly one upstream call — the operator notification. No opt-in mail.
     assert len(_FakeAsyncClient.calls) == 1
     tem = _calls_to(_TEM_URL)
     assert len(tem) == 1
-    assert _calls_to(_LISTMONK_URL) == []
 
     payload = tem[0]["json"]
     assert payload["to"] == [{"email": "ops@example.nl"}]
-    assert payload["from"] == {"email": "noreply@example.nl", "name": "WOO Buddy"}
+    assert payload["from"] == {"email": "hallo@example.nl", "name": "WOO Buddy"}
     assert payload["project_id"] == "proj-123"
     # Reply-To is the submitter's normalized address (with name) so the
     # inbox reply button Just Works.
@@ -182,12 +192,14 @@ async def test_contact_only_sends_email_and_skips_list(
 
 
 # ---------------------------------------------------------------------------
-# Happy path — newsletter opt-in flips the second call on
+# Happy path — newsletter opt-in mails the submitter a confirmation link
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_newsletter_opt_in_also_subscribes(client: AsyncClient) -> None:
+async def test_newsletter_opt_in_mails_a_confirmation_to_the_submitter(
+    client: AsyncClient,
+) -> None:
     resp = await client.post(
         "/api/leads",
         json={
@@ -200,57 +212,119 @@ async def test_newsletter_opt_in_also_subscribes(client: AsyncClient) -> None:
 
     assert resp.status_code == 200
 
-    # Two calls, in order: TEM email first, then Listmonk subscribe.
-    assert [c["url"] for c in _FakeAsyncClient.calls] == [
-        _TEM_URL,
-        _LISTMONK_URL,
-    ]
+    # Two sends, both through TEM: the operator notification first, then
+    # the confirmation to the submitter.
+    tem = _calls_to(_TEM_URL)
+    assert len(tem) == 2
+    assert tem[0]["json"]["to"] == [{"email": "ops@example.nl"}]
 
-    sub_payload = _calls_to(_LISTMONK_URL)[0]["json"]
-    assert sub_payload["email"] == "a@b.nl"
-    assert sub_payload["name"] == "Ada"
-    assert sub_payload["list_uuids"] == [_LIST_UUID]
+    confirmation = tem[1]["json"]
+    assert confirmation["to"] == [{"email": "a@b.nl"}]
+    assert confirmation["subject"] == ("Bevestig je e-mailadres voor updates over WOO Buddy")
+    assert confirmation["from"] == {"email": "hallo@example.nl", "name": "WOO Buddy"}
 
 
 @pytest.mark.asyncio
-async def test_subscribe_payload_collapses_blank_name(
+async def test_confirmation_link_points_at_the_site_with_a_token(
     client: AsyncClient,
 ) -> None:
-    """Blank optional name must collapse to an empty string, not whitespace."""
-    resp = await client.post(
+    """The button must land on woobuddy.nl, not on the API or on Listmonk."""
+    await client.post(
         "/api/leads",
-        json={
-            "email": "a@b.nl",
-            "name": "   ",
-            "organization": "",
-            "message": None,
-            "source": "post-export",
-            "newsletter_opt_in": True,
-        },
+        json={"email": "a@b.nl", "source": "landing", "newsletter_opt_in": True},
     )
 
-    assert resp.status_code == 200
-    sub_payload = _calls_to(_LISTMONK_URL)[0]["json"]
-    assert sub_payload["name"] == ""
-    assert sub_payload["list_uuids"] == [_LIST_UUID]
+    body = _calls_to(_TEM_URL)[1]["json"]
+    assert "https://woobuddy.test/nieuwsbrief/bevestigen?t=" in body["text"]
+    assert "https://woobuddy.test/nieuwsbrief/bevestigen?t=" in body["html"]
+
+    # The token round-trips back to the submitted address (#76).
+    token = body["text"].split("bevestigen?t=", 1)[1].split()[0]
+    assert read_token(token, secret="confirm-secret") == "a@b.nl"
+
+
+@pytest.mark.asyncio
+async def test_confirmation_mail_mentions_no_other_brand_or_list_name(
+    client: AsyncClient,
+) -> None:
+    """The whole point of #76 — the mail this replaced said "DREAMKIT
+    UPDATES" and named a list called "WOO Buddy — leads"."""
+    await client.post(
+        "/api/leads",
+        json={"email": "a@b.nl", "source": "landing", "newsletter_opt_in": True},
+    )
+
+    body = _calls_to(_TEM_URL)[1]["json"]
+    for part in (body["html"], body["text"], body["subject"]):
+        lowered = part.lower()
+        assert "dreamkit" not in lowered
+        assert "listmonk" not in lowered
+        assert "leads" not in lowered
 
 
 @pytest.mark.asyncio
 async def test_newsletter_opt_in_defaults_to_false(client: AsyncClient) -> None:
-    """Missing field in the body must NOT auto-subscribe the submitter."""
+    """Missing field in the body must NOT mail the submitter anything."""
     resp = await client.post(
         "/api/leads",
         json={"email": "a@b.nl", "source": "landing"},
     )
     assert resp.status_code == 200
-    assert _calls_to(_LISTMONK_URL) == []
+    assert len(_calls_to(_TEM_URL)) == 1
 
 
 @pytest.mark.asyncio
-async def test_2xx_from_listmonk_is_success(client: AsyncClient) -> None:
-    """Any 2xx from the public subscription endpoint is success (it is
-    idempotent for an already-subscribed address)."""
-    _FakeAsyncClient.responses = {_LISTMONK_URL: _FakeResponse(200, {"data": True})}
+async def test_nothing_reaches_listmonk_from_the_form(client: AsyncClient) -> None:
+    """Consent is not consent until the link is clicked: the submit path
+    must not touch the list at all."""
+    await client.post(
+        "/api/leads",
+        json={"email": "a@b.nl", "source": "landing", "newsletter_opt_in": True},
+    )
+
+    assert all(_LISTMONK_BASE not in c["url"] for c in _FakeAsyncClient.calls)
+
+
+# ---------------------------------------------------------------------------
+# Opt-in degradation — an unconfigured integration never costs the operator
+# the notification mail
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "unset",
+    ["leads_confirm_secret", "listmonk_api_token", "listmonk_api_user", "listmonk_list_uuid"],
+)
+async def test_opt_in_is_skipped_when_unconfigured(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    unset: str,
+) -> None:
+    monkeypatch.setattr(settings, unset, "")
+
+    resp = await client.post(
+        "/api/leads",
+        json={"email": "a@b.nl", "source": "landing", "newsletter_opt_in": True},
+    )
+
+    # The message still got delivered; only the opt-in was dropped.
+    assert resp.status_code == 200
+    assert len(_calls_to(_TEM_URL)) == 1
+    # structlog renders to stdout, so the warning shows up in capsys.
+    assert "leads.opt_in_skipped" in capsys.readouterr().out
+
+
+@pytest.mark.asyncio
+async def test_failed_confirmation_send_does_not_fail_the_submission(
+    client: AsyncClient,
+) -> None:
+    """The operator's notification is already out by then. A visitor
+    should not see an error for a checkbox they ticked in passing."""
+    _FakeAsyncClient.response_queues = {
+        _TEM_URL: [_FakeResponse(200), _FakeResponse(500, {"message": "boom"})]
+    }
 
     resp = await client.post(
         "/api/leads",
@@ -328,60 +402,25 @@ async def test_missing_secret_key_returns_500_without_network_call(
 
 
 @pytest.mark.asyncio
-async def test_listmonk_4xx_is_silent_success(client: AsyncClient) -> None:
-    """A 4xx on the subscribe call must look the same as a fresh subscribe
-    so the form cannot be used to probe list membership — and the operator
-    already got the notification email."""
-    _FakeAsyncClient.responses = {
-        _LISTMONK_URL: _FakeResponse(400, {"message": "already exists"})
-    }
-
-    resp = await client.post(
-        "/api/leads",
-        json={"email": "a@b.nl", "source": "landing", "newsletter_opt_in": True},
-    )
-    assert resp.status_code == 200
-
-
-@pytest.mark.asyncio
-async def test_listmonk_5xx_becomes_502(client: AsyncClient) -> None:
-    _FakeAsyncClient.responses = {
-        _LISTMONK_URL: _FakeResponse(500, {"message": "boom"})
-    }
-
-    resp = await client.post(
-        "/api/leads",
-        json={"email": "a@b.nl", "source": "landing", "newsletter_opt_in": True},
-    )
-    assert resp.status_code == 502
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("auth_code", [401, 403])
-async def test_tem_auth_error_returns_500(
-    client: AsyncClient, auth_code: int
-) -> None:
+async def test_tem_auth_error_returns_500(client: AsyncClient, auth_code: int) -> None:
     """Revoked / misconfigured secret key on the transactional endpoint.
     We explicitly do NOT surface 401/403 so the form can't distinguish
     auth failures from other outages and leak account state."""
-    _FakeAsyncClient.responses = {
-        _TEM_URL: _FakeResponse(auth_code, {"message": "unauthorized"})
-    }
+    _FakeAsyncClient.responses = {_TEM_URL: _FakeResponse(auth_code, {"message": "unauthorized"})}
 
     resp = await client.post(
         "/api/leads",
         json={"email": "a@b.nl", "source": "landing"},
     )
     assert resp.status_code == 500
-    # Subscribe call must not fire after the TEM call failed.
-    assert _calls_to(_LISTMONK_URL) == []
+    # Only the notification was attempted; nothing follows a failed send.
+    assert len(_calls_to(_TEM_URL)) == 1
 
 
 @pytest.mark.asyncio
 async def test_tem_rate_limit_returns_503(client: AsyncClient) -> None:
-    _FakeAsyncClient.responses = {
-        _TEM_URL: _FakeResponse(429, {"message": "too_many_requests"})
-    }
+    _FakeAsyncClient.responses = {_TEM_URL: _FakeResponse(429, {"message": "too_many_requests"})}
 
     resp = await client.post(
         "/api/leads",
@@ -392,9 +431,7 @@ async def test_tem_rate_limit_returns_503(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_tem_5xx_returns_502(client: AsyncClient) -> None:
-    _FakeAsyncClient.responses = {
-        _TEM_URL: _FakeResponse(500, {"message": "internal_error"})
-    }
+    _FakeAsyncClient.responses = {_TEM_URL: _FakeResponse(500, {"message": "internal_error"})}
 
     resp = await client.post(
         "/api/leads",

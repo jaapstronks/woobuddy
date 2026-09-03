@@ -148,8 +148,9 @@ class LeadCreate(BaseModel):
 
     Every submission fires a transactional email to the operator. The
     newsletter subscription is a separate opt-in: only when
-    `newsletter_opt_in` is true do we also subscribe the contact to the
-    configured Listmonk list.
+    `newsletter_opt_in` is true does the submitter also receive a
+    confirmation mail, and only clicking the link in that mail puts them
+    on the Listmonk list.
 
     All optional fields are strings rather than nullable types because an
     HTML form sends `""` for empty inputs; the server coerces blanks to
@@ -173,3 +174,28 @@ class LeadResponse(BaseModel):
     """
 
     ok: bool = True
+
+
+class LeadConfirm(BaseModel):
+    """The signed token from the confirmation mail (#76).
+
+    No address field: the address lives inside the token, so the endpoint
+    cannot be used to subscribe an arbitrary third party.
+    """
+
+    token: str
+
+
+LeadConfirmStatusLiteral = Literal["confirmed", "expired", "invalid", "unavailable"]
+
+
+class LeadConfirmResponse(BaseModel):
+    """Outcome of redeeming a confirmation token.
+
+    Four states, each of which the confirmation page phrases differently:
+    `confirmed` (done), `expired` (offer to send a new link), `invalid`
+    (same offer, different sentence), `unavailable` (our fault — the list
+    could not be reached; tell them we noted it and not to retry).
+    """
+
+    status: LeadConfirmStatusLiteral

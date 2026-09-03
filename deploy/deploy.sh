@@ -159,8 +159,13 @@ TEM_FROM_EMAIL="${TEM_FROM_EMAIL:-noreply@mail.dreamkit.eu}"
 TEM_FROM_NAME="${TEM_FROM_NAME:-WOO Buddy}"
 LISTMONK_URL="${LISTMONK_URL:-https://listmonk.dreamkit.eu}"
 # Empty is a valid choice: it turns the newsletter opt-in off and leaves the
-# notification mail working.
+# notification mail working. The same goes for the three keys below (#76):
+# without them the opt-in checkbox degrades to a no-op instead of failing.
 LISTMONK_LIST_UUID="${LISTMONK_LIST_UUID:-}"
+LISTMONK_API_USER="${LISTMONK_API_USER:-}"
+LISTMONK_API_TOKEN="${LISTMONK_API_TOKEN:-}"
+LEADS_CONFIRM_SECRET="${LEADS_CONFIRM_SECRET:-}"
+PUBLIC_SITE_URL="${PUBLIC_SITE_URL:-https://woobuddy.nl}"
 
 # Built locally and piped over stdin so no secret ever appears in an ssh
 # argv (visible in `ps` on the remote box) or in this script's `set -x`.
@@ -174,6 +179,10 @@ REMOTE_ENV="$(
 	printf 'NOTIFICATION_EMAIL=%s\n' "${NOTIFICATION_EMAIL}"
 	printf 'LISTMONK_URL=%s\n' "${LISTMONK_URL}"
 	printf 'LISTMONK_LIST_UUID=%s\n' "${LISTMONK_LIST_UUID}"
+	printf 'LISTMONK_API_USER=%s\n' "${LISTMONK_API_USER}"
+	printf 'LISTMONK_API_TOKEN=%s\n' "${LISTMONK_API_TOKEN}"
+	printf 'LEADS_CONFIRM_SECRET=%s\n' "${LEADS_CONFIRM_SECRET}"
+	printf 'PUBLIC_SITE_URL=%s\n' "${PUBLIC_SITE_URL}"
 )"
 
 printf '%s\n' "${REMOTE_ENV}" | ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_IP}" \
