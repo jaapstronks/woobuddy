@@ -491,10 +491,17 @@ def resolve_occurrence_bboxes(
 
     The fallback below only fires for the *first* occurrence. Handing every
     occurrence the first hit's bbox is exactly the bug that made a custom
-    term on page 3 export unredacted (#66/1): the reviewer saw a black box
-    on page 1 and no box on page 3, and the export followed the boxes.
-    Returning nothing for a later occurrence is visible in the UI as a
-    detection without a box; returning the wrong box is not visible at all.
+    term on page 3 export unredacted (#66/1): the export followed the boxes,
+    and the reviewer saw a second, identical card for page 1 instead of a
+    card for page 3.
+
+    Returning nothing for a later occurrence is not visible either: the
+    frontend drops detections without a bbox (`resolveEntityTexts`), so the
+    occurrence vanishes like any other recall miss. It is still the better
+    failure. A wrong box reports a redaction that never happened, adds a
+    phantom row to the onderbouwingsrapport and burns a duplicate box on an
+    area that was already black. Telling the reviewer about unplaced
+    occurrences is a separate item.
     """
     if start_char is None:
         return find_span_for_text(pages, search_text)[:1]
