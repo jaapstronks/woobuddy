@@ -17,6 +17,7 @@ NEVER be logged. Only metadata (byte counts, redaction counts, "title was
 set" booleans) is safe.
 """
 
+import asyncio
 import io
 import json
 
@@ -121,6 +122,38 @@ def _parse_inline_redactions(raw: str) -> list[dict[str, object]]:
     return [item.model_dump() for item in validated]
 
 
+def _redact_and_post_process(
+    pdf_bytes: bytes,
+    redaction_list: list[dict[str, object]],
+    title: str | None,
+) -> tuple[bytes, int]:
+    """Redact and run the accessibility chain, returning bytes + skip count.
+
+    Everything in here is blocking CPU work: PyMuPDF's redaction pass plus
+    three pikepdf open→save round-trips. A 50 MB besluit can occupy it for
+    seconds. It lives in one function so the handler can hand the whole
+    chain to a worker thread in a single `asyncio.to_thread` call — the
+    same shape `pipeline_engine.run_pipeline` uses for the NER pass.
+    Running it inline stalled the event loop, health checks included (#67).
+    """
+    if redaction_list:
+        outcome = apply_redactions(pdf_bytes, redaction_list)
+        redacted_bytes = outcome.pdf_bytes
+        skipped = outcome.skipped
+    else:
+        redacted_bytes = pdf_bytes
+        skipped = 0
+    # Accessibility post-processing runs on every export — even when
+    # there are no redactions we still want /Lang and XMP set so the
+    # exported PDF behaves correctly in screen readers and DMSes.
+    final_bytes = post_process_for_accessibility(
+        redacted_bytes,
+        redactions=redaction_list,
+        title=title,
+    )
+    return final_bytes, skipped
+
+
 @router.post(
     "/api/export/redact-stream",
     dependencies=[Depends(verify_proxy_secret)],
@@ -162,21 +195,12 @@ async def redact_stream_inline(
 
     title = _read_title_header(request)
 
-    skipped_redactions = 0
     try:
-        if redaction_list:
-            outcome = apply_redactions(pdf_bytes, redaction_list)
-            redacted_bytes = outcome.pdf_bytes
-            skipped_redactions = outcome.skipped
-        else:
-            redacted_bytes = pdf_bytes
-        # Accessibility post-processing runs on every export — even when
-        # there are no redactions we still want /Lang and XMP set so the
-        # exported PDF behaves correctly in screen readers and DMSes.
-        final_bytes = post_process_for_accessibility(
-            redacted_bytes,
-            redactions=redaction_list,
-            title=title,
+        final_bytes, skipped_redactions = await asyncio.to_thread(
+            _redact_and_post_process,
+            pdf_bytes,
+            redaction_list,
+            title,
         )
     except PdfValidationError:
         # Raised when PyMuPDF refuses the stream (corrupt / not a PDF

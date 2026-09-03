@@ -16,6 +16,12 @@ The tests pin:
   must never be logged — only metadata (counts, booleans).
 - Empty redactions still post-process for accessibility, but leave
   the original content intact.
+- `/Lang (nl-NL)` lands on the final bytes of *every* export, redacted
+  or not. Until #67 the Ghostscript step ran last and stripped it on any
+  machine that had `gs` installed, so the export suite meant something
+  different on a dev laptop than in CI.
+- The redaction + accessibility chain runs off the event loop (#67), so
+  one 50 MB export cannot stall health checks for seconds.
 - A redaction box that covers a known sentinel string actually
   removes it from the output.
 - Bad redaction JSON returns a clean 400, never a 500.
@@ -34,13 +40,16 @@ from __future__ import annotations
 import io
 import json
 import logging
+import threading
 from collections.abc import Iterator
+from unittest.mock import patch
 
 import fitz
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from app.api import export as export_module
 from app.models.schemas import Detection, Document
 from app.security import limiter
 
@@ -102,9 +111,7 @@ def _redaction(page: int = 0, *, woo_article: str = "5.1.2e") -> dict:
 
 
 @pytest.mark.asyncio
-async def test_happy_path_persists_nothing(
-    client: AsyncClient, sample_pdf: bytes, seed_db
-) -> None:
+async def test_happy_path_persists_nothing(client: AsyncClient, sample_pdf: bytes, seed_db) -> None:
     """The acceptance criterion (#50): a redact-stream call streams a
     redacted PDF back and writes ZERO rows to the documents and
     detections tables."""
@@ -135,9 +142,7 @@ async def test_happy_path_persists_nothing(
 
 
 @pytest.mark.asyncio
-async def test_empty_redactions_returns_unmodified(
-    client: AsyncClient, sample_pdf: bytes
-) -> None:
+async def test_empty_redactions_returns_unmodified(client: AsyncClient, sample_pdf: bytes) -> None:
     """With an empty redaction list the response is still a valid PDF
     (post-processed for accessibility) — but the original sentinel text
     must remain visible."""
@@ -221,9 +226,7 @@ async def test_all_boxes_in_range_reports_zero_skipped(
 
 
 @pytest.mark.asyncio
-async def test_filename_sanitized(
-    client: AsyncClient, sample_pdf: bytes
-) -> None:
+async def test_filename_sanitized(client: AsyncClient, sample_pdf: bytes) -> None:
     """A reviewer-supplied filename can carry path separators or weird
     characters — the Content-Disposition header must round-trip a clean
     `gelakt_*.pdf`."""
@@ -248,9 +251,7 @@ async def test_filename_sanitized(
 
 
 @pytest.mark.asyncio
-async def test_invalid_redactions_json_400(
-    client: AsyncClient, sample_pdf: bytes
-) -> None:
+async def test_invalid_redactions_json_400(client: AsyncClient, sample_pdf: bytes) -> None:
     resp = await client.post(
         "/api/export/redact-stream",
         files={
@@ -263,9 +264,7 @@ async def test_invalid_redactions_json_400(
 
 
 @pytest.mark.asyncio
-async def test_redactions_must_be_array_400(
-    client: AsyncClient, sample_pdf: bytes
-) -> None:
+async def test_redactions_must_be_array_400(client: AsyncClient, sample_pdf: bytes) -> None:
     resp = await client.post(
         "/api/export/redact-stream",
         files={
@@ -277,9 +276,7 @@ async def test_redactions_must_be_array_400(
 
 
 @pytest.mark.asyncio
-async def test_missing_bbox_field_400(
-    client: AsyncClient, sample_pdf: bytes
-) -> None:
+async def test_missing_bbox_field_400(client: AsyncClient, sample_pdf: bytes) -> None:
     bad = json.dumps([{"page": 0, "x0": 0, "x1": 10, "y0": 0}])  # no y1
     resp = await client.post(
         "/api/export/redact-stream",
@@ -398,3 +395,59 @@ async def test_title_header_lands_in_xmp_not_logs(
 
     combined = "\n".join(record.getMessage() for record in caplog.records)
     assert sentinel_title not in combined
+
+
+@pytest.mark.asyncio
+async def test_redacted_export_carries_language_tag(client: AsyncClient, sample_pdf: bytes) -> None:
+    """`/Lang` must be on the final bytes of a *redacted* export too.
+
+    The empty-redaction test above covers the cheap path; this one covers
+    the path that actually goes through PyMuPDF and all three pikepdf
+    round-trips, which is where #67's Ghostscript step used to sit and
+    wipe the catalog."""
+    resp = await client.post(
+        "/api/export/redact-stream",
+        files={
+            "pdf": ("test.pdf", sample_pdf, "application/pdf"),
+            "redactions": (None, json.dumps([_redaction()])),
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+    import pikepdf
+
+    pdf = pikepdf.open(io.BytesIO(resp.content))
+    try:
+        assert str(pdf.Root.get("/Lang")) == "nl-NL"
+    finally:
+        pdf.close()
+
+
+@pytest.mark.asyncio
+async def test_chain_runs_off_the_event_loop(client: AsyncClient, sample_pdf: bytes) -> None:
+    """Acceptance for #67: the handler does no CPU work on the event loop.
+
+    PyMuPDF's redaction pass plus three pikepdf open→save round-trips can
+    hold the loop for seconds on a real besluit, taking `/api/health` down
+    with it. Rather than time it (flaky), assert where the work happens:
+    the chain must be running on a worker thread, not the one the loop
+    lives on."""
+    loop_thread = threading.current_thread()
+    seen: list[threading.Thread] = []
+    real = export_module.post_process_for_accessibility
+
+    def _spy(*args, **kwargs):
+        seen.append(threading.current_thread())
+        return real(*args, **kwargs)
+
+    with patch.object(export_module, "post_process_for_accessibility", _spy):
+        resp = await client.post(
+            "/api/export/redact-stream",
+            files={
+                "pdf": ("test.pdf", sample_pdf, "application/pdf"),
+                "redactions": (None, json.dumps([_redaction()])),
+            },
+        )
+    assert resp.status_code == 200, resp.text
+    assert len(seen) == 1
+    assert seen[0] is not loop_thread
