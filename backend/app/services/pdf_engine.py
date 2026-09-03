@@ -288,12 +288,28 @@ def extraction_from_client_data(pages_data: list[dict[str, Any]]) -> ExtractionR
     return result
 
 
+@dataclass(frozen=True)
+class RedactionOutcome:
+    """Result of `apply_redactions`: the bytes plus what actually happened.
+
+    `skipped` counts redaction rectangles whose page index falls outside
+    the document. Those used to be dropped with a bare `continue`, so an
+    export could come back missing black boxes while reporting success —
+    the single most dangerous silent failure in this codebase (#66/5).
+    """
+
+    pdf_bytes: bytes
+    applied: int
+    skipped: int
+
+
 def apply_redactions(
     pdf_bytes: bytes,
     redactions: list[dict[str, Any]],
     redaction_color: tuple[float, float, float] = (0, 0, 0),
-) -> bytes:
-    """Apply redaction annotations to a PDF and return the modified bytes.
+) -> RedactionOutcome:
+    """Apply redaction annotations to a PDF and return the modified bytes
+    together with the number of rectangles applied and skipped.
 
     Each item in `redactions` should have:
         page: int
@@ -311,20 +327,35 @@ def apply_redactions(
     """
     doc = _open_pdf_safe(pdf_bytes)
 
+    page_count = len(doc)
+    applied = 0
+    skipped = 0
     for r in redactions:
         page_num = r["page"]
         if page_num < 0 or page_num >= len(doc):
+            skipped += 1
             continue
         page = doc[page_num]
         rect = fitz.Rect(r["x0"], r["y0"], r["x1"], r["y1"])
         page.add_redact_annot(rect, fill=redaction_color)
+        applied += 1
 
     for page in doc:
         page.apply_redactions()
 
     result: bytes = doc.tobytes()
     doc.close()
-    return result
+
+    if skipped:
+        # Page indices only — never the coordinates, which can be
+        # correlated back to document content.
+        logger.warning(
+            "export.redactions_out_of_range",
+            skipped=skipped,
+            applied=applied,
+            page_count=page_count,
+        )
+    return RedactionOutcome(pdf_bytes=result, applied=applied, skipped=skipped)
 
 
 def get_page_count(pdf_bytes: bytes) -> int:

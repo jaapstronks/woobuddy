@@ -36,7 +36,7 @@ from app.services.pipeline_types import (
     PipelineReviewStatus,
     PipelineTier,
 )
-from app.services.span_resolver import count_word_boundary_matches, find_span_for_text
+from app.services.span_resolver import resolve_occurrence_bboxes
 from app.services.structure_engine import (
     StructureSpan,
     detect_structures,
@@ -321,22 +321,10 @@ def _resolve_bboxes(
     extraction: ExtractionResult,
     det: NERDetection,
 ) -> list[Bbox]:
-    """Resolve a NER detection to exactly one bbox via occurrence index.
-
-    Counting word-boundary matches up to ``det.start_char`` gives us
-    the occurrence index of this specific hit so ``find_span_for_text``
-    returns one bbox, not one per occurrence of the same text.
-    """
-    occurrence_idx = count_word_boundary_matches(
-        extraction.full_text, det.text, limit=det.start_char
+    """Resolve a NER detection to exactly one bbox via occurrence index."""
+    return resolve_occurrence_bboxes(
+        extraction.pages, extraction.full_text, det.text, det.start_char
     )
-    bboxes = find_span_for_text(extraction.pages, det.text, occurrence_index=occurrence_idx)
-    if not bboxes:
-        # Defensive fallback: if occurrence counting and span matching
-        # disagree (different tokenisation), still return a single bbox.
-        all_bboxes = find_span_for_text(extraction.pages, det.text)
-        bboxes = all_bboxes[:1]
-    return bboxes
 
 
 # =========================================================================

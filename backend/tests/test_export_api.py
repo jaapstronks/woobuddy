@@ -168,6 +168,59 @@ async def test_empty_redactions_returns_unmodified(
 
 
 @pytest.mark.asyncio
+async def test_out_of_range_redaction_is_counted_not_swallowed(
+    client: AsyncClient,
+    sample_pdf: bytes,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Regression (#66/5): a box whose page index is past the end of the
+    document used to be dropped with a bare `continue` — the export
+    returned 200 and the reviewer had no way to know a black box was
+    missing. The response now carries the counts and a warning is logged.
+    """
+    resp = await client.post(
+        "/api/export/redact-stream",
+        files={
+            "pdf": ("test.pdf", sample_pdf, "application/pdf"),
+            "redactions": (
+                None,
+                json.dumps([_redaction(page=0), _redaction(page=7)]),
+            ),
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers["x-redactions-applied"] == "1"
+    assert resp.headers["x-redactions-skipped"] == "1"
+
+    logged = capsys.readouterr().out
+    assert "export.redactions_out_of_range" in logged
+    assert '"skipped": 1' in logged
+
+    # The in-range box still did its job.
+    out_doc = fitz.open(stream=resp.content, filetype="pdf")
+    try:
+        assert "Sentinel content" not in out_doc[0].get_text()
+    finally:
+        out_doc.close()
+
+
+@pytest.mark.asyncio
+async def test_all_boxes_in_range_reports_zero_skipped(
+    client: AsyncClient, sample_pdf: bytes
+) -> None:
+    resp = await client.post(
+        "/api/export/redact-stream",
+        files={
+            "pdf": ("test.pdf", sample_pdf, "application/pdf"),
+            "redactions": (None, json.dumps([_redaction(page=0)])),
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers["x-redactions-applied"] == "1"
+    assert resp.headers["x-redactions-skipped"] == "0"
+
+
+@pytest.mark.asyncio
 async def test_filename_sanitized(
     client: AsyncClient, sample_pdf: bytes
 ) -> None:

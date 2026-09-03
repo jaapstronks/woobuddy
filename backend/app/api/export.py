@@ -162,10 +162,14 @@ async def redact_stream_inline(
 
     title = _read_title_header(request)
 
+    skipped_redactions = 0
     try:
-        redacted_bytes = (
-            apply_redactions(pdf_bytes, redaction_list) if redaction_list else pdf_bytes
-        )
+        if redaction_list:
+            outcome = apply_redactions(pdf_bytes, redaction_list)
+            redacted_bytes = outcome.pdf_bytes
+            skipped_redactions = outcome.skipped
+        else:
+            redacted_bytes = pdf_bytes
         # Accessibility post-processing runs on every export — even when
         # there are no redactions we still want /Lang and XMP set so the
         # exported PDF behaves correctly in screen readers and DMSes.
@@ -188,11 +192,24 @@ async def redact_stream_inline(
     logger.info(
         "export.generated",
         redaction_count=len(redaction_list),
+        applied_count=len(redaction_list) - skipped_redactions,
+        skipped_count=skipped_redactions,
         title_set=title is not None,
     )
+
+    # The client needs to know when boxes were dropped: a "successful"
+    # export that quietly lost redactions is worse than a failed one
+    # (#66/5). The headers are metadata only — counts, never coordinates.
+    # Cross-origin they are readable through `expose_headers` on the CORS
+    # middleware in `main.py`.
+    headers = {
+        "Content-Disposition": f'attachment; filename="gelakt_{safe_filename}"',
+        "X-Redactions-Applied": str(len(redaction_list) - skipped_redactions),
+        "X-Redactions-Skipped": str(skipped_redactions),
+    }
 
     return StreamingResponse(
         io.BytesIO(final_bytes),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="gelakt_{safe_filename}"'},
+        headers=headers,
     )

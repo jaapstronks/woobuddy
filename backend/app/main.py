@@ -183,6 +183,9 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # Export outcome counts (#66/5); the browser hides non-safelisted
+        # response headers from `fetch()` unless they are listed here.
+        expose_headers=["X-Redactions-Applied", "X-Redactions-Skipped"],
     )
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestIdMiddleware)

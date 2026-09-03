@@ -28,6 +28,28 @@ def _make_extraction(text: str, page_count: int = 1) -> ExtractionResult:
 
 
 
+def _make_multipage_extraction(page_texts: list[str]) -> ExtractionResult:
+    """Build an ExtractionResult spanning several pages.
+
+    Mirrors `extract_text`: one span per page carrying the page's whole
+    text, and a `full_text` joined with blank lines between pages — the
+    same text the char offsets in the detections refer to.
+    """
+    pages = [
+        PageText(
+            page_number=i,
+            full_text=text,
+            spans=[TextSpan(text=text, page=i, x0=10, y0=10 + 20 * i, x1=400, y1=25 + 20 * i)],
+        )
+        for i, text in enumerate(page_texts)
+    ]
+    return ExtractionResult(
+        pages=pages,
+        page_count=len(pages),
+        full_text="\n\n".join(page_texts),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Environmental content detection
 # ---------------------------------------------------------------------------
@@ -221,3 +243,31 @@ class TestCustomWordlist:
             custom_terms=[],
         )
         assert not any(d.entity_type == "custom" for d in result.detections)
+
+    @pytest.mark.asyncio
+    async def test_custom_term_on_page_three_gets_a_page_three_bbox(self):
+        """Regression (#66/1): bboxes for custom terms were cached per
+        lowercased term and resolved with `find_span_for_text`, which stops
+        at the first page holding a hit. Every later occurrence inherited
+        the page-1 box, so a reviewer-typed term on page 3 was never burned
+        in — the export drew a second black box on page 1 instead.
+        """
+        extraction = _make_multipage_extraction(
+            [
+                "Betreft Zonnepark Noord en de vergunning.",
+                "Deze pagina gaat over iets anders.",
+                "Bijlage: Zonnepark Noord opnieuw genoemd.",
+            ]
+        )
+        result = await run_pipeline(
+            extraction,
+            custom_terms=[_CustomTerm("Zonnepark Noord", woo_article="5.1.2b")],
+        )
+        customs = [d for d in result.detections if d.entity_type == "custom"]
+        assert len(customs) == 2
+
+        pages = sorted(b["page"] for d in customs for b in d.bounding_boxes)
+        assert pages == [0, 2], f"expected one box on page 0 and one on page 2, got {pages}"
+        # Each occurrence carries exactly one box — no occurrence may inherit
+        # another's geometry.
+        assert [len(d.bounding_boxes) for d in customs] == [1, 1]

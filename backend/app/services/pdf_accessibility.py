@@ -123,9 +123,14 @@ def add_accessible_redaction_annots(
     pdf = pikepdf.open(io.BytesIO(pdf_bytes))
     try:
         page_count = len(pdf.pages)
+        skipped = 0
         for r in redactions:
             page_num = int(r.get("page", 0))
             if page_num < 0 or page_num >= page_count:
+                # Same out-of-range case `apply_redactions` counts; log it
+                # here too so a mismatch between the two passes is visible
+                # instead of silent (#66/5).
+                skipped += 1
                 continue
             label = describe_redaction(r.get("woo_article"))
             page = pdf.pages[page_num]
@@ -157,6 +162,13 @@ def add_accessible_redaction_annots(
                 existing = pikepdf.Array()
             existing.append(annot_obj)
             page["/Annots"] = existing
+
+        if skipped:
+            logger.warning(
+                "export.annots_out_of_range",
+                skipped=skipped,
+                page_count=page_count,
+            )
 
         out = io.BytesIO()
         pdf.save(out)
