@@ -470,13 +470,13 @@
 	});
 
 	function handleKeyAccept() {
-		if (detectionStore.selectedId) handleAccept(detectionStore.selectedId);
+		if (detectionStore.selectedId) void handleAccept(detectionStore.selectedId);
 	}
 	function handleKeyReject() {
-		if (detectionStore.selectedId) handleReject(detectionStore.selectedId);
+		if (detectionStore.selectedId) void handleReject(detectionStore.selectedId);
 	}
 	function handleKeyDefer() {
-		if (detectionStore.selectedId) handleDefer(detectionStore.selectedId);
+		if (detectionStore.selectedId) void handleDefer(detectionStore.selectedId);
 	}
 
 	// Bulk sweeps (#20) — real logic lives in $lib/services/bulk-sweep. These

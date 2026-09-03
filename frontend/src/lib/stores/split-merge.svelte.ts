@@ -9,6 +9,7 @@
  */
 
 import { detectionStore } from './detections.svelte';
+import { undoStore, SplitCommand, MergeCommand } from './undo.svelte';
 import { computeSplitBboxes } from '$lib/services/boundary-edit-geometry';
 
 let pendingId = $state<string | null>(null);
@@ -49,11 +50,29 @@ async function commitSplit(args: {
 	// the reviewer should be able to re-trigger split without being stuck
 	// in a stale pending mode.
 	pendingId = null;
-	await detectionStore.split(args.detectionId, split.bboxesA, split.bboxesB);
+	// Through the undo stack, not straight at the store: a split that
+	// isn't a command means Ctrl+Z pops whatever unrelated action happens
+	// to be on top (#66/2).
+	try {
+		await undoStore.push(
+			new SplitCommand(args.detectionId, split.bboxesA, split.bboxesB)
+		);
+	} catch {
+		// detectionStore.error carries the message.
+	}
 }
 
 async function confirmMerge() {
-	await detectionStore.merge();
+	const ids = [...detectionStore.multiSelectedIds];
+	if (ids.length < 2) {
+		await detectionStore.merge();
+		return;
+	}
+	try {
+		await undoStore.push(new MergeCommand(ids));
+	} catch {
+		// detectionStore.error carries the message.
+	}
 }
 
 export const splitMergeStore = {
