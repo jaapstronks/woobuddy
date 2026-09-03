@@ -190,9 +190,11 @@ export async function extractText(
 			// runs from the baseline origin to (item.width, fontHeight).
 			//
 			// fontHeight is hypot(tx[2], tx[3]), not |tx[3]|: that is what pdf.js's
-			// own TextLayer uses, and it stays correct for skewed or rotated text
-			// matrices where the height leaks into tx[2]. For upright text tx[2] is
-			// 0 and the two are identical.
+			// own TextLayer uses, and it keeps the height correct for skewed text
+			// matrices where it leaks into tx[2]. For upright text tx[2] is 0 and
+			// the two are identical. A *rotated* text matrix (sideways text on a
+			// /Rotate 0 page) still yields a box laid out along x, so only its
+			// height is right — pre-existing, and out of scope here.
 			const x0 = tx[4];
 			const yBottom = tx[5];
 			const fontHeight = Math.hypot(tx[2], tx[3]);
