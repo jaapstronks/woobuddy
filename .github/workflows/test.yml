@@ -134,8 +134,11 @@ jobs:
         run: |
           set -euo pipefail
           docker run -d --name frontend-smoke -p 3000:3000 woobuddy-frontend:ci
+          # --retry-all-errors as well as --retry-connrefused: adapter-node
+          # accepts connections a beat before it answers, so the first probe
+          # can come back as a reset rather than a refusal.
           curl -fsS --retry 30 --retry-delay 2 --retry-connrefused \
-            -o /dev/null http://localhost:3000/health
+            --retry-all-errors -o /dev/null http://localhost:3000/health
           for asset in nld.traineddata.gz worker.min.js tesseract-core-simd-lstm.wasm; do
             code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000/tesseract/$asset")
             echo "/tesseract/$asset -> $code"
