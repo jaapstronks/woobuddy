@@ -118,8 +118,9 @@ def _pdf_rect_from_viewer_box(
 
     The redaction boxes travel through the app in *viewer* space: origin
     top-left, y growing downward, rotation already applied. That is what
-    pdf.js hands the client and what `fitz.Rect` consumes in
-    `pdf_engine.apply_redactions`. A PDF `/Rect`, however, is user space:
+    pdf.js hands the client and what `pdf_engine.apply_redactions`
+    derotates for PyMuPDF (whose annotation API expects *unrotated* page
+    coordinates). A PDF `/Rect`, however, is user space:
     origin bottom-left, y growing upward, rotation *not* applied. Writing
     the viewer values straight into `/Rect` mirrors every annotation
     vertically, which is what this codebase did until #67 — the black box

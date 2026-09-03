@@ -31,6 +31,7 @@ from app.services.pdf_accessibility import (
     post_process_for_accessibility,
     write_xmp_metadata,
 )
+from app.services.pdf_engine import apply_redactions
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -354,6 +355,76 @@ class TestAnnotRectCoordinateSpace:
         box = {"page": 0, "x0": 10, "y0": 20, "x1": 40, "y1": 60, "woo_article": "5.1.2e"}
         out = add_accessible_redaction_annots(_build_pdf(rotate=rotate), [box])
         assert _square_rect(out) == expected
+
+
+def _viewer_ink_bbox(pdf_bytes: bytes, page_num: int = 0) -> tuple[float, float, float, float]:
+    """Bounding box of the dark pixels on a page, in viewer space.
+
+    Rendered at 72 dpi so one pixel is one point. This is the one
+    coordinate system that needs no matrix to define: it is literally
+    what the reviewer sees on the canvas, rotation and all."""
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        pix = doc[page_num].get_pixmap(dpi=72, colorspace=fitz.csGRAY)
+    finally:
+        doc.close()
+    width = pix.width
+    dark = [i for i, v in enumerate(pix.samples) if v < 128]
+    assert dark, "fixture page rendered blank"
+    xs = [i % width for i in dark]
+    ys = [i // width for i in dark]
+    return (min(xs), min(ys), max(xs) + 1, max(ys) + 1)
+
+
+class TestAnnotationSitsOnTheInk:
+    """The end-to-end contract the matrix tests above cannot give on their
+    own: the black box and the screen-reader annotation come from the
+    *same* viewer-space box, so they must land in the same place.
+
+    PyMuPDF's annotation API works in unrotated page space and used to be
+    fed the viewer box verbatim, so on any page with /Rotate the ink went
+    somewhere else while the text stayed readable, and the annotation
+    (mapped correctly since #67) sat on the ink's *intended* spot rather
+    than on the ink. Pinning both halves here: the ink removes the text
+    the box covers, and the annotation's /Rect is that same box in user
+    space."""
+
+    @pytest.mark.parametrize("rotate", [0, 90, 180, 270])
+    def test_ink_and_annotation_share_the_viewer_box(self, rotate: int):
+        src = _build_pdf(rotate=rotate)
+        x0, y0, x1, y1 = _viewer_ink_bbox(src)
+        box = {
+            "page": 0,
+            "x0": x0 - 2,
+            "y0": y0 - 2,
+            "x1": x1 + 2,
+            "y1": y1 + 2,
+            "woo_article": "5.1.2e",
+        }
+
+        redacted = apply_redactions(src, [box]).pdf_bytes
+        doc = fitz.open(stream=redacted, filetype="pdf")
+        try:
+            # The box was drawn around the rendered text, so the text on
+            # page 0 must be gone — on every rotation.
+            assert doc[0].get_text().strip() == ""
+            page = doc[0]
+            viewer_to_user = page.derotation_matrix * (~page.transformation_matrix)
+            corners = [
+                fitz.Point(box["x0"], box["y0"]) * viewer_to_user,
+                fitz.Point(box["x1"], box["y1"]) * viewer_to_user,
+            ]
+        finally:
+            doc.close()
+
+        final = add_accessible_redaction_annots(redacted, [box])
+        expected = [
+            min(c.x for c in corners),
+            min(c.y for c in corners),
+            max(c.x for c in corners),
+            max(c.y for c in corners),
+        ]
+        assert _square_rect(final) == pytest.approx(expected, abs=0.01)
 
 
 # ---------------------------------------------------------------------------

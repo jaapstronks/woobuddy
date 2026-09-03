@@ -340,7 +340,15 @@ def apply_redactions(
                 skipped += 1
                 continue
             page = doc[page_num]
-            rect = fitz.Rect(r["x0"], r["y0"], r["x1"], r["y1"])
+            # The box arrives in *viewer* space: top-left origin, rotation
+            # applied, what pdf.js hands the client and what the reviewer
+            # drew on the rendered canvas. PyMuPDF's annotation API works
+            # in the *unrotated* page space (it zeroes /Rotate while it
+            # inserts), so on a page carrying /Rotate the viewer box has to
+            # be derotated first or the black box lands somewhere else
+            # entirely while the name stays readable (#67). Identity on
+            # /Rotate 0, which is the common case.
+            rect = fitz.Rect(r["x0"], r["y0"], r["x1"], r["y1"]) * page.derotation_matrix
             page.add_redact_annot(rect, fill=redaction_color)
             applied += 1
 
