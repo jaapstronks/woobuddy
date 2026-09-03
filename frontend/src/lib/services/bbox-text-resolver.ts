@@ -7,6 +7,7 @@
  */
 
 import type { BoundingBox, ExtractionResult, ExtractedTextItem } from '$lib/types';
+import { measureText } from './glyph-metrics';
 
 // Horizontal tolerance in PDF points — a few points of slack on the x
 // axis is safe because text items on the same line never occupy the
@@ -49,39 +50,6 @@ const CONTAINED_ITEM_TOLERANCE = 1.5;
 const TOUCHING_GAP = 1.5;
 const SAME_LINE_Y_TOLERANCE = 2;
 
-// Helvetica/Arial AFM advance widths in 1/1000 em. Mirrors the backend's
-// `_GLYPH_WIDTHS` table in `span_resolver.py` so that the client's
-// x-to-character mapping agrees with the bbox narrowing the backend just
-// did. Without AFM weighting a linear-by-char-count mapping clips the
-// first character of names like "P. Hoogvliet" inside a line-wide
-// pdf.js item ("Wethouder P. Hoogvliet …"): "Wethouder" is full of wide
-// glyphs (W, d, u, o) and narrow glyphs (t, e, r), which pushes the
-// perceived start of "P." past the true pixel boundary and the slicer
-// lands on the "." instead. Values outside this table fall back to
-// `DEFAULT_GLYPH_WIDTH`, matching the backend's behavior for non-ASCII
-// glyphs.
-const DEFAULT_GLYPH_WIDTH = 500;
-const GLYPH_WIDTHS: Record<string, number> = {
-	' ': 278, '!': 278, '"': 355, '#': 556, '$': 556, '%': 889, '&': 667,
-	"'": 191, '(': 333, ')': 333, '*': 389, '+': 584, ',': 278, '-': 333,
-	'.': 278, '/': 278,
-	'0': 556, '1': 556, '2': 556, '3': 556, '4': 556, '5': 556, '6': 556,
-	'7': 556, '8': 556, '9': 556,
-	':': 278, ';': 278, '<': 584, '=': 584, '>': 584, '?': 556, '@': 1015,
-	A: 667, B: 667, C: 722, D: 722, E: 667, F: 611, G: 778, H: 722, I: 278,
-	J: 500, K: 667, L: 556, M: 833, N: 722, O: 778, P: 667, Q: 778, R: 722,
-	S: 667, T: 611, U: 722, V: 667, W: 944, X: 667, Y: 667, Z: 611,
-	'[': 278, '\\': 278, ']': 278, '^': 469, '_': 556, '`': 333,
-	a: 556, b: 556, c: 500, d: 556, e: 556, f: 278, g: 556, h: 556, i: 222,
-	j: 222, k: 500, l: 222, m: 833, n: 556, o: 556, p: 556, q: 556, r: 333,
-	s: 500, t: 278, u: 556, v: 500, w: 722, x: 500, y: 500, z: 500,
-	'{': 334, '|': 260, '}': 334, '~': 584
-};
-
-function glyphWidth(ch: string): number {
-	return GLYPH_WIDTHS[ch] ?? DEFAULT_GLYPH_WIDTH;
-}
-
 function overlapsVertically(bbox: BoundingBox, item: ExtractedTextItem): boolean {
 	const itemCenterY = (item.y0 + item.y1) / 2;
 	return itemCenterY >= bbox.y0 && itemCenterY <= bbox.y1;
@@ -116,23 +84,11 @@ function sliceItemTextByBbox(bbox: BoundingBox, item: ExtractedTextItem): string
 	const overlapX1 = Math.min(item.x1, bbox.x1);
 	if (overlapX1 <= overlapX0) return '';
 
-	// AFM-weighted cumulative x positions in item-local coordinates.
-	// `cumulative[i]` is the pixel offset (from `item.x0`) at the left
-	// edge of character `i`; `cumulative[text.length]` is the right
-	// edge of the last character, i.e. `itemWidth`.
-	const chars = Array.from(item.text);
-	let totalAfm = 0;
-	for (const ch of chars) totalAfm += glyphWidth(ch);
-	if (totalAfm <= 0) return item.text;
-	const scale = itemWidth / totalAfm;
-
-	const cumulative = new Array<number>(chars.length + 1);
-	cumulative[0] = 0;
-	let acc = 0;
-	for (let i = 0; i < chars.length; i++) {
-		acc += glyphWidth(chars[i]) * scale;
-		cumulative[i + 1] = acc;
-	}
+	// AFM-weighted cumulative x positions in item-local coordinates, shared
+	// with the reverse translation in `search-redact.ts`.
+	const ruler = measureText(item.text, itemWidth);
+	if (!ruler) return item.text;
+	const { chars, cumulative } = ruler;
 
 	const targetStart = overlapX0 - item.x0;
 	const targetEnd = overlapX1 - item.x0;

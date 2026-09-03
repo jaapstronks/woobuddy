@@ -39,6 +39,39 @@ function box(page: number, x0: number, x1: number): BoundingBox {
 }
 
 /**
+ * Independent re-derivation of the AFM-weighted x span of `text[from, to)`
+ * inside an item drawn from `x0` to `x1`. Deliberately does not import
+ * `glyph-metrics`: the tests assert the geometry a reviewer sees, so they
+ * carry their own (much smaller) width table for the glyphs the fixtures
+ * actually use rather than trusting the module under test to weigh itself.
+ */
+function afmSpan(
+	text: string,
+	x0: number,
+	x1: number,
+	from: number,
+	to: number
+): { x0: number; x1: number } {
+	// Helvetica advance widths, 1/1000 em, for the ASCII the fixtures use.
+	const w: Record<string, number> = {
+		' ': 278, ',': 278, '.': 278, '@': 1015,
+		P: 667, U: 722, V: 667,
+		a: 556, b: 556, c: 500, d: 556, e: 556, f: 278, g: 556, h: 556, i: 222,
+		j: 222, k: 500, l: 222, m: 833, n: 556, o: 556, p: 556, q: 556, r: 333,
+		s: 500, t: 278, u: 556, v: 500, w: 722, x: 500, y: 500, z: 500
+	};
+	const width = (ch: string) => w[ch] ?? 500;
+	let total = 0;
+	for (const ch of text) total += width(ch);
+	const scale = (x1 - x0) / total;
+	let before = 0;
+	for (let i = 0; i < from; i++) before += width(text[i]);
+	let upto = before;
+	for (let i = from; i < to; i++) upto += width(text[i]);
+	return { x0: x0 + before * scale, x1: x0 + upto * scale };
+}
+
+/**
  * Single-page extraction with items spread over several visual lines,
  * 20px apart starting at y=100. Needed for the line-break cases in #85 —
  * `makeExtraction` puts everything on one line, which cannot express a
@@ -90,11 +123,14 @@ describe('searchDocument', () => {
 		expect(occs).toHaveLength(1);
 		expect(occs[0].page).toBe(0);
 		expect(occs[0].matchText.toLowerCase()).toBe('van der berg');
-		// Items on the same y-line merge into one continuous bbox spanning
-		// from "Van" (x=50) through the end of "Berg" (x=110 + 5*6 = 140).
+		// Items on the same y-line merge into one continuous bbox starting at
+		// "Van" (x=50). Since #86 the right edge stops at the end of "Berg"
+		// rather than at the item edge (140): the trailing comma of "Berg,"
+		// is outside the match and has no business being blacked out.
 		expect(occs[0].bboxes).toHaveLength(1);
 		expect(occs[0].bboxes[0].x0).toBe(50);
-		expect(occs[0].bboxes[0].x1).toBeGreaterThanOrEqual(140);
+		expect(occs[0].bboxes[0].x1).toBeGreaterThan(134);
+		expect(occs[0].bboxes[0].x1).toBeLessThan(140);
 	});
 
 	it('returns one occurrence per visible instance across pages', () => {
@@ -243,6 +279,79 @@ describe('searchDocument', () => {
 
 	it('handles null extraction gracefully', () => {
 		expect(searchDocument('anything', null, [])).toEqual([]);
+	});
+
+	// #86 — pdf.js hands back one item per line for scanner output and most
+	// letter templates. Boxing the whole item blacked out the surrounding
+	// sentence: redacting without grounds, on every search the reviewer runs.
+	it('narrows the bbox to the match inside a line-wide text item', () => {
+		const line = 'Uw verzoek is behandeld door onze medewerker Pieter de Vries.';
+		const extraction = makeExtraction([[{ text: line, x: 40 }]]);
+
+		const occs = searchDocument('Pieter de Vries', extraction, []);
+		expect(occs).toHaveLength(1);
+		expect(occs[0].bboxes).toHaveLength(1);
+
+		const bbox = occs[0].bboxes[0];
+		const itemX0 = 40;
+		const itemX1 = 40 + line.length * 6;
+		const expected = afmSpan(line, itemX0, itemX1, line.indexOf('Pieter'), line.indexOf('.'));
+		expect(bbox.x0).toBeCloseTo(expected.x0, 5);
+		expect(bbox.x1).toBeCloseTo(expected.x1, 5);
+		// And the reviewer-visible claim behind those numbers: the bar covers
+		// the name, not the sentence it sits in. The 44 characters of
+		// "Uw verzoek … medewerker " stay outside it, and so does the period.
+		const charWidth = (itemX1 - itemX0) / line.length;
+		expect(bbox.x0).toBeGreaterThan(itemX0 + charWidth * 30);
+		expect(bbox.x1).toBeLessThan(itemX1);
+		expect(bbox.x1 - bbox.x0).toBeLessThan((itemX1 - itemX0) * 0.4);
+	});
+
+	it('narrows each line of a match that runs over a line end', () => {
+		const first = 'Uw verzoek is behandeld door medewerker Pieter';
+		const second = 'de Vries, bereikbaar op p.devries@voorbeeld.nl';
+		const extraction = makeLines([[{ text: first, x: 0 }], [{ text: second, x: 0 }]]);
+
+		const occs = searchDocument('Pieter de Vries', extraction, []);
+		expect(occs).toHaveLength(1);
+		expect(occs[0].bboxes).toHaveLength(2);
+
+		const [top, bottom] = occs[0].bboxes;
+		// First line: narrowed on the left only — the match runs to the end
+		// of the item, so its right edge stays the item's right edge.
+		const firstX1 = first.length * 6;
+		expect(top.x0).toBeCloseTo(
+			afmSpan(first, 0, firstX1, first.indexOf('Pieter'), first.length).x0,
+			5
+		);
+		expect(top.x1).toBeCloseTo(firstX1, 5);
+		expect(top.x0).toBeGreaterThan(0);
+
+		// Second line: narrowed on the right only.
+		const secondX1 = second.length * 6;
+		expect(bottom.x0).toBeCloseTo(0, 5);
+		expect(bottom.x1).toBeCloseTo(afmSpan(second, 0, secondX1, 0, second.indexOf(',')).x1, 5);
+		expect(bottom.x1).toBeLessThan(secondX1);
+	});
+
+	// The alreadyRedacted threshold measures overlap relative to the *hit*,
+	// so a narrower box makes coverage easier to reach, not harder — but a
+	// pre-existing black bar around the term must still count as cover.
+	it('still flags a narrowed hit that an existing detection covers', () => {
+		const line = 'Uw verzoek is behandeld door onze medewerker Pieter de Vries.';
+		const extraction = makeExtraction([[{ text: line, x: 40 }]]);
+		const itemX1 = 40 + line.length * 6;
+		const term = afmSpan(line, 40, itemX1, line.indexOf('Pieter'), line.indexOf('.'));
+
+		const existing = [
+			{
+				bounding_boxes: [box(0, term.x0 - 1, term.x1 + 1)],
+				review_status: 'auto_accepted' as const
+			}
+		];
+		const occs = searchDocument('Pieter de Vries', extraction, existing);
+		expect(occs).toHaveLength(1);
+		expect(occs[0].alreadyRedacted).toBe(true);
 	});
 
 	it('does not emit overlapping matches for the same substring', () => {
