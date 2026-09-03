@@ -4,11 +4,13 @@
  * Produces output compatible with the backend's ExtractionResult / TextSpan
  * format (pdf_engine.py). The key difference is coordinate systems:
  *
- * - pdf.js: bottom-left origin (standard PDF coordinate space)
- * - PyMuPDF: top-left origin
+ * - pdf.js text items: bottom-left origin, /Rotate NOT applied (user space)
+ * - the rest of WOO Buddy: top-left origin, /Rotate applied (viewer space)
  *
- * This module flips Y-coordinates so the backend NER pipeline receives
- * bounding boxes in the same coordinate space as PyMuPDF would produce.
+ * Viewer space is what the overlay draws in, what area-select produces, and
+ * what `apply_redactions` derotates back for PyMuPDF via
+ * `page.derotation_matrix`. So every bbox here goes through the page viewport
+ * transform, which is the only thing that knows about /Rotate.
  */
 
 import type { PDFDocumentProxy } from 'pdfjs-dist';
@@ -97,6 +99,49 @@ export async function loadPdfDocument(bytes: ArrayBuffer): Promise<PDFDocumentPr
 }
 
 /**
+ * Minimal shape of a pdf.js `PageViewport`. Only the point conversion is
+ * needed here, and keeping it structural means tests can hand in a plain
+ * object instead of constructing a real viewport.
+ */
+interface ViewportLike {
+	convertToViewportPoint(x: number, y: number): number[];
+}
+
+interface BBox {
+	x0: number;
+	y0: number;
+	x1: number;
+	y1: number;
+}
+
+/**
+ * Map a PDF-user-space rectangle onto a viewport, normalised to x0 < x1 and
+ * y0 < y1.
+ *
+ * `convertToViewportPoint` transforms each corner independently, and at
+ * /Rotate 90/180/270 that swaps or mirrors them — the "bottom-left" corner
+ * can come back to the right of, or below, the "top-right" one. Everything
+ * downstream (overlay hit-testing, `apply_redactions`) assumes an ordered
+ * rect, so sort here rather than in five call sites.
+ */
+function toViewportBox(
+	viewport: ViewportLike,
+	x0: number,
+	yBottom: number,
+	x1: number,
+	yTop: number
+): BBox {
+	const [ax, ay] = viewport.convertToViewportPoint(x0, yBottom);
+	const [bx, by] = viewport.convertToViewportPoint(x1, yTop);
+	return {
+		x0: Math.min(ax, bx),
+		y0: Math.min(ay, by),
+		x1: Math.max(ax, bx),
+		y1: Math.max(ay, by)
+	};
+}
+
+/**
  * Extract text with bounding boxes from all pages of a PDF document.
  *
  * The returned coordinates use top-left origin to match PyMuPDF conventions,
@@ -120,11 +165,19 @@ export async function extractText(
 
 	for (let pageIdx = 0; pageIdx < totalPages; pageIdx++) {
 		const page = await pdfDoc.getPage(pageIdx + 1); // pdf.js pages are 1-indexed
+		// Viewer space: /Rotate applied, top-left origin, scale 1. `getViewport`
+		// defaults its rotation to the page's own /Rotate.
 		const viewport = page.getViewport({ scale: 1.0 });
-		const pageHeight = viewport.height;
+		// The same page with /Rotate forced off. Reading order is horizontal in
+		// this space whatever the page rotation says, so the line/adjacency
+		// heuristic below runs on these coordinates: at /Rotate 90 a single
+		// baseline runs top-to-bottom on screen and every same-line test in
+		// viewer space would fail.
+		const layoutViewport = page.getViewport({ scale: 1.0, rotation: 0 });
 		const textContent = await page.getTextContent();
 
 		const textItems: ExtractedTextItem[] = [];
+		const layoutBoxes: BBox[] = [];
 
 		for (const item of textContent.items) {
 			if (!('str' in item) || !item.str.trim()) continue;
@@ -132,23 +185,22 @@ export async function extractText(
 			const text = item.str.trim();
 			const tx = item.transform;
 
-			// tx = [scaleX, skewY, skewX, scaleY, translateX, translateY]
-			// In PDF coordinate space (bottom-left origin):
-			//   x0 = translateX
-			//   y_bottom = translateY
-			//   fontSize ~ |scaleY| (for horizontal text)
-			//   width = item.width
+			// tx = [scaleX, skewY, skewX, scaleY, translateX, translateY] in PDF
+			// user space (bottom-left origin, /Rotate not applied). The glyph box
+			// runs from the baseline origin to (item.width, fontHeight).
+			//
+			// fontHeight is hypot(tx[2], tx[3]), not |tx[3]|: that is what pdf.js's
+			// own TextLayer uses, and it stays correct for skewed or rotated text
+			// matrices where the height leaks into tx[2]. For upright text tx[2] is
+			// 0 and the two are identical.
 			const x0 = tx[4];
 			const yBottom = tx[5];
-			const fontSize = Math.abs(tx[3]);
-			const width = item.width;
+			const fontHeight = Math.hypot(tx[2], tx[3]);
+			const x1 = x0 + item.width;
+			const yTop = yBottom + fontHeight;
 
-			// Flip to top-left origin (PyMuPDF convention)
-			const y0 = pageHeight - yBottom - fontSize;
-			const x1 = x0 + width;
-			const y1 = pageHeight - yBottom;
-
-			textItems.push({ text, x0, y0, x1, y1 });
+			textItems.push({ text, ...toViewportBox(viewport, x0, yBottom, x1, yTop) });
+			layoutBoxes.push(toViewportBox(layoutViewport, x0, yBottom, x1, yTop));
 		}
 
 		// Build fullText by detecting visually-adjacent text items on the same
@@ -157,13 +209,16 @@ export async function extractText(
 		// blindly with " " inserts a phantom space that breaks regex and NER
 		// matching. If the next item starts where the previous one ended (same
 		// line, touching x-coordinates), it's a continuation of the same word.
+		// Measured on `layoutBoxes` (unrotated), so the tolerances below stay
+		// horizontal-reading tolerances on a /Rotate 90 page too.
 		const SAME_LINE_TOLERANCE = 2; // points
 		const ADJACENT_X_TOLERANCE = 1.5; // points
 		const fullText = textItems.reduce((acc, item, idx) => {
 			if (idx === 0) return item.text;
-			const prev = textItems[idx - 1];
-			const sameLine = Math.abs(item.y0 - prev.y0) < SAME_LINE_TOLERANCE;
-			const touching = sameLine && item.x0 - prev.x1 < ADJACENT_X_TOLERANCE;
+			const box = layoutBoxes[idx];
+			const prev = layoutBoxes[idx - 1];
+			const sameLine = Math.abs(box.y0 - prev.y0) < SAME_LINE_TOLERANCE;
+			const touching = sameLine && box.x0 - prev.x1 < ADJACENT_X_TOLERANCE;
 			return acc + (touching ? '' : ' ') + item.text;
 		}, '');
 		pages.push({
