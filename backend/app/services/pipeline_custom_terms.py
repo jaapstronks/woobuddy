@@ -16,7 +16,7 @@ from app.services.custom_term_matcher import (
 )
 from app.services.pdf_engine import ExtractionResult
 from app.services.pipeline_types import Bbox, PipelineDetection, PipelineResult
-from app.services.span_resolver import find_span_for_text
+from app.services.span_resolver import resolve_occurrence_bboxes
 
 logger = get_logger(__name__)
 
@@ -82,15 +82,18 @@ def apply_custom_terms(
 ) -> None:
     """Apply custom-term matches (#21), merging overlaps with NER hits."""
     term_matches = match_custom_terms(extraction.full_text, custom_terms)
-    bbox_cache: dict[str, list[Bbox]] = {}
     custom_added = 0
     custom_merged = 0
 
     for m in term_matches:
-        cache_key = m.term.lower()
-        if cache_key not in bbox_cache:
-            bbox_cache[cache_key] = find_span_for_text(extraction.pages, m.term)
-        term_bboxes = bbox_cache[cache_key]
+        # Resolve *this* occurrence, not "the term". Caching one bbox list
+        # per lowercased term made every occurrence inherit the first hit's
+        # box — always on the first page that contained the term — so a
+        # reviewer-typed term on page 3 got a page-1 box and exported
+        # unredacted (#66/1).
+        term_bboxes = resolve_occurrence_bboxes(
+            extraction.pages, extraction.full_text, m.term, m.start_char
+        )
 
         overlap = _find_overlapping_detection(result.detections, m.start_char, m.end_char)
         if overlap is not None:

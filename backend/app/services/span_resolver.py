@@ -7,6 +7,7 @@ functions have no dependency on PyMuPDF and are independently testable.
 """
 
 import re
+from collections.abc import Iterator
 
 from app.services.pdf_engine import PageText, TextSpan
 from app.services.pipeline_types import Bbox
@@ -157,28 +158,37 @@ def _strip_ws(text: str) -> str:
     return re.sub(r"\s+", "", text)
 
 
-def _word_boundary_match_index(haystack: str, needle: str) -> int:
-    """Return the first index at which `needle` appears in `haystack` as a
-    whole word (non-alphanumeric chars on both sides), or -1 for no match.
+def _iter_word_boundary_matches(haystack: str, needle: str) -> Iterator[int]:
+    """Yield every index at which `needle` appears in `haystack` as a whole
+    word (non-alphanumeric chars on both sides), in ascending order.
 
     This prevents "Vries" from matching inside "Vriesland" — the kind
     of false positive that causes the bbox of a person detection to
     snap onto an unrelated word.
+
+    Single source of truth for word-boundary matching: the "first hit"
+    lookup, the counter and the Nth-occurrence walk all consume this
+    generator, so they can never disagree about what counts as a match.
     """
     if not needle:
-        return -1
+        return
     n = len(needle)
     idx = 0
     while True:
-        idx = haystack.find(needle, idx)
-        if idx == -1:
-            return -1
-        left_ok = idx == 0 or not haystack[idx - 1].isalnum()
-        right = idx + n
+        pos = haystack.find(needle, idx)
+        if pos == -1:
+            return
+        left_ok = pos == 0 or not haystack[pos - 1].isalnum()
+        right = pos + n
         right_ok = right == len(haystack) or not haystack[right].isalnum()
         if left_ok and right_ok:
-            return idx
-        idx += 1
+            yield pos
+        idx = pos + 1
+
+
+def _word_boundary_match_index(haystack: str, needle: str) -> int:
+    """Return the first whole-word index of `needle` in `haystack`, or -1."""
+    return next(_iter_word_boundary_matches(haystack, needle), -1)
 
 
 def _is_word_boundary_match(haystack: str, needle: str) -> bool:
@@ -199,22 +209,10 @@ def count_word_boundary_matches(haystack: str, needle: str, *, limit: int | None
     if not needle:
         return 0
     haystack_lower = haystack.lower()
-    needle_lower = needle.lower()
     upper = len(haystack_lower) if limit is None else min(limit, len(haystack_lower))
-    n = len(needle_lower)
-    count = 0
-    idx = 0
-    while idx < upper:
-        pos = haystack_lower.find(needle_lower, idx)
-        if pos == -1 or pos >= upper:
-            break
-        left_ok = pos == 0 or not haystack_lower[pos - 1].isalnum()
-        right = pos + n
-        right_ok = right == len(haystack_lower) or not haystack_lower[right].isalnum()
-        if left_ok and right_ok:
-            count += 1
-        idx = pos + 1
-    return count
+    return sum(
+        1 for pos in _iter_word_boundary_matches(haystack_lower, needle.lower()) if pos < upper
+    )
 
 
 def _narrow_bbox_to_substring(span: "TextSpan", match_idx: int, match_len: int) -> Bbox:
@@ -365,12 +363,19 @@ def _find_nth_occurrence(
         for i, start in enumerate(spans):
             start_lower = start.text.lower()
 
-            # --- single-item match at this span ---
-            idx = _word_boundary_match_index(start_lower, search_lower)
-            if idx != -1:
-                if seen == occurrence_index:
-                    return [_narrow_bbox_to_substring(start, idx, len(search_lower))]
-                seen += 1
+            # --- single-item matches at this span ---
+            # Every hit inside the span counts, not just the first. The
+            # caller derives `occurrence_index` by counting hits in the
+            # joined full text, where a span holding "Jan Jansen belde
+            # Jan Jansen" contributes two. Counting it as one here
+            # desynchronised the two domains and pushed every later
+            # detection's bbox one occurrence to the left (#66/6).
+            span_hits = list(_iter_word_boundary_matches(start_lower, search_lower))
+            if span_hits:
+                for idx in span_hits:
+                    if seen == occurrence_index:
+                        return [_narrow_bbox_to_substring(start, idx, len(search_lower))]
+                    seen += 1
                 # Don't also try to merge starting here — the whole
                 # search text is already inside this one item, so any
                 # merge match anchored here would just widen the bbox
@@ -449,8 +454,7 @@ def find_span_for_text(
         #    that prompted this code path.
         for span in page_text.spans:
             span_lower = span.text.lower()
-            idx = _word_boundary_match_index(span_lower, search_lower)
-            if idx != -1:
+            for idx in _iter_word_boundary_matches(span_lower, search_lower):
                 results.append(_narrow_bbox_to_substring(span, idx, len(search_lower)))
 
         # 2) Multi-item same-line merge, anchored at an item that
@@ -469,3 +473,36 @@ def find_span_for_text(
             break  # found on this page, stop
 
     return results
+
+
+def resolve_occurrence_bboxes(
+    pages: list[PageText],
+    full_text: str,
+    search_text: str,
+    start_char: int | None,
+) -> list[Bbox]:
+    """Resolve one specific occurrence of ``search_text`` to a single bbox.
+
+    ``start_char`` is the offset of this occurrence in ``full_text`` (the
+    server-joined text the detection was found in). Counting word-boundary
+    matches up to that offset gives the occurrence index, so the second
+    "Jan de Vries" in a document gets the second "Jan de Vries" bbox rather
+    than a copy of the first one's.
+
+    The fallback below only fires for the *first* occurrence. Handing every
+    occurrence the first hit's bbox is exactly the bug that made a custom
+    term on page 3 export unredacted (#66/1): the reviewer saw a black box
+    on page 1 and no box on page 3, and the export followed the boxes.
+    Returning nothing for a later occurrence is visible in the UI as a
+    detection without a box; returning the wrong box is not visible at all.
+    """
+    if start_char is None:
+        return find_span_for_text(pages, search_text)[:1]
+    occurrence_idx = count_word_boundary_matches(full_text, search_text, limit=start_char)
+    bboxes = find_span_for_text(pages, search_text, occurrence_index=occurrence_idx)
+    if not bboxes and occurrence_idx == 0:
+        # Defensive fallback: occurrence counting and span matching can
+        # disagree when pdf.js tokenises differently from the joined text.
+        # For the first occurrence a single bbox is still better than none.
+        bboxes = find_span_for_text(pages, search_text)[:1]
+    return bboxes

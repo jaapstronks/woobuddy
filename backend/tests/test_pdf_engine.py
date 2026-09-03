@@ -8,7 +8,11 @@ all exist to prevent that class of bug.
 """
 
 from app.services.pdf_engine import PageText, TextSpan
-from app.services.span_resolver import count_word_boundary_matches, find_span_for_text
+from app.services.span_resolver import (
+    count_word_boundary_matches,
+    find_span_for_text,
+    resolve_occurrence_bboxes,
+)
 
 
 def _page(spans: list[TextSpan]) -> PageText:
@@ -341,3 +345,83 @@ class TestOccurrenceIndex:
         text = "Vriesland en Jan de Vries wandelden."
         # Only the standalone 'Vries' counts.
         assert count_word_boundary_matches(text, "Vries") == 1
+
+    def test_repeated_name_inside_one_span_counts_twice(self):
+        """Regression (#66/6): the occurrence index is derived by counting
+        word-boundary hits in the joined full text, where a span holding
+        the same name twice contributes two. The Nth-occurrence walk used
+        to count such a span as one hit, so every detection after it was
+        resolved one occurrence too early — the bbox landed on the
+        previous person's name.
+        """
+        page = _page(
+            [
+                TextSpan(
+                    text="Jan Jansen belde Jan Jansen",
+                    page=0,
+                    x0=10,
+                    y0=10,
+                    x1=190,
+                    y1=20,
+                ),
+                TextSpan(text="Jan Jansen", page=0, x0=10, y0=40, x1=80, y1=50),
+            ]
+        )
+        assert count_word_boundary_matches(page.full_text, "Jan Jansen") == 3
+
+        first = find_span_for_text([page], "Jan Jansen", occurrence_index=0)
+        second = find_span_for_text([page], "Jan Jansen", occurrence_index=1)
+        third = find_span_for_text([page], "Jan Jansen", occurrence_index=2)
+
+        assert first[0]["y0"] == 10
+        assert second[0]["y0"] == 10
+        # The two in-span hits must resolve to different x ranges …
+        assert first[0]["x0"] < second[0]["x0"]
+        # … and the third hit must be the span on the next line, not a
+        # repeat of the first one.
+        assert third[0]["y0"] == 40
+
+
+# ---------------------------------------------------------------------------
+# resolve_occurrence_bboxes — the shared NER / custom-term entry point
+# ---------------------------------------------------------------------------
+
+
+class TestResolveOccurrenceBboxes:
+    def test_later_occurrence_on_a_later_page_gets_its_own_bbox(self):
+        """Regression (#66/1): a term occurring on page 1 and page 3 used
+        to resolve both occurrences to the page-1 bbox, so the page-3
+        occurrence exported unredacted."""
+        page1 = _page(
+            [TextSpan(text="Betreft Zonnepark Noord", page=0, x0=10, y0=10, x1=150, y1=20)]
+        )
+        page3_span = TextSpan(text="Zonnepark Noord", page=2, x0=20, y0=60, x1=120, y1=70)
+        page3 = PageText(page_number=2, full_text=page3_span.text, spans=[page3_span])
+        page2 = PageText(page_number=1, full_text="Tussenpagina", spans=[])
+        pages = [page1, page2, page3]
+        full_text = "\n\n".join(p.full_text for p in pages)
+
+        first_at = full_text.find("Zonnepark Noord")
+        second_at = full_text.rfind("Zonnepark Noord")
+        assert first_at != second_at
+
+        first = resolve_occurrence_bboxes(pages, full_text, "Zonnepark Noord", first_at)
+        second = resolve_occurrence_bboxes(pages, full_text, "Zonnepark Noord", second_at)
+
+        assert len(first) == 1
+        assert first[0]["page"] == 0
+        assert len(second) == 1
+        assert second[0]["page"] == 2
+
+    def test_unresolvable_later_occurrence_returns_no_bbox(self):
+        """A later occurrence that the span walk cannot place must return
+        nothing rather than fall back to the first hit's bbox — a wrong
+        box is invisible to the reviewer, a missing one is not."""
+        span = TextSpan(text="Zonnepark Noord", page=0, x0=10, y0=10, x1=110, y1=20)
+        page = PageText(page_number=0, full_text=span.text, spans=[span])
+        # The full text claims two occurrences; the page geometry has one.
+        full_text = "Zonnepark Noord en nog eens Zonnepark Noord"
+        second_at = full_text.rfind("Zonnepark Noord")
+
+        assert resolve_occurrence_bboxes([page], full_text, "Zonnepark Noord", 0) != []
+        assert resolve_occurrence_bboxes([page], full_text, "Zonnepark Noord", second_at) == []
