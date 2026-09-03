@@ -122,7 +122,17 @@
 </p>
 <ul>
 	<li><strong>Hosting:</strong> Hetzner (Duitsland/Finland, binnen de EER).</li>
-	<li><strong>E-mail (transactioneel):</strong> Postmark of gelijkwaardig — alleen adressen, nooit documentinhoud.</li>
+	<li>
+		<strong>E-mail (transactioneel):</strong> Scaleway Transactional Email (Frankrijk, binnen de
+		EER) — alleen e-mailadressen en de tekst die je zelf in het contactformulier typt, nooit
+		documentinhoud.
+	</li>
+	<li>
+		<strong>Verzendlijst (alleen bij aanmelding):</strong> Listmonk, zelf gehost binnen de EER.
+		Je adres komt daar pas op te staan nadat je de bevestigingslink in onze e-mail hebt
+		aangeklikt, en alleen je e-mailadres en de naam die je zelf invulde gaan mee. Uitschrijven
+		kan met één klik onderaan elk bericht.
+	</li>
 	<li>
 		<strong>Analytics:</strong> Plausible (zonder cookies, zonder persoonsgegevens). We tellen
 		pageviews, een handvol benoemde gebeurtenissen (zoals 'document geconverteerd' of 'export

@@ -72,8 +72,10 @@
 			<p class="font-medium text-ink">Dank je — je bericht is verstuurd.</p>
 			<p class="mt-1 text-ink-soft">
 				{#if newsletterOptIn}
-					We nemen zo snel mogelijk contact op. Je ontvangt voortaan ook de
-					nieuwsbrief — je kunt je altijd weer uitschrijven.
+					We nemen zo snel mogelijk contact op. Voor de updates staat er nog één
+					stap open: we hebben je een e-mail gestuurd met een bevestigingslink.
+					Pas als je die aanklikt, zetten we je adres op de lijst. Niets
+					ontvangen? Kijk even in je spamfilter.
 				{:else}
 					We nemen zo snel mogelijk contact op.
 				{/if}
@@ -150,9 +152,9 @@
 				class="mt-1 h-4 w-4 shrink-0 rounded border-border text-primary focus:ring-2 focus:ring-primary/20"
 			/>
 			<span>
-				Meld me ook aan voor de nieuwsbrief — af en toe een bericht als er iets
-				te melden is over updates of teamfuncties. Je kunt je altijd weer
-				uitschrijven.
+				Hou me op de hoogte — af en toe een bericht als er iets te melden is over
+				teamfuncties of een grote nieuwe functie. Geen nieuwsbrief, hooguit een
+				paar keer per jaar. Je krijgt eerst een e-mail om je adres te bevestigen.
 			</span>
 		</label>
 
