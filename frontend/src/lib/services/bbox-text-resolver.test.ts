@@ -344,6 +344,27 @@ describe('resolveEntityTexts — unplaced reporting', () => {
 		expect(unplaced).toHaveLength(0);
 	});
 
+	it('restores the label of a reviewer-authored row from its bbox after a refresh', () => {
+		// `persistDetections` strips `entity_text` before writing to IDB, so
+		// a split half or a search-and-redact hit comes back textless. Its
+		// bbox does sit on real text, and the sidebar label depends on that
+		// resolution still happening. The left half of a split resolves to
+		// its own part of the name, not the whole original.
+		const ext = makeExtraction([[{ text: 'Pieter de Vries', x0: 0, x1: 90 }]]);
+		const detections = [
+			{
+				id: 'half',
+				entity_text: undefined,
+				source: 'manual',
+				bounding_boxes: [box(0, 0, 36)]
+			}
+		];
+		const { detections: resolved, unplaced } = resolveEntityTexts(detections, ext);
+		expect(resolved).toHaveLength(1);
+		expect(resolved[0].entity_text).toBe('Pieter');
+		expect(unplaced).toHaveLength(0);
+	});
+
 	it('does not report reviewer-authored rows, which never resolve', () => {
 		const ext = makeExtraction([[{ text: 'Jan', x0: 0, x1: 18 }]]);
 		const detections = [

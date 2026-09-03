@@ -280,10 +280,13 @@ async function analyze(
 
 function setExtraction(extraction: ExtractionResult) {
 	currentExtraction = extraction;
-	// Re-resolve entity texts for any already-loaded detections. This is
-	// the ordering the review page actually takes on a refresh —
-	// `hydrate()` runs before the PDF is re-extracted — so it is also
-	// where the unplaced set is usually first filled.
+	// Re-resolve entity texts for any already-loaded detections. On a
+	// refresh this runs *before* `hydrate()` (the review page loads the
+	// PDF first) and finds an empty list, so the unplaced set is filled
+	// by `hydrate()` in replace mode. The merge path is for the upload
+	// flow, where the store is already populated when the review page
+	// re-extracts: re-resolving there runs over rows the first pass
+	// already filtered, so it can only add to the record.
 	if (allDetections.length > 0) {
 		applyResolution(allDetections, 'merge');
 	}

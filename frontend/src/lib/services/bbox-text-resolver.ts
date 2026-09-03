@@ -276,9 +276,10 @@ function textFromOffsets(
  * recoverable text is never actionable (the reviewer has nothing to
  * confirm, reject, or see highlighted), so dropping is always the
  * right call. Detections with a reviewer-authored entity_text are
- * preserved verbatim, as are all rows whose `source` marks them
- * reviewer-authored — a manual area selection carries no text at all and
- * must survive a refresh regardless.
+ * preserved verbatim, and rows whose `source` marks them
+ * reviewer-authored are never dropped at all — a manual area selection
+ * carries no text and no overlapping items, and must survive a refresh
+ * regardless.
  *
  * #78 — dropping is right, dropping *silently* is not: the reviewer
  * ends up with a document where the tool found a name it never showed
@@ -356,24 +357,30 @@ export function resolveEntityTexts<T extends Resolvable>(
 			continue;
 		}
 		// Reviewer-authored rows are decisions, not detections: the box is
-		// where the reviewer put it and needs no resolving. They usually
-		// carry their own `entity_text` and exit above, but an *area*
-		// selection (Shift+drag over a signature or stamp) is created with
-		// an empty one, and `persistDetections` strips the field before
-		// writing to IndexedDB — so after a refresh such a row arrives here
-		// with no text and no overlapping text items, and dropping it would
-		// throw away a redaction the reviewer made by hand.
-		if (det.source === 'manual' || det.source === 'search_redact') {
-			out.push(det);
-			continue;
-		}
+		// where the reviewer put it, so it is never dropped and never
+		// reported as unplaced. Resolution still runs over it, because
+		// `persistDetections` strips `entity_text` before writing to
+		// IndexedDB — after a refresh a search-and-redact hit or a split
+		// half arrives here textless, and only its bbox can restore the
+		// label the sidebar shows. An *area* selection (Shift+drag over a
+		// signature or stamp) has no text under it at all: it keeps its
+		// empty label and, before #78, was thrown away on every refresh.
+		const reviewerAuthored = det.source === 'manual' || det.source === 'search_redact';
 		const bboxes = det.bounding_boxes ?? [];
 		if (bboxes.length === 0) {
+			if (reviewerAuthored) {
+				out.push(det);
+				continue;
+			}
 			report(det, 'no_bbox');
 			continue;
 		}
 		let text = findTextForBboxes(bboxes, extraction);
 		if (!text) {
+			if (reviewerAuthored) {
+				out.push(det);
+				continue;
+			}
 			report(det, 'no_text_match');
 			continue;
 		}
