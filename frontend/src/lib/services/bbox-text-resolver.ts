@@ -8,19 +8,24 @@
 
 import type { BoundingBox, ExtractionResult, ExtractedTextItem } from '$lib/types';
 import { measureText } from './glyph-metrics';
+import { readingAxis, type ReadingAxis } from './reading-axis';
 
-// Horizontal tolerance in PDF points — a few points of slack on the x
-// axis is safe because text items on the same line never occupy the
-// same x range. Vertical matching uses the text item's *center* y
-// against the bbox's y range (no tolerance): an AABB overlap with any
-// y-tolerance at all accidentally picks up adjacent lines, because
-// PyMuPDF/pdf.js line boxes include ascender/descender padding that
-// causes a 1–2pt overlap between consecutive lines. This used to
-// surface as a detection card showing e.g. "Postbus 9100, 2300 PC
+// Tolerance along the reading direction, in PDF points — a few points of
+// slack is safe because text items on the same line never occupy the same
+// range along it. Matching across the reading direction uses the text
+// item's *center* against the bbox's range (no tolerance): an AABB overlap
+// with any cross-axis tolerance at all accidentally picks up adjacent
+// lines, because PyMuPDF/pdf.js line boxes include ascender/descender
+// padding that causes a 1–2pt overlap between consecutive lines. This used
+// to surface as a detection card showing e.g. "Postbus 9100, 2300 PC
 // Leiden\nTelefoon: 071 516 50 00" for a bbox that only covers the
 // "Postbus" line — the card then contradicted what the PDF overlay
 // actually highlighted.
-const X_TOLERANCE = 2.0;
+//
+// #87 — both axes come from `reading-axis.ts` rather than being hard-coded
+// to x and y. On a /Rotate 90 page a line runs down the screen, so the
+// "same line" test has to compare x and the slicing below has to cut y.
+const ALONG_TOLERANCE = 2.0;
 
 // When a text item is *contained* within the bbox (its x range falls
 // wholly inside bbox.x range, within tolerance), return the whole item
@@ -48,15 +53,20 @@ const CONTAINED_ITEM_TOLERANCE = 1.5;
 // surfaces every detection as "W i l l e m i j n" / "0 0 0 4 7 5 2 8 6 1"
 // in the sidebar, even though the underlying detection is correct.
 const TOUCHING_GAP = 1.5;
-const SAME_LINE_Y_TOLERANCE = 2;
+const SAME_LINE_TOLERANCE = 2;
 
-function overlapsVertically(bbox: BoundingBox, item: ExtractedTextItem): boolean {
-	const itemCenterY = (item.y0 + item.y1) / 2;
-	return itemCenterY >= bbox.y0 && itemCenterY <= bbox.y1;
+/** Is the item's line the one this bbox sits on? */
+function overlapsAcross(axis: ReadingAxis, bbox: BoundingBox, item: ExtractedTextItem): boolean {
+	const center = axis.crossCenter(item);
+	const range = axis.cross(bbox);
+	return center >= range.start && center <= range.end;
 }
 
-function overlapsHorizontally(bbox: BoundingBox, item: ExtractedTextItem): boolean {
-	return item.x0 < bbox.x1 + X_TOLERANCE && item.x1 > bbox.x0 - X_TOLERANCE;
+/** Does the item overlap the bbox along the reading direction? */
+function overlapsAlong(axis: ReadingAxis, bbox: BoundingBox, item: ExtractedTextItem): boolean {
+	const a = axis.along(item);
+	const b = axis.along(bbox);
+	return a.start < b.end + ALONG_TOLERANCE && a.end > b.start - ALONG_TOLERANCE;
 }
 
 /**
@@ -66,32 +76,43 @@ function overlapsHorizontally(bbox: BoundingBox, item: ExtractedTextItem): boole
  * If the item is fully contained within the bbox (within a small
  * tolerance), the entire text is returned. Otherwise the item's
  * characters are weighted by Helvetica AFM advance widths and the
- * slice is chosen so the pixel range [bbox.x0, bbox.x1] lines up with
- * whole characters — the same weighting the backend uses in
+ * slice is chosen so the overlap along the reading direction lines up
+ * with whole characters — the same weighting the backend uses in
  * `_narrow_bbox_to_substring` when it computed this bbox in the first
  * place.
+ *
+ * #87 — measured along `axis`, not along x. Cutting along x on a
+ * /Rotate 90 page produced a band across the whole line instead of a box
+ * around the term: over-redaction rather than a leak, but it swallowed
+ * the rest of the sentence and clipped the line height.
  */
-function sliceItemTextByBbox(bbox: BoundingBox, item: ExtractedTextItem): string {
-	const itemWidth = item.x1 - item.x0;
-	if (itemWidth <= 0 || item.text.length === 0) return item.text;
+function sliceItemTextByBbox(
+	axis: ReadingAxis,
+	bbox: BoundingBox,
+	item: ExtractedTextItem
+): string {
+	const itemSpan = axis.along(item);
+	const bboxSpan = axis.along(bbox);
+	const itemLength = itemSpan.end - itemSpan.start;
+	if (itemLength <= 0 || item.text.length === 0) return item.text;
 
 	const contained =
-		item.x0 >= bbox.x0 - CONTAINED_ITEM_TOLERANCE &&
-		item.x1 <= bbox.x1 + CONTAINED_ITEM_TOLERANCE;
+		itemSpan.start >= bboxSpan.start - CONTAINED_ITEM_TOLERANCE &&
+		itemSpan.end <= bboxSpan.end + CONTAINED_ITEM_TOLERANCE;
 	if (contained) return item.text;
 
-	const overlapX0 = Math.max(item.x0, bbox.x0);
-	const overlapX1 = Math.min(item.x1, bbox.x1);
-	if (overlapX1 <= overlapX0) return '';
+	const overlapStart = Math.max(itemSpan.start, bboxSpan.start);
+	const overlapEnd = Math.min(itemSpan.end, bboxSpan.end);
+	if (overlapEnd <= overlapStart) return '';
 
-	// AFM-weighted cumulative x positions in item-local coordinates, shared
+	// AFM-weighted cumulative positions in item-local coordinates, shared
 	// with the reverse translation in `search-redact.ts`.
-	const ruler = measureText(item.text, itemWidth);
+	const ruler = measureText(item.text, itemLength);
 	if (!ruler) return item.text;
 	const { chars, cumulative } = ruler;
 
-	const targetStart = overlapX0 - item.x0;
-	const targetEnd = overlapX1 - item.x0;
+	const targetStart = overlapStart - itemSpan.start;
+	const targetEnd = overlapEnd - itemSpan.start;
 
 	// Snap the slice to character boundaries by midpoint: a char is
 	// included if its midpoint lies inside [targetStart, targetEnd].
@@ -140,13 +161,14 @@ export function findTextForBboxes(
 		const page = extraction.pages.find((p) => p.pageNumber === bbox.page);
 		if (!page) continue;
 
+		const axis = readingAxis(page.rotation);
 		const matchingItems = page.textItems
-			.filter((item) => overlapsVertically(bbox, item) && overlapsHorizontally(bbox, item))
+			.filter((item) => overlapsAcross(axis, bbox, item) && overlapsAlong(axis, bbox, item))
 			.sort((a, b) => {
-				// Sort by position: top-to-bottom, then left-to-right
-				const yDiff = a.y0 - b.y0;
-				if (Math.abs(yDiff) > 2) return yDiff;
-				return a.x0 - b.x0;
+				// Sort in reading order: line by line, then along the line.
+				const lineDiff = axis.cross(a).start - axis.cross(b).start;
+				if (Math.abs(lineDiff) > SAME_LINE_TOLERANCE) return lineDiff;
+				return axis.along(a).start - axis.along(b).start;
 			});
 
 		if (matchingItems.length === 0) continue;
@@ -160,16 +182,24 @@ export function findTextForBboxes(
 		// Menlo). Without it the sidebar card shows "W i l l e m i j n"
 		// while the PDF clearly reads "Willemijn" and the detector saw
 		// "Willemijn".
+		//
+		// #87 — "same line" and "touching" are measured on the reading axis.
+		// Since #84 the items are in viewer space, so on a /Rotate 90 page the
+		// old y-based same-line test compared two points on the same *column*
+		// and never matched, which brought "W i l l e m i j n" back to the
+		// sidebar for exactly the monospace PDFs this heuristic exists for.
 		let joined = '';
 		let prev: ExtractedTextItem | null = null;
 		for (const item of matchingItems) {
-			const slice = sliceItemTextByBbox(bbox, item);
+			const slice = sliceItemTextByBbox(axis, bbox, item);
 			if (!slice) continue;
 			if (prev === null) {
 				joined = slice;
 			} else {
-				const sameLine = Math.abs(item.y0 - prev.y0) < SAME_LINE_Y_TOLERANCE;
-				const touching = sameLine && item.x0 - prev.x1 < TOUCHING_GAP;
+				const sameLine =
+					Math.abs(axis.cross(item).start - axis.cross(prev).start) < SAME_LINE_TOLERANCE;
+				const touching =
+					sameLine && axis.along(item).start - axis.along(prev).end < TOUCHING_GAP;
 				joined += (touching ? '' : ' ') + slice;
 			}
 			prev = item;

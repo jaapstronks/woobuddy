@@ -104,6 +104,13 @@ class TextSpan:
     y1: float
     block_no: int = 0
     line_no: int = 0
+    #: The page's /Rotate (0/90/180/270). Span boxes are in viewer space —
+    #: rotation already applied — so this is the only thing that says which
+    #: axis the text actually reads along. `span_resolver._reading_axis`
+    #: turns it into the along/cross accessors that narrowing and the
+    #: same-line test need (#87). Defaults to 0 so every existing
+    #: construction site keeps working.
+    rotation: int = 0
 
 
 @dataclass
@@ -113,6 +120,9 @@ class PageText:
     page_number: int
     full_text: str
     spans: list[TextSpan] = field(default_factory=list)
+    #: The page's /Rotate — see `TextSpan.rotation`. Carried here too so a
+    #: caller holding only the page can reason about it.
+    rotation: int = 0
 
 
 @dataclass
@@ -138,6 +148,11 @@ def extract_text(pdf_bytes: bytes) -> ExtractionResult:
 
         for page_idx in range(len(doc)):
             page = doc[page_idx]
+            # `get_text` returns coordinates in the rotated page space (the
+            # same space `page.rect` reports and `apply_redactions` undoes
+            # with `derotation_matrix`), so the spans below need the rotation
+            # to know their reading direction — exactly like the client's.
+            rotation = int(page.rotation) % 360
             page_dict = page.get_text("dict")
             page_spans: list[TextSpan] = []
             page_text_parts: list[str] = []
@@ -161,6 +176,7 @@ def extract_text(pdf_bytes: bytes) -> ExtractionResult:
                                 y1=bbox[3],
                                 block_no=block_no,
                                 line_no=line_no,
+                                rotation=rotation,
                             )
                         )
                         page_text_parts.append(text)
@@ -171,6 +187,7 @@ def extract_text(pdf_bytes: bytes) -> ExtractionResult:
                     page_number=page_idx,
                     full_text=page_full_text,
                     spans=page_spans,
+                    rotation=rotation,
                 )
             )
             all_text_parts.append(page_full_text)
@@ -268,6 +285,10 @@ def extraction_from_client_data(pages_data: list[dict[str, Any]]) -> ExtractionR
     for page_data in pages_data:
         page_num = page_data.get("page_number", 0)
         full_text = page_data.get("full_text", "")
+        # Absent for clients that predate #87, and for OCR pages, whose boxes
+        # come off a canvas that was rendered with the rotation already baked
+        # in. Both read left-to-right, which is what 0 means.
+        rotation = int(page_data.get("rotation") or 0) % 360
         spans = [
             TextSpan(
                 text=item["text"],
@@ -276,10 +297,18 @@ def extraction_from_client_data(pages_data: list[dict[str, Any]]) -> ExtractionR
                 y0=item["y0"],
                 x1=item["x1"],
                 y1=item["y1"],
+                rotation=rotation,
             )
             for item in page_data.get("text_items", [])
         ]
-        result.pages.append(PageText(page_number=page_num, full_text=full_text, spans=spans))
+        result.pages.append(
+            PageText(
+                page_number=page_num,
+                full_text=full_text,
+                spans=spans,
+                rotation=rotation,
+            )
+        )
         all_text_parts.append(full_text)
 
         if earliest_date is None:

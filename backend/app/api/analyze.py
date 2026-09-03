@@ -103,6 +103,7 @@ async def analyze_document(
             {
                 "page_number": p.page_number,
                 "full_text": p.full_text,
+                "rotation": p.rotation,
                 "text_items": [
                     {"text": ti.text, "x0": ti.x0, "y0": ti.y0, "x1": ti.x1, "y1": ti.y1}
                     for ti in p.text_items

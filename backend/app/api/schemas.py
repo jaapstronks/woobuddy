@@ -75,6 +75,11 @@ class AnalyzePage(BaseModel):
     page_number: int
     full_text: str
     text_items: list[AnalyzeTextItem]
+    # #87 — the page's /Rotate. Item boxes arrive in viewer space (rotation
+    # already applied), so this is what tells the span resolver which axis
+    # the text reads along. Optional: an older client, or an OCR page whose
+    # boxes come off an already-rotated canvas, simply reads left-to-right.
+    rotation: int = 0
 
 
 CustomTermMatchModeLiteral = Literal["exact"]

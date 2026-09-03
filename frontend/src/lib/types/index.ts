@@ -228,10 +228,24 @@ export interface ExtractedTextItem {
 	y1: number;
 }
 
+/**
+ * A page's /Rotate, normalized to the four values pdf.js accepts.
+ *
+ * Text item boxes are in viewer space (rotation already applied), which means
+ * the axis text reads along is not always x. `reading-axis.ts` turns this into
+ * the along/cross extents every geometry helper needs.
+ */
+export type PageRotation = 0 | 90 | 180 | 270;
+
 export interface PageExtraction {
 	pageNumber: number;
 	fullText: string;
 	textItems: ExtractedTextItem[];
+	/**
+	 * Optional because extractions cached in IndexedDB before #87 don't carry
+	 * it; absent is read as 0, which is what the code assumed before.
+	 */
+	rotation?: PageRotation;
 }
 
 export interface ExtractionResult {

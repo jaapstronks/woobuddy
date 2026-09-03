@@ -15,6 +15,7 @@
 
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { ExtractionResult, ExtractedTextItem, PageExtraction } from '$lib/types';
+import { normalizeRotation } from './reading-axis';
 
 /**
  * Typed PDF error so UI code can show a specific Dutch message per failure mode
@@ -226,7 +227,12 @@ export async function extractText(
 		pages.push({
 			pageNumber: pageIdx, // 0-indexed to match PyMuPDF convention
 			fullText,
-			textItems
+			textItems,
+			// `textItems` are in viewer space, so downstream geometry can only
+			// tell which axis the text reads along by knowing what rotation was
+			// baked in. `viewport.rotation` is the value pdf.js actually used,
+			// already normalised into [0, 360).
+			rotation: normalizeRotation(viewport.rotation)
 		});
 		allTextParts.push(fullText);
 		onProgress?.(pageIdx + 1, totalPages);
