@@ -293,6 +293,7 @@
 			{:else if det.tier === '3'}
 				<Tier3Panel
 					detection={det}
+					motivationText={det.motivation_text ?? ''}
 					onRedact={onRedactWithArticle}
 					onKeep={onReject}
 					{onDefer}

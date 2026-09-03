@@ -300,6 +300,14 @@ async function review(id: string, data: UpdateDetectionRequest) {
 	} else if (data.clear_subject_role) {
 		next.subject_role = null;
 	}
+	if (data.motivation_text !== undefined) {
+		// The reviewer's justification for a Tier 3 judgment call. It used
+		// to be sent by `handleSaveMotivation` and dropped on the floor
+		// here, so "Opslaan" only flipped the status and the typed text was
+		// gone on the next render (#66/3). Stays client-side: it is part of
+		// the onderbouwing, never a log line and never a request body.
+		next.motivation_text = data.motivation_text;
+	}
 
 	allDetections = allDetections.map((d) => (d.id === id ? next : d));
 	await persistDetections();

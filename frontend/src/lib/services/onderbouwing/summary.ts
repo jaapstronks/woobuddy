@@ -56,8 +56,20 @@ export interface ReportSummary {
  * Templated Dutch motivation, keyed off the Woo-article. Falls back
  * to a generic phrase when no article is set so the column never
  * reads empty in the printed table.
+ *
+ * A reviewer-typed justification (`motivation_text`, #66/3) is appended
+ * after the templated ground rather than replacing it: the ground is the
+ * legal anchor and must stay visible, the typed text is the case-specific
+ * "why here". That text is the whole reason the field exists — it was
+ * being dropped in the store, so the report never saw it.
  */
 export function motivationFor(detection: Detection): string {
+	const base = articleGroundFor(detection);
+	const typed = detection.motivation_text?.trim();
+	return typed ? `${base} — ${typed}` : base;
+}
+
+function articleGroundFor(detection: Detection): string {
 	if (!detection.woo_article) {
 		return 'Geen Woo-grond gekoppeld — handmatig vastgesteld';
 	}

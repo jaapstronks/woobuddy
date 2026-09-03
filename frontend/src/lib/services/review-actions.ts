@@ -128,8 +128,18 @@ export async function handleSetSubjectRole(id: string, role: SubjectRole): Promi
 	}
 }
 
-export function handleSaveMotivation(id: string, text: string): void {
-	detectionStore.review(id, { review_status: 'edited', motivation_text: text });
+/**
+ * Persist the reviewer's justification for a Tier 3 judgment call.
+ *
+ * Deliberately does not touch `review_status`. It used to set `edited`,
+ * which is not an accepted status — so typing a justification for a
+ * detection the reviewer had just accepted quietly removed it from both
+ * the export and the onderbouwingsrapport. A note about a decision is
+ * not a change of that decision; the Lakken / Niet lakken buttons stay
+ * the single source of truth for status.
+ */
+export function handleSaveMotivation(id: string, text: string): Promise<void> {
+	return detectionStore.review(id, { motivation_text: text });
 }
 
 function buildAcceptBatch(dets: typeof detectionStore.all): Command[] {
