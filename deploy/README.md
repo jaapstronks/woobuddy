@@ -48,7 +48,7 @@ Secrets are read from the project-root `.env`. Values referenced as `op://...` U
 
 The contact form on the landing page is the only conversion path on woobuddy.nl, and it needs mail credentials in the running `api` container. It went to production without them once and returned a 500 on every submission for months, so this is now enforced in three places: `deploy.sh` refuses to run when a required key is unresolved, `install.sh` refuses to deploy when `/opt/woobuddy/.env` lacks one, and after the rollout `install.sh` asks the live API (`/api/health` → `lead_mail`) whether the config actually reached the process.
 
-The credentials belong to the Scaleway IAM application **`woobuddy-leads`** (`982fc6f1-fe35-4222-93f1-4d99da9cdcef`) in the Bureau Bolster organization, with policy `woobuddy-leads-tem` granting `TransactionalEmailFullAccess` scoped to project `4304a571-309f-4113-91a2-13f55f5e8bf2` and nothing else. The sender is `noreply@mail.dreamkit.eu`, a TEM domain that is already `checked`.
+The credentials belong to the Scaleway IAM application **`woobuddy-leads`** (`982fc6f1-fe35-4222-93f1-4d99da9cdcef`) in the Bureau Bolster organization, with policy `woobuddy-leads-tem` granting `TransactionalEmailFullAccess` scoped to project `4304a571-309f-4113-91a2-13f55f5e8bf2` and nothing else. The sender is `hallo@woobuddy.nl` on the TEM sending domain `woobuddy.nl` (see [Sending domain](#sending-domain)).
 
 Rotate the key with:
 
@@ -61,7 +61,25 @@ scw -p bolster iam api-key create \
 
 Put the returned `secret_key` in the project-root `.env` as `SCALEWAY_SECRET_KEY` (or in 1Password, vault Bolster, and reference it as `op://...`), re-run `deploy.sh`, then delete the old key with `scw -p bolster iam api-key delete <old-access-key>`.
 
-To move the sender to `noreply@woobuddy.nl` later: `scw -p bolster tem domain create domain-name=woobuddy.nl`, add the SPF/DKIM/MX records it returns at TransIP, wait for `scw -p bolster tem domain check`, then flip `TEM_FROM_EMAIL`.
+### Sending domain
+
+`woobuddy.nl` is a verified Scaleway TEM sending domain (id
+`546b876b-e199-4fb5-a08e-7bb091e6b874`, project `4304a571-309f-4113-91a2-13f55f5e8bf2`).
+Two DNS records at TransIP carry it:
+
+- **DKIM** — `TXT 4304a571-309f-4113-91a2-13f55f5e8bf2._domainkey` with the key from
+  `scw -p bolster tem domain get <id>`.
+- **SPF** — the apex `TXT` gained `include:_spf.tem.scaleway.com` alongside the
+  existing Brevo and ImprovMX includes.
+
+Scaleway's dashboard also proposes an MX record pointing at
+`blackhole.tem.scaleway.com`. **Do not add it.** `woobuddy.nl` receives mail through
+ImprovMX forwarding, which is what makes `hallo@woobuddy.nl` a replyable address; the
+existing MX already satisfies Scaleway's check. A blackhole MX would silently discard
+every reply.
+
+Re-check the domain after a DNS change with `scw -p bolster tem domain check <id>` and
+confirm delivery with `scw -p bolster tem email list` after one real submission.
 
 If `.env` contains only literal values you can run the scripts directly without `op run`. As soon as any value is an `op://` URI, prefix the command with `op run --env-file=.env --`.
 
