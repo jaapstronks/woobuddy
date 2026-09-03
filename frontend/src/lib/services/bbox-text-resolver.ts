@@ -233,6 +233,39 @@ export function findTextForBboxes(
 }
 
 /**
+ * Rebuild the text the *server* saw, so `start_char`/`end_char` on a
+ * detection can be sliced back into a term.
+ *
+ * `extraction.fullText` is not usable for this: the extractor trims the
+ * combined string (to detect a scanned PDF), which shifts every offset
+ * when page 1 starts with whitespace. The server joins the untrimmed
+ * page texts with "\n\n" (`extraction_from_client_data` in
+ * `pdf_engine.py`), so mirror exactly that.
+ */
+function serverJoinedText(extraction: ExtractionResult): string {
+	return extraction.pages.map((p) => p.fullText).join('\n\n');
+}
+
+/**
+ * Recover the term for a detection that could not be placed, from its
+ * character offsets in the server-joined text. Returns null for
+ * reviewer-authored rows (`manual`, `search_redact`), which carry no
+ * offsets, and for offsets that fall outside the local text — a
+ * mismatch between what the server analyzed and what this browser
+ * extracted, where any slice would be a guess.
+ */
+function textFromOffsets(
+	det: { start_char?: number | null; end_char?: number | null },
+	joined: string
+): string | null {
+	const { start_char: start, end_char: end } = det;
+	if (typeof start !== 'number' || typeof end !== 'number') return null;
+	if (start < 0 || end <= start || end > joined.length) return null;
+	const slice = joined.slice(start, end).trim();
+	return slice.length > 0 ? slice : null;
+}
+
+/**
  * Resolve entity_text for all detections that are missing it.
  *
  * Returns new detection objects with entity_text populated from local
@@ -243,8 +276,15 @@ export function findTextForBboxes(
  * recoverable text is never actionable (the reviewer has nothing to
  * confirm, reject, or see highlighted), so dropping is always the
  * right call. Detections with a reviewer-authored entity_text are
- * preserved verbatim — those are manual/search_redact rows that never
- * go through this resolution path at all.
+ * preserved verbatim, as are all rows whose `source` marks them
+ * reviewer-authored — a manual area selection carries no text at all and
+ * must survive a refresh regardless.
+ *
+ * #78 — dropping is right, dropping *silently* is not: the reviewer
+ * ends up with a document where the tool found a name it never showed
+ * them. Every dropped row is therefore reported in `unplaced`, with
+ * the term recovered from `start_char`/`end_char` where possible, so
+ * the review screen can name it and point at search-and-redact.
  */
 // Characters peeled off the tail of URL-like resolved texts. pdf.js
 // reports a whole line as one text item and our proportional bbox
@@ -254,24 +294,93 @@ export function findTextForBboxes(
 // `_tier1.py`.
 const URL_TRAILING_PUNCT = /[.,;:!?)\]}>]+$/;
 
-export function resolveEntityTexts<T extends { entity_text?: string; bounding_boxes: BoundingBox[]; entity_type?: string }>(
+export interface UnplacedDetection {
+	id: string | null;
+	entity_type: string | null;
+	tier: string | null;
+	/**
+	 * 0-indexed page (PyMuPDF convention), when the row carries a bbox at
+	 * all. Null for the no-bbox case, where there is nothing to point at.
+	 */
+	page: number | null;
+	/**
+	 * The detected term, recovered from the character offsets against the
+	 * locally extracted text. Null when the row carries no offsets or the
+	 * offsets do not fit the local text — the reviewer then only learns
+	 * that *something* went unplaced, which still beats silence.
+	 */
+	text: string | null;
+	reason: 'no_bbox' | 'no_text_match';
+}
+
+export interface ResolvedDetections<T> {
+	detections: T[];
+	unplaced: UnplacedDetection[];
+}
+
+type Resolvable = {
+	id?: string;
+	entity_text?: string;
+	bounding_boxes: BoundingBox[];
+	entity_type?: string;
+	tier?: string;
+	source?: string;
+	start_char?: number | null;
+	end_char?: number | null;
+};
+
+export function resolveEntityTexts<T extends Resolvable>(
 	detections: T[],
 	extraction: ExtractionResult
-): T[] {
+): ResolvedDetections<T> {
 	const out: T[] = [];
+	const unplaced: UnplacedDetection[] = [];
+	// Only built when something actually goes unplaced — the join is a
+	// full-document string copy and the happy path never needs it.
+	let joined: string | null = null;
+	const report = (det: T, reason: UnplacedDetection['reason']) => {
+		joined ??= serverJoinedText(extraction);
+		unplaced.push({
+			id: det.id ?? null,
+			entity_type: det.entity_type ?? null,
+			tier: det.tier ?? null,
+			page: det.bounding_boxes?.[0]?.page ?? null,
+			text: textFromOffsets(det, joined),
+			reason
+		});
+	};
+
 	for (const det of detections) {
 		if (det.entity_text && det.entity_text !== '[redacted]') {
 			out.push(det);
 			continue;
 		}
+		// Reviewer-authored rows are decisions, not detections: the box is
+		// where the reviewer put it and needs no resolving. They usually
+		// carry their own `entity_text` and exit above, but an *area*
+		// selection (Shift+drag over a signature or stamp) is created with
+		// an empty one, and `persistDetections` strips the field before
+		// writing to IndexedDB — so after a refresh such a row arrives here
+		// with no text and no overlapping text items, and dropping it would
+		// throw away a redaction the reviewer made by hand.
+		if (det.source === 'manual' || det.source === 'search_redact') {
+			out.push(det);
+			continue;
+		}
 		const bboxes = det.bounding_boxes ?? [];
-		if (bboxes.length === 0) continue;
+		if (bboxes.length === 0) {
+			report(det, 'no_bbox');
+			continue;
+		}
 		let text = findTextForBboxes(bboxes, extraction);
-		if (!text) continue;
+		if (!text) {
+			report(det, 'no_text_match');
+			continue;
+		}
 		if (det.entity_type === 'url' || /^https?:\/\//i.test(text)) {
 			text = text.replace(URL_TRAILING_PUNCT, '');
 		}
 		out.push({ ...det, entity_text: text });
 	}
-	return out;
+	return { detections: out, unplaced };
 }
