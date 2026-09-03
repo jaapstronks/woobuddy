@@ -425,3 +425,139 @@ class TestResolveOccurrenceBboxes:
 
         assert resolve_occurrence_bboxes([page], full_text, "Zonnepark Noord", 0) != []
         assert resolve_occurrence_bboxes([page], full_text, "Zonnepark Noord", second_at) == []
+
+
+# ---------------------------------------------------------------------------
+# #87 — reading direction on rotated pages
+#
+# Span boxes are in viewer space: /Rotate applied, top-left origin. On a
+# /Rotate 90 page a line of text runs *down* the screen, so narrowing a span
+# to a matched substring has to cut along y and the same-line merge has to
+# compare x. Both were hard-coded to x/y, which turned a narrowed box into a
+# band straight across the line — over-redaction rather than a leak, but it
+# blacked out the whole sentence around the name.
+#
+# The mapping below is pdf.js's own, verified against real viewports over a
+# four-rotation PyMuPDF fixture. The client mirrors it in
+# `testing/viewer-rotation.ts`.
+# ---------------------------------------------------------------------------
+
+PAGE_W = 595.0
+PAGE_H = 842.0
+ROTATIONS = (0, 90, 180, 270)
+
+
+def _rotate_point(rotation: int, x: float, y: float) -> tuple[float, float]:
+    if rotation == 90:
+        return PAGE_H - y, x
+    if rotation == 180:
+        return PAGE_W - x, PAGE_H - y
+    if rotation == 270:
+        return y, PAGE_W - x
+    return x, y
+
+
+def _rotate_span(span: TextSpan, rotation: int) -> TextSpan:
+    """The same text on the same page, once the page carries /Rotate."""
+    ax, ay = _rotate_point(rotation, span.x0, span.y0)
+    bx, by = _rotate_point(rotation, span.x1, span.y1)
+    return TextSpan(
+        text=span.text,
+        page=span.page,
+        x0=min(ax, bx),
+        y0=min(ay, by),
+        x1=max(ax, bx),
+        y1=max(ay, by),
+        block_no=span.block_no,
+        line_no=span.line_no,
+        rotation=rotation,
+    )
+
+
+def _rotate_bbox(bbox: dict, rotation: int) -> dict:
+    ax, ay = _rotate_point(rotation, bbox["x0"], bbox["y0"])
+    bx, by = _rotate_point(rotation, bbox["x1"], bbox["y1"])
+    return {
+        "page": bbox["page"],
+        "x0": min(ax, bx),
+        "y0": min(ay, by),
+        "x1": max(ax, bx),
+        "y1": max(ay, by),
+    }
+
+
+def _assert_same_bbox(actual: dict, expected: dict) -> None:
+    assert actual["page"] == expected["page"]
+    for key in ("x0", "y0", "x1", "y1"):
+        assert abs(actual[key] - expected[key]) < 1e-6, (key, actual, expected)
+
+
+class TestRotatedPages:
+    def test_narrowing_follows_the_reading_direction(self):
+        """Rotating the page rotates the narrowed box, and changes nothing
+        else. On the pre-#87 code the 90/270 cases came back as a band across
+        the line and the 180 case was narrowed from the wrong end."""
+        sentence = "De heer Van der Berg heeft op 20 februari 2024 gesproken."
+        flat = TextSpan(text=sentence, page=0, x0=70.0, y0=265.0, x1=524.0, y1=279.0)
+        expected = find_span_for_text([_page([flat])], "Van der Berg")[0]
+
+        for rotation in ROTATIONS:
+            page = _page([_rotate_span(flat, rotation)])
+            results = find_span_for_text([page], "Van der Berg")
+            assert len(results) == 1, rotation
+            _assert_same_bbox(results[0], _rotate_bbox(expected, rotation))
+
+    def test_narrowed_box_stays_a_fraction_of_the_line(self):
+        """The reviewer-visible claim behind the geometry: at every rotation
+        the bar covers the name, not the sentence it sits in."""
+        sentence = "De heer Van der Berg heeft op 20 februari 2024 gesproken."
+        flat = TextSpan(text=sentence, page=0, x0=70.0, y0=265.0, x1=524.0, y1=279.0)
+
+        for rotation in ROTATIONS:
+            span = _rotate_span(flat, rotation)
+            bbox = find_span_for_text([_page([span])], "Van der Berg")[0]
+            span_area = (span.x1 - span.x0) * (span.y1 - span.y0)
+            bar_area = (bbox["x1"] - bbox["x0"]) * (bbox["y1"] - bbox["y0"])
+            assert bar_area < span_area * 0.4, (rotation, bar_area, span_area)
+
+    def test_same_line_merge_survives_rotation(self):
+        """A name split over three spans has to merge into one box at every
+        rotation. The merge's same-line guard compared y0, which on a
+        /Rotate 90 page asks whether two items start at the same point along
+        their own lines — true for the first word of every line."""
+        flat = [
+            TextSpan(text="Jan", page=0, x0=10, y0=10, x1=30, y1=20),
+            TextSpan(text="de", page=0, x0=32, y0=10, x1=42, y1=20),
+            TextSpan(text="Vries", page=0, x0=44, y0=10, x1=80, y1=20),
+        ]
+        expected = find_span_for_text([_page(flat)], "Jan de Vries")[0]
+
+        for rotation in ROTATIONS:
+            page = _page([_rotate_span(s, rotation) for s in flat])
+            results = find_span_for_text([page], "Jan de Vries")
+            assert len(results) == 1, rotation
+            _assert_same_bbox(results[0], _rotate_bbox(expected, rotation))
+
+    def test_merge_never_crosses_a_line_break_when_rotated(self):
+        """The counterpart: two lines must stay two lines. Comparing the
+        wrong axis made the guard pass for spans on different lines, which
+        is how a bbox could span the gap between them."""
+        flat = [
+            TextSpan(text="de", page=0, x0=10, y0=10, x1=20, y1=20),
+            TextSpan(text="Amsterdamse", page=0, x0=10, y0=40, x1=80, y1=50),
+            TextSpan(text="Hogeschool", page=0, x0=82, y0=40, x1=150, y1=50),
+        ]
+        for rotation in ROTATIONS:
+            page = _page([_rotate_span(s, rotation) for s in flat])
+            assert find_span_for_text([page], "de Amsterdamse Hogeschool") == [], rotation
+
+    def test_unrotated_spans_keep_their_default(self):
+        """Every existing construction site omits `rotation`, and a client
+        that predates #87 sends no rotation either. Both must behave exactly
+        as before."""
+        span = TextSpan(text="Jan de Vries", page=0, x0=10, y0=10, x1=100, y1=20)
+        assert span.rotation == 0
+        results = find_span_for_text([_page([span])], "de Vries")
+        assert len(results) == 1
+        assert results[0]["y0"] == 10 and results[0]["y1"] == 20
+        assert results[0]["x0"] > 10 and results[0]["x1"] == 100

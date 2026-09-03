@@ -47,6 +47,9 @@ function fakeViewport(rotation: number) {
 		// fake has to carry a truthful height for the regression to be visible.
 		width: swaps ? PAGE_H : PAGE_W,
 		height: swaps ? PAGE_W : PAGE_H,
+		// pdf.js exposes the rotation it actually used; #87 records it on the
+		// page so downstream geometry knows which axis the text reads along.
+		rotation,
 		convertToViewportPoint(x: number, y: number) {
 			return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
 		}
@@ -140,4 +143,15 @@ describe('extractText reading order', () => {
 			expect(result.pages[0].fullText).toBe('NL91ABNA volgende');
 		});
 	}
+});
+
+// #87 — the boxes above are in viewer space, which is only enough to *draw*.
+// Anything that reasons about reading order (narrowing a box to a term,
+// deciding two items share a line) needs to know what rotation was baked in,
+// so the extractor records it on the page.
+describe('extractText page rotation', () => {
+	it.each([0, 90, 180, 270])('records /Rotate %i on the page', async (rotation) => {
+		const result = await extractText(fakeDoc(rotation, [WORD]));
+		expect(result.pages[0].rotation).toBe(rotation);
+	});
 });

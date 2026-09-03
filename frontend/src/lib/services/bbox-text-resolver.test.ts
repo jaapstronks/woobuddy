@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { findTextForBboxes, resolveEntityTexts } from './bbox-text-resolver';
-import type { BoundingBox, ExtractionResult } from '$lib/types';
+import type { BoundingBox, ExtractionResult, PageRotation } from '$lib/types';
+import { ROTATIONS, rotateBox } from './testing/viewer-rotation';
 
 /**
  * Build an ExtractionResult where each page is a list of text items
@@ -401,5 +402,107 @@ describe('resolveEntityTexts — unplaced reporting', () => {
 		expect(resolved.map((d) => d.id)).toEqual(['ok']);
 		expect(dropped).toEqual([droppedRow]);
 		expect(unplaced.map((u) => u.id)).toEqual(dropped.map((d) => d.id));
+	});
+});
+
+// ---------------------------------------------------------------------------
+// #87 — rotation invariance.
+//
+// Since #84 text items arrive in viewer space, where a /Rotate 90 line runs
+// down the screen. The slicing and the sameLine/touching join were both still
+// hard-coded to x, so on a rotated page the slice degenerated to "the whole
+// item" and the join re-inserted the spaces it exists to suppress.
+//
+// The property below is the one that matters: rotating the page must not
+// change which characters a bbox resolves to. Every case here fails on the
+// pre-#87 code at 90/180/270 and passes unchanged at 0.
+// ---------------------------------------------------------------------------
+
+/** Rotate every text item and bbox of a single-page extraction. */
+function rotateExtraction(
+	ext: ExtractionResult,
+	rotation: PageRotation
+): ExtractionResult {
+	return {
+		...ext,
+		pages: ext.pages.map((p) => ({
+			...p,
+			rotation,
+			textItems: p.textItems.map((it) => rotateBox(it, rotation))
+		}))
+	};
+}
+
+describe('findTextForBboxes on rotated pages', () => {
+	it.each(ROTATIONS)('slices a line-wide item at /Rotate %i', (rotation) => {
+		// The "W. de Groot" case from above, rotated. At 90/270 the pre-#87
+		// code returned the whole line; at 180 it sliced from the wrong end
+		// and produced "de familie El".
+		const line =
+			'de familie El Khatib (huisnummer 22). Ook de heer W. de Groot, bewoner van nummer 26, heeft';
+		const itemWidth = 42518;
+		const nameX0 = 22731;
+		const nameX1 = 28122;
+		const ext = rotateExtraction(
+			makeExtraction([[{ text: line, x0: 0, x1: itemWidth }]]),
+			rotation
+		);
+		const bbox = rotateBox(box(0, nameX0, nameX1), rotation);
+		expect(findTextForBboxes([bbox], ext)).toBe('W. de Groot');
+	});
+
+	it.each(ROTATIONS)('joins touching single-glyph items at /Rotate %i', (rotation) => {
+		// The monospace case. The touching test compared x-gaps, which on a
+		// /Rotate 90 page are all zero *between lines* and meaningless within
+		// one — "W i l l e m i j n" came back to the sidebar.
+		const chars = 'Willemijn'.split('');
+		const charWidth = 7.22;
+		const items = chars.map((c, i) => ({
+			text: c,
+			x0: 10 + i * charWidth,
+			x1: 10 + (i + 1) * charWidth
+		}));
+		const ext = rotateExtraction(makeExtraction([items]), rotation);
+		const bbox = rotateBox(box(0, 10, 10 + chars.length * charWidth), rotation);
+		expect(findTextForBboxes([bbox], ext)).toBe('Willemijn');
+	});
+
+	it.each(ROTATIONS)('keeps a visual word gap at /Rotate %i', (rotation) => {
+		const charWidth = 7.22;
+		const items = [
+			{ text: 'W', x0: 10, x1: 10 + charWidth },
+			{ text: 'i', x0: 10 + charWidth, x1: 10 + charWidth * 2 },
+			{ text: 'l', x0: 10 + charWidth * 2, x1: 10 + charWidth * 3 },
+			{ text: 'X', x0: 10 + charWidth * 3 + 10, x1: 10 + charWidth * 4 + 10 },
+			{ text: 'Y', x0: 10 + charWidth * 4 + 10, x1: 10 + charWidth * 5 + 10 }
+		];
+		const ext = rotateExtraction(makeExtraction([items]), rotation);
+		const bbox = rotateBox(box(0, 10, 10 + charWidth * 5 + 10), rotation);
+		expect(findTextForBboxes([bbox], ext)).toBe('Wil XY');
+	});
+
+	it.each(ROTATIONS)('never crosses lines at /Rotate %i', (rotation) => {
+		// Two lines 100pt apart. On a rotated page "which line is this" is a
+		// question about x, so the cross-axis test is what keeps the second
+		// line out of the answer.
+		const base = makeExtraction([
+			[
+				{ text: 'first line with a target name', x0: 10, x1: 160 },
+				{ text: 'second line with other text', x0: 10, x1: 160 }
+			]
+		]);
+		base.pages[0].textItems[1].y0 = 200;
+		base.pages[0].textItems[1].y1 = 210;
+		const ext = rotateExtraction(base, rotation);
+		const bbox = rotateBox({ page: 0, x0: 10, y0: 100, x1: 160, y1: 110 }, rotation);
+		expect(findTextForBboxes([bbox], ext)).toBe('first line with a target name');
+	});
+
+	it('treats a page with no rotation field as /Rotate 0', () => {
+		// Extractions cached in IndexedDB before #87 carry no rotation. They
+		// have to keep resolving exactly as they did.
+		const ext = makeExtraction([[{ text: 'Mw. De Vries', x0: 10, x1: 82 }]]);
+		expect(ext.pages[0].rotation).toBeUndefined();
+		expect(findTextForBboxes([box(0, 8, 84)], ext)).toBe('Mw. De Vries');
 	});
 });

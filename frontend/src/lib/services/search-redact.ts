@@ -31,6 +31,7 @@ import type {
 	ReviewStatus
 } from '$lib/types';
 import { charIndexAtOffset, measureText } from './glyph-metrics';
+import { readingAxis, type ReadingAxis } from './reading-axis';
 
 export interface SearchOccurrence {
 	/** Stable id derived from page + offset — safe as a list key and as a Set entry. */
@@ -71,6 +72,8 @@ interface PageIndex {
 	text: string; // original case, space-joined
 	lower: string; // lowercased version for matching
 	segments: { item: ExtractedTextItem; start: number; end: number }[];
+	/** Which viewer axis this page's text reads along (#87). */
+	axis: ReadingAxis;
 }
 
 function indexPage(page: ExtractionResult['pages'][number]): PageIndex {
@@ -87,7 +90,8 @@ function indexPage(page: ExtractionResult['pages'][number]): PageIndex {
 		pageNumber: page.pageNumber,
 		text,
 		lower: text.toLowerCase(),
-		segments
+		segments,
+		axis: readingAxis(page.rotation)
 	};
 }
 
@@ -106,8 +110,13 @@ function indexPage(page: ExtractionResult['pages'][number]): PageIndex {
  * from the start of the match to the end of its item, the second from the
  * start of its item to the end of the match. That falls out of clamping the
  * match range to the segment rather than being a separate case.
+ *
+ * #87 — the cut runs along the page's reading direction, which is only x at
+ * /Rotate 0. Cutting along x on a /Rotate 90 page turned the box into a band
+ * across the line, blacking out the whole sentence around the hit.
  */
 function segmentToBox(
+	axis: ReadingAxis,
 	segment: PageIndex['segments'][number],
 	page: number,
 	matchStart: number,
@@ -123,41 +132,58 @@ function segmentToBox(
 	if (startInItem <= 0 && endInItem >= item.text.length) return fullBox;
 	if (endInItem <= startInItem) return fullBox;
 
-	const ruler = measureText(item.text, item.x1 - item.x0);
+	const span = axis.along(item);
+	const ruler = measureText(item.text, span.end - span.start);
 	if (!ruler) return fullBox;
 
 	const startIdx = charIndexAtOffset(ruler, startInItem);
 	const endIdx = charIndexAtOffset(ruler, endInItem);
 	if (endIdx <= startIdx) return fullBox;
 
-	return {
-		page,
-		x0: item.x0 + ruler.cumulative[startIdx],
-		y0: item.y0,
-		x1: item.x0 + ruler.cumulative[endIdx],
-		y1: item.y1
-	};
+	return axis.withAlong(
+		fullBox,
+		span.start + ruler.cumulative[startIdx],
+		span.start + ruler.cumulative[endIdx]
+	);
 }
 
 /**
  * Merge bboxes that sit on the same visual line into one continuous bar.
- * Matches the rule used for manual text selection: compare y0/y1 within a
- * 2-point tolerance and union the horizontal span. Unlike
- * `mergeHorizontallyAdjacent` in selection-bbox.ts, we don't require
- * touching/adjacent boxes because a search hit can span words separated by
- * a space (distinct pdf.js items with a small horizontal gap).
+ * Matches the rule used for manual text selection: compare the two edges
+ * across the reading direction within a 2-point tolerance and union the span
+ * along it. Unlike `mergeHorizontallyAdjacent` in selection-bbox.ts, we don't
+ * require touching/adjacent boxes because a search hit can span words
+ * separated by a space (distinct pdf.js items with a small gap).
+ *
+ * #87 — on a /Rotate 90 page a line runs down the screen, so the old y-based
+ * "same line" test compared boxes stacked in a column: two halves of one hit
+ * came back as separate bars, and two words that happened to share a y were
+ * merged into a bar spanning the space between two different lines.
  */
-function mergeLineBboxes(bboxes: BoundingBox[]): BoundingBox[] {
+function mergeLineBboxes(axis: ReadingAxis, bboxes: BoundingBox[]): BoundingBox[] {
 	if (bboxes.length <= 1) return bboxes.map((b) => ({ ...b }));
-	const sorted = [...bboxes].sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0);
+	const sorted = [...bboxes].sort(
+		(a, b) => axis.cross(a).start - axis.cross(b).start || axis.along(a).start - axis.along(b).start
+	);
 	const merged: BoundingBox[] = [];
 	for (const b of sorted) {
 		const last = merged[merged.length - 1];
-		if (last && Math.abs(last.y0 - b.y0) < 2 && Math.abs(last.y1 - b.y1) < 2) {
-			last.x0 = Math.min(last.x0, b.x0);
-			last.x1 = Math.max(last.x1, b.x1);
-			last.y0 = Math.min(last.y0, b.y0);
-			last.y1 = Math.max(last.y1, b.y1);
+		const lastCross = last ? axis.cross(last) : null;
+		const cross = axis.cross(b);
+		if (
+			last &&
+			lastCross &&
+			Math.abs(lastCross.start - cross.start) < 2 &&
+			Math.abs(lastCross.end - cross.end) < 2
+		) {
+			const union = {
+				...last,
+				x0: Math.min(last.x0, b.x0),
+				x1: Math.max(last.x1, b.x1),
+				y0: Math.min(last.y0, b.y0),
+				y1: Math.max(last.y1, b.y1)
+			};
+			merged[merged.length - 1] = union;
 		} else {
 			merged.push({ ...b });
 		}
@@ -241,8 +267,10 @@ export function searchDocument(
 				continue;
 			}
 
-			const itemBboxes = hits.map((h) => segmentToBox(h, pageIndex.pageNumber, found, matchEnd));
-			const bboxes = mergeLineBboxes(itemBboxes);
+			const itemBboxes = hits.map((h) =>
+				segmentToBox(pageIndex.axis, h, pageIndex.pageNumber, found, matchEnd)
+			);
+			const bboxes = mergeLineBboxes(pageIndex.axis, itemBboxes);
 
 			// Every line has to be covered, not just one. A name broken over
 			// a line end is exactly the case the "kon niet geplaatst worden"

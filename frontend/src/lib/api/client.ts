@@ -180,6 +180,10 @@ export async function analyzeDocument(
 			pages: pages.map((p) => ({
 				page_number: p.pageNumber,
 				full_text: p.fullText,
+				// #87 — the boxes below are in viewer space, so the server
+				// needs the rotation to know which axis they read along
+				// before it narrows any of them to a detected term.
+				rotation: p.rotation ?? 0,
 				text_items: p.textItems.map((ti) => ({
 					text: ti.text,
 					x0: ti.x0,

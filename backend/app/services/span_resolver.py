@@ -8,14 +8,83 @@ functions have no dependency on PyMuPDF and are independently testable.
 
 import re
 from collections.abc import Iterator
+from dataclasses import dataclass
+from typing import Protocol
 
 from app.services.pdf_engine import PageText, TextSpan
 from app.services.pipeline_types import Bbox
 
-# y0 tolerance for considering two text items to be on the same visual
-# line. 3 PDF points is ~1 line-height of baseline jitter — wider than
-# that and we're looking at the next line.
+# Tolerance, across the reading direction, for considering two text items
+# to be on the same visual line. 3 PDF points is ~1 line-height of
+# baseline jitter — wider than that and we're looking at the next line.
 _SAME_LINE_TOL = 3.0
+
+
+@dataclass(frozen=True)
+class _ReadingAxis:
+    """Which viewer-space axis a page's text reads along.
+
+    Every bbox in WOO Buddy is in viewer space: /Rotate applied, top-left
+    origin. That is the right space to draw in, but the wrong one to
+    reason about text in — at /Rotate 90 a line runs down the screen, so
+    narrowing a span to a substring has to cut along y and the same-line
+    test has to compare x.
+
+    Before #87 both were hard-coded to x, which on a /Rotate 90 page
+    turned a narrowed box into a band straight across the line. Safe
+    (over-redaction, not a leak) but wrong: the rest of the sentence went
+    black with it.
+
+    /Rotate is always a multiple of 90, so there are four cases. ``sign``
+    is -1 where reading order runs *against* the axis (180 and 270);
+    ``along`` then returns negated coordinates so it always increases in
+    reading order. Those negatives never escape this class —
+    ``with_along`` maps them back.
+
+    The mirror of this is ``reading-axis.ts`` on the client.
+    """
+
+    axis: str  # "x" or "y"
+    sign: int  # +1 or -1
+
+    def along(self, r: "_RectLike") -> tuple[float, float]:
+        lo, hi = (r.x0, r.x1) if self.axis == "x" else (r.y0, r.y1)
+        return (lo, hi) if self.sign == 1 else (-hi, -lo)
+
+    def cross(self, r: "_RectLike") -> tuple[float, float]:
+        return (r.y0, r.y1) if self.axis == "x" else (r.x0, r.x1)
+
+    def with_along(self, page: int, r: "_RectLike", start: float, end: float) -> Bbox:
+        lo, hi = (start, end) if self.sign == 1 else (-end, -start)
+        if self.axis == "x":
+            return Bbox(page=page, x0=lo, y0=r.y0, x1=hi, y1=r.y1)
+        return Bbox(page=page, x0=r.x0, y0=lo, x1=r.x1, y1=hi)
+
+
+class _RectLike(Protocol):
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+
+_AXES: dict[int, _ReadingAxis] = {
+    0: _ReadingAxis("x", 1),
+    90: _ReadingAxis("y", 1),
+    180: _ReadingAxis("x", -1),
+    270: _ReadingAxis("y", -1),
+}
+
+
+def _reading_axis(rotation: int) -> _ReadingAxis:
+    """The reading axis for a page rotation.
+
+    Anything that is not one of the four supported rotations falls back to
+    0 — the behaviour this helper replaces, so a page it cannot classify is
+    no worse off than before.
+    """
+    return _AXES.get(rotation % 360, _AXES[0])
+
 
 # Approximate character advance widths for proportional Latin fonts,
 # expressed in 1/1000 em as per the PostScript Adobe Font Metrics (AFM)
@@ -234,6 +303,10 @@ def _narrow_bbox_to_substring(span: "TextSpan", match_idx: int, match_len: int) 
     and stays well within a few points of truth for other Latin fonts.
     When the substring covers the entire span we return the span's own
     bbox verbatim so we don't accumulate rounding error on exact matches.
+
+    The cut runs along the page's reading direction, which is only x at
+    /Rotate 0 (#87). On a rotated page, cutting along x produced a band
+    across the line instead of a box around the term.
     """
     total_chars = len(span.text)
     # Degenerate case — no characters to scale against. Return the span's
@@ -245,14 +318,19 @@ def _narrow_bbox_to_substring(span: "TextSpan", match_idx: int, match_len: int) 
     if match_idx == 0 and match_len == total_chars:
         return Bbox(page=span.page, x0=span.x0, y0=span.y0, x1=span.x1, y1=span.y1)
 
+    axis = _reading_axis(span.rotation)
+    start, end = axis.along(span)
     widths = [_glyph_width(c) for c in span.text]
     total_w = sum(widths) or 1
     pre_w = sum(widths[:match_idx])
     match_w = sum(widths[match_idx : match_idx + match_len])
-    span_w = span.x1 - span.x0
-    x0 = span.x0 + span_w * pre_w / total_w
-    x1 = span.x0 + span_w * (pre_w + match_w) / total_w
-    return Bbox(page=span.page, x0=x0, y0=span.y0, x1=x1, y1=span.y1)
+    span_len = end - start
+    return axis.with_along(
+        span.page,
+        span,
+        start + span_len * pre_w / total_w,
+        start + span_len * (pre_w + match_w) / total_w,
+    )
 
 
 def _try_merge_match_from_anchor(
@@ -300,6 +378,12 @@ def _try_merge_match_from_anchor(
     merged_parts: list[str] = [start.text]
     x0, y0, x1, y1 = start.x0, start.y0, start.x1, start.y1
     stripped = _strip_ws(start.text.lower())
+    # #87 — "same line" is a comparison across the reading direction, which
+    # is y only at /Rotate 0. On a /Rotate 90 page comparing y0 asks whether
+    # two items start at the same point *along* their lines, so a merge
+    # walked straight across the column and joined unrelated lines.
+    axis = _reading_axis(start.rotation)
+    start_cross = axis.cross(start)[0]
 
     # Safety cap on item count so a pathological PDF can't drag us through
     # an entire page from a single false-positive anchor. The length-based
@@ -309,7 +393,7 @@ def _try_merge_match_from_anchor(
     j = i + 1
     while j < len(spans) and (j - i) <= max_items:
         nxt = spans[j]
-        if abs(nxt.y0 - start.y0) > _SAME_LINE_TOL:
+        if abs(axis.cross(nxt)[0] - start_cross) > _SAME_LINE_TOL:
             return None
         merged_parts.append(nxt.text)
         x0 = min(x0, nxt.x0)

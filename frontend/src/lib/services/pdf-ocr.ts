@@ -168,6 +168,11 @@ export async function runOcr(
 				pageNumber: pageIdx, // 0-indexed to match PyMuPDF convention
 				fullText: pageFullText,
 				textItems
+				// No `rotation` on purpose. The canvas above was rendered
+				// through a viewport that already applied /Rotate, so the
+				// image tesseract read is visually upright and its word boxes
+				// run left-to-right whatever the page rotation says. The
+				// default of 0 is the truth here, not a fallback.
 			});
 			fullTextParts.push(pageFullText);
 

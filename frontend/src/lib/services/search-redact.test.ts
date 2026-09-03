@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { searchDocument } from './search-redact';
-import type { BoundingBox, ExtractionResult } from '$lib/types';
+import type { BoundingBox, ExtractionResult, PageRotation } from '$lib/types';
+import { ROTATIONS, rotateBox } from './testing/viewer-rotation';
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -361,5 +362,106 @@ describe('searchDocument', () => {
 		const extraction = makeExtraction([[{ text: 'aaaa', x: 0 }]]);
 		const occs = searchDocument('aa', extraction, []);
 		expect(occs).toHaveLength(2);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// #87 — rotation invariance.
+//
+// `segmentToBox` cut a line-wide item down to the match along x, and
+// `mergeLineBboxes` decided "same line" from y. Both are only the reading
+// direction at /Rotate 0. On a /Rotate 90 page the cut ran across the line
+// instead of along it, so a search hit blacked out the whole sentence around
+// the term — over-redaction, not a leak, but it is exactly the thing
+// search-and-redact exists to avoid.
+//
+// The property asserted here: rotating the page must rotate the boxes, and
+// nothing else.
+// ---------------------------------------------------------------------------
+
+function rotateExtraction(ext: ExtractionResult, rotation: PageRotation): ExtractionResult {
+	return {
+		...ext,
+		pages: ext.pages.map((p) => ({
+			...p,
+			rotation,
+			textItems: p.textItems.map((it) => rotateBox(it, rotation))
+		}))
+	};
+}
+
+function expectSameBox(actual: BoundingBox, expected: BoundingBox) {
+	expect(actual.page).toBe(expected.page);
+	expect(actual.x0).toBeCloseTo(expected.x0, 5);
+	expect(actual.y0).toBeCloseTo(expected.y0, 5);
+	expect(actual.x1).toBeCloseTo(expected.x1, 5);
+	expect(actual.y1).toBeCloseTo(expected.y1, 5);
+}
+
+describe('searchDocument on rotated pages', () => {
+	const LINE = 'Uw verzoek is behandeld door onze medewerker Pieter de Vries.';
+
+	it.each(ROTATIONS)('narrows to the term, not the sentence, at /Rotate %i', (rotation) => {
+		const flat = makeExtraction([[{ text: LINE, x: 40 }]]);
+		const rotated = rotateExtraction(flat, rotation);
+
+		const expected = searchDocument('Pieter de Vries', flat, [])[0];
+		const actual = searchDocument('Pieter de Vries', rotated, [])[0];
+
+		expect(actual.matchText).toBe(expected.matchText);
+		expect(actual.bboxes).toHaveLength(1);
+		expectSameBox(actual.bboxes[0], rotateBox(expected.bboxes[0], rotation));
+
+		// The claim in reviewer terms, restated so it survives a rewrite of
+		// the helper above: the bar covers well under half the line.
+		const item = rotated.pages[0].textItems[0];
+		const itemArea = (item.x1 - item.x0) * (item.y1 - item.y0);
+		const bar = actual.bboxes[0];
+		const barArea = (bar.x1 - bar.x0) * (bar.y1 - bar.y0);
+		expect(barArea).toBeLessThan(itemArea * 0.4);
+	});
+
+	it.each(ROTATIONS)('narrows both halves of a wrapped match at /Rotate %i', (rotation) => {
+		const first = 'Uw verzoek is behandeld door medewerker Pieter';
+		const second = 'de Vries, bereikbaar op p.devries@voorbeeld.nl';
+		const flat = makeLines([[{ text: first, x: 0 }], [{ text: second, x: 0 }]]);
+		const rotated = rotateExtraction(flat, rotation);
+
+		const expected = searchDocument('Pieter de Vries', flat, [])[0];
+		const actual = searchDocument('Pieter de Vries', rotated, [])[0];
+
+		// Two lines stay two bars: `mergeLineBboxes` must not fuse them just
+		// because they now share a coordinate on the axis it used to test.
+		expect(actual.bboxes).toHaveLength(2);
+		const expectedBoxes = expected.bboxes.map((b) => rotateBox(b, rotation));
+		for (const want of expectedBoxes) {
+			expect(actual.bboxes.some((got) => Math.abs(got.x0 - want.x0) < 1e-5)).toBe(true);
+		}
+	});
+
+	it.each(ROTATIONS)('merges same-line items into one bar at /Rotate %i', (rotation) => {
+		// Two adjacent items on one line: the merge has to produce a single
+		// bar spanning both, at every rotation.
+		const flat = makeExtraction([
+			[
+				{ text: 'Pieter', x: 0 },
+				{ text: 'de', x: 42 },
+				{ text: 'Vries', x: 60 }
+			]
+		]);
+		const rotated = rotateExtraction(flat, rotation);
+		const occs = searchDocument('Pieter de Vries', rotated, []);
+		expect(occs).toHaveLength(1);
+		expect(occs[0].bboxes).toHaveLength(1);
+		expectSameBox(
+			occs[0].bboxes[0],
+			rotateBox(searchDocument('Pieter de Vries', flat, [])[0].bboxes[0], rotation)
+		);
+	});
+
+	it('treats a page with no rotation field as /Rotate 0', () => {
+		const flat = makeExtraction([[{ text: LINE, x: 40 }]]);
+		expect(flat.pages[0].rotation).toBeUndefined();
+		expect(searchDocument('Pieter de Vries', flat, [])).toHaveLength(1);
 	});
 });
