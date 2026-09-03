@@ -9,12 +9,9 @@ interleaved with HTTP error mapping.
 
 What the copy has to do, and why:
 
-* **Not mention any brand but WOO Buddy.** The mail this replaces was
-  headed "DREAMKIT UPDATES" and told the reader they were being added to
-  a list called "WOO Buddy — leads". The landing page sells "geen
-  nieuwsbrief, alleen een bericht als er écht iets te melden is"; a
-  sales-list confirmation from an unknown brand undoes exactly the trust
-  that page spends its whole length building.
+* **Not mention any brand but WOO Buddy, and no list name.** The mail
+  this replaces did both (see `app/api/leads.py`); the landing page sells
+  "geen nieuwsbrief, alleen een bericht als er écht iets te melden is".
 * **Name the operator.** Bureau Bolster B.V. is the entity on the
   privacy page, so it belongs here too — someone checking who is about
   to mail them should find the same name in both places.

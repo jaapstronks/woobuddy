@@ -4,19 +4,11 @@ Listmonk is the system of record for the audience list — there is no
 `leads` table, no dual write, no CSV export. This module is the only
 place that talks to it.
 
-**Why the admin API and not the public subscription endpoint.** The
-public endpoint (`/api/public/subscription`) is simpler and needs no
-credentials, but it leaves the double opt-in in Listmonk's hands. Our
-Listmonk instance is shared with another brand, and its opt-in mail,
-sender address and public pages are instance-global: a WOO Buddy signup
-got a mail headed "DREAMKIT UPDATES" from `noreply@mail.dreamkit.eu`.
-So WOO Buddy sends the confirmation itself and only reaches Listmonk
-*after* the recipient clicked (see `lead_tokens`). Writing through the
-admin API with `preconfirm_subscriptions` records that consent as
-already confirmed, which also means Listmonk never sends a second mail
-of its own — regardless of how the list's opt-in setting is configured
-later. Relying on the list staying single-opt-in would let one admin
-click reintroduce the exact bug this replaces.
+The double opt-in is WOO Buddy's own (why: `app/api/leads.py`), so this
+client is only reached *after* the recipient clicked. It writes through
+the admin API with `preconfirm_subscriptions`, which records the consent
+as confirmed and keeps Listmonk from sending a second mail of its own
+regardless of how the list's opt-in setting is configured later.
 
 Everything here degrades rather than raises when the integration is
 unconfigured: a missing API token must never cost the operator the
