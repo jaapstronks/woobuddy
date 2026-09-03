@@ -131,56 +131,60 @@ def extract_text(pdf_bytes: bytes) -> ExtractionResult:
     Uses page.get_text("dict") for character-level position data.
     """
     doc = _open_pdf_safe(pdf_bytes)
-    result = ExtractionResult(page_count=len(doc))
-    all_text_parts: list[str] = []
-    earliest_date: datetime | None = None
+    try:
+        result = ExtractionResult(page_count=len(doc))
+        all_text_parts: list[str] = []
+        earliest_date: datetime | None = None
 
-    for page_idx in range(len(doc)):
-        page = doc[page_idx]
-        page_dict = page.get_text("dict")
-        page_spans: list[TextSpan] = []
-        page_text_parts: list[str] = []
+        for page_idx in range(len(doc)):
+            page = doc[page_idx]
+            page_dict = page.get_text("dict")
+            page_spans: list[TextSpan] = []
+            page_text_parts: list[str] = []
 
-        for block_no, block in enumerate(page_dict.get("blocks", [])):
-            if block.get("type") != 0:  # text block only
-                continue
-            for line_no, line in enumerate(block.get("lines", [])):
-                for span in line.get("spans", []):
-                    text = span.get("text", "").strip()
-                    if not text:
-                        continue
-                    bbox = span.get("bbox", (0, 0, 0, 0))
-                    page_spans.append(
-                        TextSpan(
-                            text=text,
-                            page=page_idx,
-                            x0=bbox[0],
-                            y0=bbox[1],
-                            x1=bbox[2],
-                            y1=bbox[3],
-                            block_no=block_no,
-                            line_no=line_no,
+            for block_no, block in enumerate(page_dict.get("blocks", [])):
+                if block.get("type") != 0:  # text block only
+                    continue
+                for line_no, line in enumerate(block.get("lines", [])):
+                    for span in line.get("spans", []):
+                        text = span.get("text", "").strip()
+                        if not text:
+                            continue
+                        bbox = span.get("bbox", (0, 0, 0, 0))
+                        page_spans.append(
+                            TextSpan(
+                                text=text,
+                                page=page_idx,
+                                x0=bbox[0],
+                                y0=bbox[1],
+                                x1=bbox[2],
+                                y1=bbox[3],
+                                block_no=block_no,
+                                line_no=line_no,
+                            )
                         )
-                    )
-                    page_text_parts.append(text)
+                        page_text_parts.append(text)
 
-        page_full_text = " ".join(page_text_parts)
-        result.pages.append(
-            PageText(
-                page_number=page_idx,
-                full_text=page_full_text,
-                spans=page_spans,
+            page_full_text = " ".join(page_text_parts)
+            result.pages.append(
+                PageText(
+                    page_number=page_idx,
+                    full_text=page_full_text,
+                    spans=page_spans,
+                )
             )
-        )
-        all_text_parts.append(page_full_text)
+            all_text_parts.append(page_full_text)
 
-        # Try to find a document date on this page
-        if earliest_date is None:
-            found = _find_date_in_text(page_full_text)
-            if found:
-                earliest_date = found
+            # Try to find a document date on this page
+            if earliest_date is None:
+                found = _find_date_in_text(page_full_text)
+                if found:
+                    earliest_date = found
+    finally:
+        # Same leak as in `apply_redactions`: a raise mid-walk (a page
+        # PyMuPDF cannot parse) would otherwise strand the handle (#67/5).
+        doc.close()
 
-    doc.close()
     result.full_text = "\n\n".join(all_text_parts)
     result.document_date = earliest_date
     return result
@@ -326,25 +330,29 @@ def apply_redactions(
     This operation is IRREVERSIBLE. Always call on a copy, never the original.
     """
     doc = _open_pdf_safe(pdf_bytes)
+    try:
+        page_count = len(doc)
+        applied = 0
+        skipped = 0
+        for r in redactions:
+            page_num = r["page"]
+            if page_num < 0 or page_num >= len(doc):
+                skipped += 1
+                continue
+            page = doc[page_num]
+            rect = fitz.Rect(r["x0"], r["y0"], r["x1"], r["y1"])
+            page.add_redact_annot(rect, fill=redaction_color)
+            applied += 1
 
-    page_count = len(doc)
-    applied = 0
-    skipped = 0
-    for r in redactions:
-        page_num = r["page"]
-        if page_num < 0 or page_num >= len(doc):
-            skipped += 1
-            continue
-        page = doc[page_num]
-        rect = fitz.Rect(r["x0"], r["y0"], r["x1"], r["y1"])
-        page.add_redact_annot(rect, fill=redaction_color)
-        applied += 1
+        for page in doc:
+            page.apply_redactions()
 
-    for page in doc:
-        page.apply_redactions()
-
-    result: bytes = doc.tobytes()
-    doc.close()
+        result: bytes = doc.tobytes()
+    finally:
+        # A raise between open and close leaks the MuPDF handle for the
+        # lifetime of the process; on the export path that is one leak per
+        # malformed upload (#67/5).
+        doc.close()
 
     if skipped:
         # Page indices only — never the coordinates, which can be
@@ -361,6 +369,7 @@ def apply_redactions(
 def get_page_count(pdf_bytes: bytes) -> int:
     """Return the number of pages in a PDF."""
     doc = _open_pdf_safe(pdf_bytes)
-    count = len(doc)
-    doc.close()
-    return count
+    try:
+        return len(doc)
+    finally:
+        doc.close()
