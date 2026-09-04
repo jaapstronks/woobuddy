@@ -116,6 +116,36 @@ jobs:
         with:
           files: docker-compose.prod.yml
           push: false
+          # Loaded into the local daemon so the smoke check below can actually
+          # run the frontend image. The explicit tag is only for that step; the
+          # images are never pushed from this workflow.
+          load: true
           set: |
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
+            frontend.tags=woobuddy-frontend:ci
+
+      # `frontend/static/tesseract/` is gitignored — the OCR worker, wasm core
+      # and Dutch model are derived by `npm run setup:tesseract` in the build
+      # stage. A missing or broken setup step is invisible to `docker build`:
+      # the image builds fine and only fails in the browser, at the moment a
+      # reviewer turns on OCR. So ask the built image for the model itself.
+      - name: Smoke-check OCR assets in the frontend image
+        run: |
+          set -euo pipefail
+          docker run -d --name frontend-smoke -p 3000:3000 woobuddy-frontend:ci
+          # --retry-all-errors as well as --retry-connrefused: adapter-node
+          # accepts connections a beat before it answers, so the first probe
+          # can come back as a reset rather than a refusal.
+          curl -fsS --retry 30 --retry-delay 2 --retry-connrefused \
+            --retry-all-errors -o /dev/null http://localhost:3000/health
+          for asset in nld.traineddata.gz worker.min.js tesseract-core-simd-lstm.wasm; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000/tesseract/$asset")
+            echo "/tesseract/$asset -> $code"
+            [ "$code" = "200" ] || {
+              echo "::error::frontend image does not serve /tesseract/$asset (HTTP $code)"
+              docker logs frontend-smoke
+              exit 1
+            }
+          done
+          docker rm -f frontend-smoke

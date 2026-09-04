@@ -6,6 +6,18 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
+# Self-hosted tesseract.js assets for in-browser OCR. `static/tesseract/` is
+# gitignored (derivable, ~32 MB) and .dockerignore keeps it out of the build
+# context, so the image has to produce it here or ship without an OCR worker,
+# wasm core and Dutch model — OCR then fails at runtime with "taalmodule niet
+# geinstalleerd". Copied ahead of the rest of the source so the layer is only
+# invalidated by the script or the lockfile, not by every frontend edit.
+#
+# This step needs network access: the Dutch traineddata is fetched from the
+# tesseract-ocr project's GitHub repo. Everything else comes from node_modules.
+COPY scripts/download-tesseract-data.mjs ./scripts/
+RUN npm run setup:tesseract
+
 COPY . .
 
 ARG PUBLIC_API_URL=http://localhost:8000
