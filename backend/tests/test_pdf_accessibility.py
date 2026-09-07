@@ -17,6 +17,7 @@ losslessly.
 from __future__ import annotations
 
 import io
+from collections.abc import Iterable
 from datetime import datetime
 
 import fitz
@@ -110,6 +111,17 @@ class TestDescribeRedaction:
 # ---------------------------------------------------------------------------
 
 
+def _xmp_values(value: str | Iterable[object]) -> set[str]:
+    """Normalise a read-back XMP property to a set of strings.
+
+    Multi-valued properties come back as a ``set`` (rdf:Bag) or ``list``
+    (rdf:Seq) depending on the pikepdf version; single strings as ``str``.
+    """
+    if isinstance(value, str):
+        return {value}
+    return {str(v) for v in value}
+
+
 class TestAddLanguageTag:
     def test_lang_set_on_catalog(self, pdf_bytes: bytes):
         out = add_language_tag(pdf_bytes)
@@ -148,7 +160,10 @@ class TestWriteXmpMetadata:
         try:
             with pdf.open_metadata() as meta:
                 assert meta["dc:title"] == "Besluit Woo-verzoek 2026-0123"
-                assert meta["dc:language"] == "nl-NL"
+                # `dc:language` is an rdf:Bag in the XMP spec. pikepdf
+                # >= 10.13 writes it as one and reads it back as a set;
+                # older versions round-trip the bare string.
+                assert _xmp_values(meta["dc:language"]) == {"nl-NL"}
                 assert "5.1.2e" in meta["dc:description"]
                 assert meta["pdf:Producer"] == "WOO Buddy"
                 assert "WOO Buddy" in meta["xmp:CreatorTool"]
