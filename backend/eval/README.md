@@ -54,12 +54,23 @@ cd ~/Github\ NW/woobuddy-eval-corpus
 ```
 
 The seed defaults to `20260907`; keep it, or every recall number in every
-existing report becomes incomparable. Per input it writes
-`<stem>-ontlakt.pdf` and `<stem>-ontlakt.json`:
+existing report becomes incomparable.
+
+Values are written in an **embedded Unicode TrueType font** — Arial Unicode on
+macOS, DejaVu Sans on Linux, `--font` for anything else, and a loud exit if
+none is found. This is not cosmetic: the base-14 fonts are Latin-1 only, so
+`Yıldırım` used to land in the text layer as `Y·ld·r·m` and `Hadžić` as
+`Had·i·`. A fixture full of Dutch names that carry Turkish, Slavic and
+Maghrebi diacritics is worth having precisely because those names are hard;
+mangling them measures nothing. The chosen file is recorded in the ground
+truth as `font`.
+
+Per input it writes `<stem>-ontlakt.pdf` and `<stem>-ontlakt.json`:
 
 ```jsonc
 {
-  "bron": "...pdf", "seed": 20260907, "off_list_ratio": 0.4, "aantal": 38,
+  "bron": "...pdf", "seed": 20260907, "font": "/System/.../Arial Unicode.ttf",
+  "off_list_ratio": 0.4, "aantal": 38,
   "detections": [{
     "page": 12, "bbox": [x0, y0, x1, y1],
     "type": "volledige_naam",       // what we planted
@@ -106,18 +117,74 @@ LOG_LEVEL=ERROR ./eval/evaluate.py
 
 Run it from `backend/` so `app.*` resolves to the checkout under test — that
 is the whole point of the exercise. Deduce takes a couple of seconds to load
-on the first document; the full corpus takes a few minutes.
+on the first document; the full corpus takes a few minutes. Node 22+ has to be
+on `PATH` and `frontend/node_modules` populated (see "The text is the real
+pdf.js" below), or pass `--extractor pymupdf`.
 
 ```
 --corpus DIR      corpus root (default: $WOOBUDDY_EVAL_CORPUS, else
                   ~/Github NW/woobuddy-eval-corpus)
 --only GLOB       glob over document stems, e.g. --only '5_*'
+--extractor X     pdfjs (default) or pymupdf — see below
 --baseline PATH   diff this run against an earlier report's .json
 --save-baseline   also copy this run to <corpus>/reports/baseline.json
 --out STEM        write <STEM>.json and <STEM>.md instead of a timestamped
                   pair in <corpus>/reports/
 --quiet           no per-document progress
 ```
+
+### The text is the real pdf.js
+
+Production text is not `page.get_text()`. The frontend
+(`frontend/src/lib/services/pdf-text-extractor.ts`) walks pdf.js
+`getTextContent()` items in content-stream order and joins them with `''` when
+they touch on the same line (2pt line tolerance, 1.5pt adjacency, measured on
+the *unrotated* layout viewport) and with `' '` otherwise. There are **no
+newlines** in a production `full_text`, and long tokens that pdf.js split
+across items come back whole. PyMuPDF gives a different tokenisation and
+inserts newlines, so a harness built on it measures its own tokenizer.
+
+`pdfjs_extract.mjs` therefore runs the real library and mirrors `extractText()`
+line by line. It resolves `pdfjs-dist` by walking up to the nearest
+`frontend/node_modules` (so a git worktree without its own install still
+works); `WOOBUDDY_PDFJS_DIST` overrides that. **Any change to
+`pdf-text-extractor.ts` has to be repeated in the .mjs**, and
+`test_pdfjs_extract.py` exists to make that failure loud:
+
+```sh
+cd backend && pytest eval/test_pdfjs_extract.py
+```
+
+`--extractor pymupdf` is the fallback for a machine without node. It is
+deliberately labelled lower fidelity: spans instead of text items, already in
+reading order rather than content order. Fine for eyeballing a run, not
+comparable with a pdf.js baseline.
+
+### Planted values are moved back into reading order
+
+`ontlak.py` writes with `insert_text(..., overlay=True)`, which *appends* to
+the content stream. In the order pdf.js reads — which is the order production
+sees — every planted value therefore lands at the end of its page:
+
+```
+... is binnen het Ait Mansour Yassine Kaczmarek Groningerstraat 68a
+```
+
+with the `Geachte` it belongs to three lines earlier. Every context-dependent
+rule in the pipeline (greeting cue, structure enclosure, title prefix,
+corroboration) is then scored against a document nobody will ever meet, and
+the harness quietly reports the fixture's bug as the detector's.
+
+`pdfio.relocate_planted()` fixes this at payload-build time, using the ground
+truth to know which items are planted: it lifts them out of the tail and
+re-inserts each after the last remaining item that is either on an earlier
+line or on the same line and to its left. Every *original* item keeps its
+production order — only planted items move, and no bbox changes. The same page
+now reads `Geachte Ait Mansour , In de op ...`.
+
+The report prints how many items were relocated. It should track the number of
+planted values; a few more is normal, because pdf.js sometimes splits one
+value across two items.
 
 Output lands in `<corpus>/reports/<YYYY-MM-DD-HHMM>-<gitsha7>.json` and `.md`,
 with a summary on stdout.
@@ -207,7 +274,9 @@ thousand disappeared false positives.
 |---|---|
 | `ontlak.py` | fills the holes in published documents; writes ground truth + unknown zones |
 | `evaluate.py` | runs the pipeline over `ontlakt/` and reports |
-| `pdfio.py` | shared: scanned-page detection and the pdf.js-shaped page payload |
+| `pdfio.py` | shared: scanned-page detection, the page payload, the relocation |
+| `pdfjs_extract.mjs` | the real pdf.js, mirroring the frontend's `extractText()` |
+| `test_pdfjs_extract.py` | pins the join rule and the relocation; run by hand |
 
 `pdfio.py` exists so the generator and the evaluator can never disagree about
 what counts as a scanned page. If they did, the evaluator would score
@@ -227,6 +296,11 @@ cd backend && ruff check eval/ && ruff format --check eval/
   the Drenthe corpus, and shows up in the report as skipped pages.
 - Type inference is a heuristic. `slot_kind` and `context` are in the JSON so
   a sample can be checked by hand.
-- Inserted values are rendered in Helvetica/Times, not the original's
-  embedded font. Visually close enough; not identical.
+- Inserted values are all rendered in one Unicode TrueType face, not the
+  original's embedded font. Visually close enough; not identical. Correct
+  glyphs beat a matching family — see step 1.
+- Relocation puts a planted value on the right line in the right order, but a
+  document whose content stream was never in reading order to begin with (some
+  scanned-then-OCR'd exports) stays scrambled for original text too. That is
+  what production sees, so it is not corrected.
 - Precision cannot be measured exactly — see the caveat above.

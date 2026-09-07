@@ -264,6 +264,9 @@ class DocReport:
     on_unknown_zone: int = 0
     detections: int = 0
     detections_without_bbox: int = 0
+    #: Text items moved out of the tail of the content stream and back into
+    #: reading order. Should track the number of planted values.
+    relocated: int = 0
 
 
 # --------------------------------------------------------------------------
@@ -407,12 +410,20 @@ class DocOutcome:
     suppressed: list[Suppressed]
 
 
-def evaluate_document(pdf: Path, truth_path: Path) -> DocOutcome:
+def evaluate_document(
+    pdf: Path,
+    truth_path: Path,
+    *,
+    extractor: str = "pdfjs",
+) -> DocOutcome:
     truth = json.loads(truth_path.read_text(encoding="utf-8"))
     items: list[dict[str, Any]] = truth.get("detections", [])
     zones: list[dict[str, Any]] = truth.get("unknown_zones", [])
 
-    payload = pages_payload(pdf)
+    # `planted` is what lets `pages_payload` undo the overlay ordering: without
+    # it every value sits at the end of its page and every context rule in the
+    # pipeline is scored against a document that does not exist.
+    payload = pages_payload(pdf, extractor=extractor, planted=items)
     extraction = extraction_from_client_data(payload.pages)
     result = _run_pipeline_sync(extraction, None, None)
 
@@ -444,6 +455,7 @@ def evaluate_document(pdf: Path, truth_path: Path) -> DocOutcome:
         unknown_zones=len(zones),
         detections=len(records),
         detections_without_bbox=sum(1 for r in records if not r.bboxes),
+        relocated=payload.relocated,
     )
 
     doc = fitz.open(pdf)
@@ -606,6 +618,7 @@ def build_report(
     outcomes: list[DocOutcome],
     corpus: Path,
     repo: Path,
+    extractor: str = "pdfjs",
 ) -> dict[str, Any]:
     truth_results = [t for o in outcomes for t in o.truth_results]
     fps = [f for o in outcomes for f in o.false_positives]
@@ -647,11 +660,13 @@ def build_report(
         "fp_hard": sum(r.fp_hard for r in reports),
         "fp_soft": sum(r.fp_soft for r in reports),
         "suppressed": len(supp),
+        "relocated": sum(r.relocated for r in reports),
     }
 
     return {
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "corpus": str(corpus),
+        "extractor": extractor,
         "backend": _git_info(repo),
         "thresholds": {
             "truth_overlap_min": TRUTH_OVERLAP_MIN,
@@ -716,6 +731,10 @@ def render_markdown(data: dict[str, Any]) -> str:
         f"- **Corpus stats**: {s['documents']} documents, {s['pages']} pages "
         f"({s['pages_scored']} scored, {s['scanned_pages_skipped']} scanned pages "
         f"skipped), {s['truth_items']} planted values, {s['unknown_zones']} unknown zones"
+    )
+    out.append(
+        f"- **Extraction**: `{data.get('extractor', '?')}`, "
+        f"{s.get('relocated', 0)} text items relocated into reading order"
     )
     out.append(
         f"- **Matching**: {s['matches_by_bbox']} truth items matched by bounding box, "
@@ -967,6 +986,10 @@ def print_summary(data: dict[str, Any]) -> None:
         f"({s['scanned_pages_skipped']} scanned skipped), "
         f"{s['truth_items']} planted values, {s['unknown_zones']} unknown zones"
     )
+    print(
+        f"extract {data.get('extractor', '?')}, "
+        f"{s.get('relocated', 0)} items relocated into reading order"
+    )
     print()
     print("--- recall ---")
     for label in ("found", "partial", "rejected", "missed"):
@@ -1012,6 +1035,18 @@ def main() -> int:
         help="also copy this run to <corpus>/reports/baseline.json",
     )
     ap.add_argument("--out", type=Path, help="write <STEM>.json and <STEM>.md here")
+    ap.add_argument(
+        "--extractor",
+        choices=("pdfjs", "pymupdf"),
+        default="pdfjs",
+        help=(
+            "how to get the page text. 'pdfjs' runs the real library through "
+            "eval/pdfjs_extract.mjs and is what production sends; 'pymupdf' is "
+            "a lower-fidelity fallback for machines without node — different "
+            "tokenisation, so its numbers are not comparable with a pdfjs "
+            "baseline"
+        ),
+    )
     ap.add_argument("--quiet", action="store_true", help="no per-document progress")
     args = ap.parse_args()
 
@@ -1039,7 +1074,7 @@ def main() -> int:
             if not args.quiet:
                 print(f"overgeslagen (geen ground truth): {pdf.name}")
             continue
-        outcome = evaluate_document(pdf, truth_path)
+        outcome = evaluate_document(pdf, truth_path, extractor=args.extractor)
         outcomes.append(outcome)
         if not args.quiet:
             r = outcome.report
@@ -1050,7 +1085,7 @@ def main() -> int:
             )
 
     repo = Path(__file__).resolve().parents[2]
-    data = build_report(outcomes, args.corpus, repo)
+    data = build_report(outcomes, args.corpus, repo, args.extractor)
     md = render_markdown(data)
 
     if args.baseline:
