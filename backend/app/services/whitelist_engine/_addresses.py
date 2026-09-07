@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import re
 
+from app.services.ner_engine._tier2_filters import has_institutional_address_label
+
 from ._text import _normalize_phrase, _strip_bbox_markers
 from ._types import WhitelistIndex
 
@@ -77,6 +79,15 @@ def match_address_whitelist(
             and is_postbus_context_postcode(full_text, start_char)
         ):
             return "Postcode hoort bij een postbusadres — geen persoonlijk adres."
+        # "Bezoekadres: Stadhuisplein 1, 3012 AR Rotterdam" — the label
+        # earlier on the line marks the whole line as an organisation's
+        # address, postcode included.
+        if (
+            full_text is not None
+            and start_char is not None
+            and has_institutional_address_label(full_text, start_char)
+        ):
+            return "Postcode hoort bij een bezoek- of postadres van een organisatie."
         return None
 
     if entity_type == "email":

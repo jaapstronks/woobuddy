@@ -101,6 +101,19 @@ _EMAIL_PATTERN = re.compile(r"\b([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,
 # Postcode: 4 digits + optional space + 2 uppercase letters
 _POSTCODE_PATTERN = re.compile(r"\b(\d{4}\s?[A-Z]{2})\b")
 
+# Letter pairs PostNL never issues (they read as Nazi-era abbreviations).
+_POSTCODE_INVALID_LETTERS = frozenset({"SA", "SD", "SS"})
+
+# Letter pairs that are valid postcode letters but also common Dutch
+# words / abbreviations in all-caps headings: "BEGROTING 2019 EN 2020",
+# "PROGRAMMA 2021 TM 2024", "SUBSIDIE 2020 EU". A year followed by one
+# of these and then *another number* is a range, not a postcode. Real
+# postcodes are followed by a city name or line end, never by digits.
+_POSTCODE_AMBIGUOUS_LETTERS = frozenset(
+    {"EN", "OF", "TM", "EU", "NL", "BV", "NV", "VS", "VN", "KB", "CV"}
+)
+_POSTCODE_FOLLOWED_BY_NUMBER = re.compile(r"\s*\d")
+
 # License plate: Dutch sidecodes (1 through 14). Each pattern covers
 # one sidecode verbatim. Sidecode 4 (XX-99-XX) is the most common shape
 # on modern plates; older sidecodes still appear on vintage vehicles.
@@ -334,6 +347,16 @@ def _detect_email(text: str) -> list[NERDetection]:
     ]
 
 
+def _is_plausible_postcode(text: str, m: re.Match[str]) -> bool:
+    """Reject letter pairs PostNL never issues and year-range look-alikes."""
+    letters = m.group(1)[-2:]
+    if letters in _POSTCODE_INVALID_LETTERS:
+        return False
+    return not (
+        letters in _POSTCODE_AMBIGUOUS_LETTERS and _POSTCODE_FOLLOWED_BY_NUMBER.match(text, m.end())
+    )
+
+
 def _detect_postcode(text: str) -> list[NERDetection]:
     """Detect Dutch postcodes (4 digits + 2 uppercase letters)."""
     return [
@@ -346,6 +369,7 @@ def _detect_postcode(text: str) -> list[NERDetection]:
             reasoning="Postcode gedetecteerd.",
         )
         for m in _POSTCODE_PATTERN.finditer(text)
+        if _is_plausible_postcode(text, m)
     ]
 
 

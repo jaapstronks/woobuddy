@@ -152,6 +152,36 @@ def test_postbus_postcode_suppressed_with_comma(index):
     assert "postbusadres" in reason
 
 
+def test_bezoekadres_line_postcode_suppressed(index):
+    # "Bezoekadres: Stadhuisplein 1, 9999 ZZ Rotterdam" — the label
+    # sits earlier on the line, not directly before the postcode, and
+    # still marks the whole line as an organisation's address.
+    text = "Bezoekadres: Stadhuisplein 1, 9999 ZZ Rotterdam"
+    start = text.index("9999 ZZ")
+    reason = match_address_whitelist(
+        "9999 ZZ",
+        "postcode",
+        index,
+        full_text=text,
+        start_char=start,
+    )
+    assert reason is not None
+    assert "organisatie" in reason
+
+
+def test_plain_home_postcode_not_suppressed(index):
+    text = "Kerkstraat 12, 9999 ZZ Rotterdam"
+    start = text.index("9999 ZZ")
+    reason = match_address_whitelist(
+        "9999 ZZ",
+        "postcode",
+        index,
+        full_text=text,
+        start_char=start,
+    )
+    assert reason is None
+
+
 def test_postbus_postcode_suppressed_without_comma(index):
     # Some layouts drop the comma: "Postbus 16200 9999 ZZ".
     text = "Postbus 16200 9999 ZZ"
