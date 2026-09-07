@@ -49,6 +49,7 @@ sys.path.insert(0, str(_HERE.parent))
 
 import fitz  # noqa: E402
 from pdfio import pages_payload  # noqa: E402, I001
+from triage import print_triage, render_triage  # noqa: E402, I001
 
 from app.logging_config import configure_logging  # noqa: E402
 from app.services.name_engine import _normalize as _name_token  # noqa: E402
@@ -670,8 +671,10 @@ def evaluate_document(
             tier=rec.tier,
             source=rec.source,
             review_status=rec.review_status,
-            start_char=rec.start_char,
-            end_char=rec.end_char,
+            # The pipeline hands back numpy ints from some detectors, which
+            # `json.dumps` refuses. Nothing downstream needs the subclass.
+            start_char=None if rec.start_char is None else int(rec.start_char),
+            end_char=None if rec.end_char is None else int(rec.end_char),
             region=_region(rec),
             context=rec.context,
         )
@@ -1129,6 +1132,9 @@ def render_markdown(data: dict[str, Any]) -> str:
             f"{d['suppressed']} | {d['pages']} | {len(d['scanned_pages'])} |"
         )
     out.append("")
+    # Last, because it is the section you read after the numbers: what the
+    # errors have in common and which brief each cause belongs to.
+    out += render_triage(data)
     return "\n".join(out)
 
 
@@ -1388,6 +1394,7 @@ def main() -> int:
         baseline_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print_summary(data)
+    print_triage(data)
     print()
     print(f"report: {md_path}")
     print(f"json:   {json_path}")

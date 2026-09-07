@@ -303,12 +303,40 @@ normalised text), plus totals. A `--only` run compares only the documents
 both runs actually scored, so a one-document check does not read as a
 thousand disappeared false positives.
 
+## The improvement loop
+
+A report is not an improvement. The ritual that turns one into the other lives
+in the `detectie-eval` skill (`.claude/skills/detectie-eval/SKILL.md`, in
+Dutch, tracked in this repo so an executing session picks it up). In short:
+
+- **Baseline from `main` only.** `--save-baseline` on a feature branch measures
+  your work against itself.
+- **Read the report in this order**: compared-to-baseline → recall per type →
+  detections without a bounding box → hard FPs → triage. Not front to back.
+- **One cause, one brief, one PR.** `triage.py` groups every error by suspected
+  cause and names the brief it belongs to; take the top row inside your scope.
+  Three causes at once makes the delta unattributable.
+- **Put the baseline delta table in the PR description**, verbatim, under a
+  heading `## Evaluatie`. A PR that lowers recall carries one sentence saying
+  why that is acceptable, or it does not merge.
+- **Know a fixture artefact when you see one** — a value at the end of the page
+  text, `·` inside a name, the four unredacted zienswijzen. The skill lists
+  them. When in doubt, open the ontlakt PDF at that page.
+
+```sh
+cd backend
+LOG_LEVEL=ERROR ./eval/evaluate.py --baseline "$WOOBUDDY_EVAL_CORPUS/reports/baseline.json"
+./eval/triage.py                      # or read the Triage section of the report
+```
+
 ## Files
 
 | file | what it is |
 |---|---|
 | `ontlak.py` | fills the holes in published documents; writes ground truth + unknown zones |
 | `evaluate.py` | runs the pipeline over `ontlakt/` and reports |
+| `triage.py` | groups a report's errors by suspected cause; also the report's last section |
+| `triage_rules.py` | the cause catalogue: one predicate per known failure shape, with its brief |
 | `pdfio.py` | shared: scanned-page detection, the page payload, the relocation |
 | `pdfjs_extract.mjs` | the real pdf.js, mirroring the frontend's `extractText()` |
 | `test_pdfjs_extract.py` | pins the join rule and the relocation; run by hand |
