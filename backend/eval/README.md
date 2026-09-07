@@ -21,6 +21,8 @@ woobuddy-eval-corpus/
   zienswijzen/       4 notas van zienswijzen
   ontlakt/           the same documents, refilled — see below
   reports/           evaluation output, one .json + .md per run
+  corpus.json        which documents are not usable as a false-positive
+                     reference — see "Corpus hygiene"
   fetch-more.sh      pull more PDFs from the Drenthe DiWoo sitemap
 ```
 
@@ -39,6 +41,37 @@ prose are exactly what a reviewer meets in the wild. Two things follow:
 
 25 of the 33 documents get no fills at all — they are the false-positive-only
 half of the corpus and are scored too.
+
+### Corpus hygiene
+
+Point 1 above only holds for a document that was *actually* redacted to
+current Woo practice. Some published notas van zienswijzen are not: the four
+in `zienswijzen/` name their reclamanten in full, with address, because in
+2014 or in a municipal template that was thought acceptable. Scoring against
+those turns roughly 1100 correct detections into "false positives" and drowns
+the ~500 real candidates in the rest of the corpus.
+
+So a document is only a false-positive reference if the redactor's decisions
+can be read as decisions. Documents that fail that test are listed in
+`<corpus>/corpus.json`, keyed by document stem (without `-ontlakt`):
+
+```json
+{
+  "fp_excluded": {
+    "planviewer-zienswijzen": "2014 nota; reclamanten met naam en adres niet gelakt"
+  }
+}
+```
+
+Recall is still scored on them — a planted value is ground truth wherever it
+sits, and `planviewer-zienswijzen` carries 19 of them. Only their FP
+candidates are set aside: counted in a separate "excluded from FP scoring"
+line, and left out of the FP tables, the totals and the baseline diff.
+
+Adding a document to the list is a judgement about *that document*, not about
+the detector. Write down the reason, and prefer leaving a document in: the
+whole point of the corpus is that a redactor's restraint is the ground truth
+for "do not redact".
 
 ## Step 1 — regenerate `ontlakt/`
 
@@ -234,7 +267,9 @@ their job.
 
 Two categories are counted but not charged: detections that land on an
 unknown zone, and detections the pipeline produced without a bounding box
-(nothing is drawn on the page, so there is nothing to check).
+(nothing is drawn on the page, so there is nothing to check). A third,
+whole documents whose redaction cannot be read as a decision, is listed
+separately under "Excluded from FP scoring" — see "Corpus hygiene" above.
 
 ### Matching, and how it can lie
 
@@ -303,4 +338,5 @@ cd backend && ruff check eval/ && ruff format --check eval/
   document whose content stream was never in reading order to begin with (some
   scanned-then-OCR'd exports) stays scrambled for original text too. That is
   what production sees, so it is not corrected.
-- Precision cannot be measured exactly — see the caveat above.
+- Precision cannot be measured exactly — see the caveat above, and "Corpus
+  hygiene" for the documents it cannot be measured on at all.

@@ -120,6 +120,13 @@ FP_CAVEAT = (
     "each candidate before believing it."
 )
 
+#: Optional file at the corpus root listing documents whose redaction is too
+#: poor to serve as a "do not redact" reference. Recall is still scored on
+#: them — a planted value is ground truth wherever it sits — but their FP
+#: candidates are counted apart and kept out of the tables, the totals and the
+#: baseline diff. See "Corpus hygiene" in the README.
+CORPUS_CONFIG = "corpus.json"
+
 
 # --------------------------------------------------------------------------
 # Geometry and text helpers
@@ -267,6 +274,11 @@ class DocReport:
     #: Text items moved out of the tail of the content stream and back into
     #: reading order. Should track the number of planted values.
     relocated: int = 0
+    #: False, and `fp_excluded` carries the count, when this document is not a
+    #: usable "do not redact" reference (see CORPUS_CONFIG).
+    fp_scored: bool = True
+    fp_excluded: int = 0
+    fp_excluded_reason: str = ""
 
 
 # --------------------------------------------------------------------------
@@ -415,6 +427,7 @@ def evaluate_document(
     truth_path: Path,
     *,
     extractor: str = "pdfjs",
+    fp_excluded_reason: str = "",
 ) -> DocOutcome:
     truth = json.loads(truth_path.read_text(encoding="utf-8"))
     items: list[dict[str, Any]] = truth.get("detections", [])
@@ -456,6 +469,8 @@ def evaluate_document(
         detections=len(records),
         detections_without_bbox=sum(1 for r in records if not r.bboxes),
         relocated=payload.relocated,
+        fp_scored=not fp_excluded_reason,
+        fp_excluded_reason=fp_excluded_reason,
     )
 
     doc = fitz.open(pdf)
@@ -564,6 +579,12 @@ def evaluate_document(
         )
 
     report.suppressed = len(suppressed)
+    if not report.fp_scored:
+        # The redactor left personal data standing here, so "not redacted" is
+        # not a decision we can score against. Recall above still counts: a
+        # planted value is ground truth wherever it sits.
+        report.fp_excluded = len(false_positives)
+        false_positives = []
     report.fp_hard = sum(1 for f in false_positives if f.severity == "hard")
     report.fp_soft = sum(1 for f in false_positives if f.severity == "soft")
     return DocOutcome(report, truth_results, false_positives, suppressed)
@@ -659,6 +680,8 @@ def build_report(
         "detections_on_unknown_zone": sum(r.on_unknown_zone for r in reports),
         "fp_hard": sum(r.fp_hard for r in reports),
         "fp_soft": sum(r.fp_soft for r in reports),
+        "fp_excluded": sum(r.fp_excluded for r in reports),
+        "fp_excluded_documents": sum(1 for r in reports if not r.fp_scored),
         "suppressed": len(supp),
         "relocated": sum(r.relocated for r in reports),
     }
@@ -740,6 +763,11 @@ def render_markdown(data: dict[str, Any]) -> str:
         f"- **Matching**: {s['matches_by_bbox']} truth items matched by bounding box, "
         f"{s['matches_by_text']} by text fallback"
     )
+    if s.get("fp_excluded_documents"):
+        out.append(
+            f"- **FP scoring**: {s['fp_excluded_documents']} document(s) excluded, "
+            f"hiding {s['fp_excluded']} candidate(s) — see below"
+        )
     out.append("")
     out.append(f"> {FP_CAVEAT}")
     out.append("")
@@ -786,6 +814,22 @@ def render_markdown(data: dict[str, Any]) -> str:
     out.append("")
     out.append(f"{FP_CAVEAT}")
     out.append("")
+    excluded = [d for d in data["documents"] if not d.get("fp_scored", True)]
+    if excluded:
+        out.append("### Excluded from FP scoring")
+        out.append("")
+        out.append(
+            "A document is only a false-positive reference if it was actually "
+            "redacted to current Woo practice. These were not, so their "
+            "candidates are counted here and left out of every table, total "
+            "and baseline diff below. Recall is still scored on them."
+        )
+        out.append("")
+        out.append("| document | candidates | why |")
+        out.append("|---|---:|---|")
+        for d in sorted(excluded, key=lambda d: -d["fp_excluded"]):
+            out.append(f"| {d['name']} | {d['fp_excluded']} | {d['fp_excluded_reason']} |")
+        out.append("")
     fps = data["false_positives"]
     combo: Counter[tuple[str, str, str]] = Counter(
         (f["severity"], f["entity_type"], f["source"]) for f in fps
@@ -870,9 +914,13 @@ def render_markdown(data: dict[str, Any]) -> str:
     )
     out.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for d in data["documents"]:
+        fp_hard = str(d["fp_hard"])
+        fp_soft = str(d["fp_soft"])
+        if not d.get("fp_scored", True):
+            fp_hard, fp_soft = "-", f"_{d['fp_excluded']} excl._"
         out.append(
             f"| {d['name']} | {d['truth']} | {d['found']} | {d['partial']} | "
-            f"{d['rejected']} | {d['missed']} | {d['fp_hard']} | {d['fp_soft']} | "
+            f"{d['rejected']} | {d['missed']} | {fp_hard} | {fp_soft} | "
             f"{d['suppressed']} | {d['pages']} | {len(d['scanned_pages'])} |"
         )
     out.append("")
@@ -1018,6 +1066,11 @@ def print_summary(data: dict[str, Any]) -> None:
     print(f"  suppressed by a rule  {s['suppressed']}")
     print(f"  on an unknown zone    {s['detections_on_unknown_zone']} (excused)")
     print(f"  without a bounding box {s['detections_without_bbox']} (not charged)")
+    if s.get("fp_excluded_documents"):
+        print(
+            f"  excluded from scoring {s['fp_excluded']} "
+            f"in {s['fp_excluded_documents']} unusable document(s)"
+        )
     print()
     print(f"matching: {s['matches_by_bbox']} by bbox, {s['matches_by_text']} by text fallback")
 
@@ -1067,6 +1120,11 @@ def main() -> int:
         print(f"geen documenten gevonden voor --only {args.only!r}", file=sys.stderr)
         return 0
 
+    fp_excluded: dict[str, str] = {}
+    config_path = args.corpus / CORPUS_CONFIG
+    if config_path.exists():
+        fp_excluded = json.loads(config_path.read_text(encoding="utf-8")).get("fp_excluded", {})
+
     outcomes: list[DocOutcome] = []
     for pdf in pdfs:
         truth_path = pdf.with_suffix(".json")
@@ -1074,14 +1132,20 @@ def main() -> int:
             if not args.quiet:
                 print(f"overgeslagen (geen ground truth): {pdf.name}")
             continue
-        outcome = evaluate_document(pdf, truth_path, extractor=args.extractor)
+        outcome = evaluate_document(
+            pdf,
+            truth_path,
+            extractor=args.extractor,
+            fp_excluded_reason=fp_excluded.get(pdf.stem.removesuffix("-ontlakt"), ""),
+        )
         outcomes.append(outcome)
         if not args.quiet:
             r = outcome.report
+            fp = f"FP {r.fp_hard}h/{r.fp_soft}s" if r.fp_scored else f"FP {r.fp_excluded} excl"
             print(
                 f"{r.name[:58]:58s} truth {r.found:3d}/{r.truth:<3d} "
                 f"(part {r.partial}, rej {r.rejected}, mis {r.missed})  "
-                f"FP {r.fp_hard}h/{r.fp_soft}s  supp {r.suppressed}"
+                f"{fp}  supp {r.suppressed}"
             )
 
     repo = Path(__file__).resolve().parents[2]
