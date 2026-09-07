@@ -16,6 +16,7 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { ExtractionResult, ExtractedTextItem, PageExtraction } from '$lib/types';
 import { normalizeRotation } from './reading-axis';
+import { joinTextItems } from './text-join';
 
 /**
  * Typed PDF error so UI code can show a specific Dutch message per failure mode
@@ -206,24 +207,15 @@ export async function extractText(
 			layoutBoxes.push(toViewportBox(layoutViewport, x0, yBottom, x1, yTop));
 		}
 
-		// Build fullText by detecting visually-adjacent text items on the same
-		// line and joining them WITHOUT a space. pdf.js splits long tokens
-		// (URLs, IBANs, phone numbers) across multiple text items; joining
-		// blindly with " " inserts a phantom space that breaks regex and NER
-		// matching. If the next item starts where the previous one ended (same
-		// line, touching x-coordinates), it's a continuation of the same word.
-		// Measured on `layoutBoxes` (unrotated), so the tolerances below stay
-		// horizontal-reading tolerances on a /Rotate 90 page too.
-		const SAME_LINE_TOLERANCE = 2; // points
-		const ADJACENT_X_TOLERANCE = 1.5; // points
-		const fullText = textItems.reduce((acc, item, idx) => {
-			if (idx === 0) return item.text;
-			const box = layoutBoxes[idx];
-			const prev = layoutBoxes[idx - 1];
-			const sameLine = Math.abs(box.y0 - prev.y0) < SAME_LINE_TOLERANCE;
-			const touching = sameLine && box.x0 - prev.x1 < ADJACENT_X_TOLERANCE;
-			return acc + (touching ? '' : ' ') + item.text;
-		}, '');
+		// Join the items into page text: nothing between items that touch on
+		// the same line, a space between items that share a line, a newline
+		// where a new line starts. See `text-join.ts` for why each separator
+		// matters downstream. Measured on `layoutBoxes` (unrotated), so the
+		// tolerances stay horizontal-reading tolerances on a /Rotate 90 page.
+		const fullText = joinTextItems(
+			textItems.map((i) => i.text),
+			layoutBoxes
+		);
 		pages.push({
 			pageNumber: pageIdx, // 0-indexed to match PyMuPDF convention
 			fullText,
