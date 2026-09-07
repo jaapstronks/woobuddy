@@ -8,6 +8,7 @@ noise before the detection reaches the reviewer.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -68,6 +69,13 @@ def _load_trailing_titles() -> _TrailingTitleVocab:
     # Generic role / section words not in the title lists but commonly
     # swallowed by Deduce into person spans.
     words |= {
+        "voorzitter",
+        "voorzitster",
+        "secretaris",
+        "penningmeester",
+        "bestuurder",
+        "rapporteur",
+        "spreker",
         "betreft",
         "rondvraag",
         "toelichting",
@@ -120,6 +128,22 @@ _LEADING_STRIP_WORDS: frozenset[str] = frozenset(
         "toelichting",
         "bijlage",
         "advies",
+        # Document / agenda nouns that precede a capitalised word Deduce
+        # then reads as a surname ("Motie Groen", "Agendapunt Post")
+        "motie",
+        "amendement",
+        "agendapunt",
+        "besluit",
+        "voorstel",
+        "memo",
+        "notitie",
+        "onderwerp",
+        "betreft",
+        "zaak",
+        "dossier",
+        "project",
+        "programma",
+        "team",
         "dag",
         "graag",
         "beste",
@@ -253,4 +277,39 @@ def trim_trailing_titles(text: str, start_char: int, end_char: int) -> tuple[str
             start_char = end_char - len(after)
             text = after
 
+    # Pass 4: nothing but a function title left — "Wethouder",
+    # "Voorzitter", or a salutation + title ("De heer Voorzitter",
+    # "Mevrouw De Wethouder"). Deduce emits the latter because "Heer"
+    # is a CBS surname and the name lists then wave it through; the
+    # title-prefix rule emits the former when a salutation precedes a
+    # role instead of a name. Return an empty span so the caller drops
+    # the detection.
+    if _is_only_title(text, vocab):
+        return "", start_char, start_char
+
     return text, start_char, end_char
+
+
+# Salutations that may open a Deduce person span. Matched at the start
+# of the (already trimmed) span, case-insensitively.
+_SALUTATION_PREFIX = re.compile(
+    r"^(?:de\s+heer|de\s+heer/mevrouw|mevrouw|meneer|mijnheer|"
+    r"dhr\.?|mevr\.?|mw\.?|heer)(?:\s+|$)",
+    re.IGNORECASE,
+)
+
+
+def _is_only_title(text: str, vocab: _TrailingTitleVocab) -> bool:
+    """True when `text` is (salutation +) (article +) a function title, nothing else."""
+    rest = text.strip()
+    m = _SALUTATION_PREFIX.match(rest)
+    had_salutation = m is not None
+    if m is not None:
+        rest = rest[m.end() :].strip()
+    # Optional article: "Mevrouw De Voorzitter" (pass 1 may already have
+    # stripped the title, leaving "Mevrouw De").
+    rest = re.sub(r"^(?:de|het)(?:\s+|$)", "", rest, flags=re.IGNORECASE).strip()
+    if not rest:
+        return had_salutation
+    normalized = " ".join(rest.lower().split()).strip(".,;:()")
+    return normalized in vocab.words or normalized in vocab.phrases

@@ -4,7 +4,7 @@ title-prefix rule, dedupe).
 
 The heavy lifting lives in sibling modules:
 - ``_tier2_trim``    — span trimming (punctuation, trailing titles)
-- ``_tier2_filters`` — plausibility filters (event dates, public addresses)
+- ``_tier2_filters`` — plausibility filters (birth cues, street shape, public addresses)
 """
 
 from __future__ import annotations
@@ -12,13 +12,20 @@ from __future__ import annotations
 from app.logging_config import get_logger
 from app.services.name_engine import score_person_candidate
 
+from ._corroboration import suppress_uncorroborated_single_tokens
 from ._deduce import _DEDUCE_TAG_MAP, _get_deduce, _get_name_lists
 from ._huisnummer import _detect_adres_by_huisnummer
 from ._initials import _detect_persoon_via_initials
 from ._label_anchored_id import _detect_label_anchored_ids
 from ._plausibility import _is_plausible_person_name
 from ._straatnaam import _detect_adres_by_straatnaam
-from ._tier2_filters import is_plausible_home_address, is_recent_event_date
+from ._tier2_filters import (
+    has_birth_cue,
+    has_postcode_nearby,
+    has_strong_street_shape,
+    is_plausible_home_address,
+    is_recent_event_date,
+)
 from ._tier2_trim import trim_span, trim_trailing_titles
 from ._title_prefix import _detect_persoon_via_title_prefix
 from ._types import (
@@ -51,7 +58,13 @@ def detect_tier2(text: str) -> list[NERDetection]:
         # produced unactionable cards — including re-flagging Tier 1
         # validation failures (foreign IBANs, BSNs that fail 11-proef)
         # as `id`. Drop anything we cannot describe to the reviewer.
-        if entity_type not in ("persoon", "adres", "datum", "organisatie"):
+        #
+        # `organisatie` (Deduce's hospital / healthcare-institution
+        # annotators) is deliberately absent: an organisation name is
+        # not personal data, the annotators are medical-domain, and the
+        # 0.50 "beoordeel of herleidbaar" card it produced was noise on
+        # every document that mentioned a GGD or ziekenhuis.
+        if entity_type not in ("persoon", "adres", "datum"):
             logger.debug(
                 "ner.tier2_tag_dropped",
                 deduce_tag=tag,
@@ -121,13 +134,37 @@ def detect_tier2(text: str) -> list[NERDetection]:
                     start=annotation.start_char,
                 )
                 continue
-            confidence = 0.75
-            reasoning = "Adres gedetecteerd — mogelijk woonadres."
-        elif entity_type == "datum":
-            # Drop dates too recent to plausibly be a birth date, or
-            # administrative dates anchored by a nearby "datum:", "d.d.",
-            # "vastgesteld", "vergadering van", etc. Tier 1 still catches
-            # explicit `geboortedatum:`-anchored dates regardless of year.
+            # Same evidence tiers as the regex straatnaam rule, so a
+            # Deduce hit that wins the overlap dedupe does not demote a
+            # letterhead address to 0.75.
+            if has_postcode_nearby(text, annotation.start_char, annotation.end_char):
+                confidence = 0.92
+                reasoning = (
+                    "Adres gedetecteerd vlak bij een postcode — vrijwel zeker een volledig adres."
+                )
+            elif has_strong_street_shape(annotation.text):
+                confidence = 0.85
+                reasoning = "Straatnaam + huisnummer gedetecteerd — mogelijk woonadres."
+            else:
+                confidence = 0.75
+                reasoning = (
+                    "Adres gedetecteerd op basis van de woonaanduiding ervoor — mogelijk woonadres."
+                )
+        else:  # datum — guaranteed by allowlist above
+            # A plain date only earns a card when a birth cue ("geboren",
+            # "geboortedatum", "geb.") sits within ~200 chars before it.
+            # Woo documents are full of event dates (besluit, vergadering,
+            # brief) and every one of them used to surface as "mogelijk
+            # geboortedatum". Tier 1 still catches the tight
+            # `geboortedatum:`-anchored shape regardless of year; the
+            # recent-year / administrative-anchor filter stays as a
+            # second guard for cued dates.
+            if not has_birth_cue(text, annotation.start_char):
+                logger.debug(
+                    "ner.tier2_datum_dropped_no_birth_cue",
+                    start=annotation.start_char,
+                )
+                continue
             if is_recent_event_date(annotation.text, text, annotation.start_char):
                 logger.debug(
                     "ner.tier2_datum_dropped_event_context",
@@ -135,10 +172,7 @@ def detect_tier2(text: str) -> list[NERDetection]:
                 )
                 continue
             confidence = 0.60
-            reasoning = "Datum gedetecteerd — mogelijk geboortedatum."
-        else:  # organisatie — guaranteed by allowlist above
-            confidence = 0.50
-            reasoning = "Organisatienaam gedetecteerd — beoordeel of herleidbaar tot persoon."
+            reasoning = "Datum gedetecteerd bij een geboorte-aanduiding — mogelijk geboortedatum."
 
         trimmed_text, trimmed_start, trimmed_end = trim_span(
             annotation.text, annotation.start_char, annotation.end_char
@@ -154,7 +188,6 @@ def detect_tier2(text: str) -> list[NERDetection]:
             if not trimmed_text:
                 continue
 
-        woo_article = DEFAULT_WOO_ARTICLE if entity_type != "organisatie" else ""
         detections.append(
             NERDetection.tier2(
                 text=trimmed_text,
@@ -163,7 +196,7 @@ def detect_tier2(text: str) -> list[NERDetection]:
                 start_char=trimmed_start,
                 end_char=trimmed_end,
                 reasoning=reasoning,
-                woo_article=woo_article,
+                woo_article=DEFAULT_WOO_ARTICLE,
             )
         )
 
@@ -180,8 +213,10 @@ def detect_tier2(text: str) -> list[NERDetection]:
     # 4. label-id     — "Klantnummer: 123" / "Kenmerk: OT-…"
     # 5. title-prefix — "de heer El Khatib" (non-CBS after salutation)
 
-    # 1. Straatnaam: full Dutch street+number spans. Institutional-
-    # address filter applied so gemeentehuis addresses are dropped.
+    # 1. Straatnaam: full Dutch street+number spans. The plausibility
+    # filter drops institutional addresses AND every weak-suffix
+    # candidate ("Uitvoering 7", "Loopbaan 4") that no postcode or
+    # residence cue corroborates.
     straatnaam_hits = [
         h
         for h in _detect_adres_by_straatnaam(text)
@@ -226,5 +261,11 @@ def detect_tier2(text: str) -> list[NERDetection]:
         "persoon",
         "ner.title_rule_dropped_overlap",
     )
+
+    # 6. Corroboration gate: a bare one-word persoon hit ("Roos",
+    # "Storm", "Kunst") survives only when the document vouches for it
+    # — same token in a multi-word name, an anchored rule, or a
+    # greeting right before it.
+    detections = suppress_uncorroborated_single_tokens(detections, text, name_lists)
 
     return _deduplicate(detections)

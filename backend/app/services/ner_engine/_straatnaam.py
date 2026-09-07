@@ -10,73 +10,53 @@ shapes and leaves full street+number spans to Deduce.
 
 This module adds a regex rule for the common Dutch shape:
 
-    [optional tussenvoegsel] [Capitalized word(s)] <suffix> <number>
+    [optional capitalised tussenvoegsel] [Capitalised word(s)] <suffix> <number>
 
-The suffix list is the closed set of Dutch straatnaam endings
-(`-straat`, `-laan`, `-plein`, `-weg`, `-gracht`, `-kade`, …). Extending
-it is a one-line change if a new suffix surfaces in the field.
+The suffix list is the union of the *strong* street endings
+(`-straat`, `-laan`, `-plein`, `-weg`, `-gracht`, `-kade`, …) and the
+*weak* ones (`-park`, `-markt`, `-baan`, `-ring`, `-oord`, …) from
+`_tier2_filters`. The regex generates candidates for both; the caller
+runs every candidate through `is_plausible_home_address`, which keeps
+strong-suffix spans on their own merits and weak-suffix spans only when
+a postcode or residence cue corroborates them. That split is what keeps
+"Uitvoering 7", "Bestuursakkoord 17" and "Loopbaan 4" from a table of
+contents out of the review list while "Loopbaan 14, 5654 AB Eindhoven"
+still gets its card.
 
-Emits as Tier 2 `adres` at confidence 0.85, or 0.92 when a postcode hit
-sits within `_POSTCODE_PROXIMITY_CHARS` characters of the span — the
-screenshot-in-the-invoice case where the reviewer is *guaranteed* to
-want the street card at the top of the list. The postcode check runs
-via a local import of the Tier 1 pattern so this module remains a pure
-Tier 2 helper without changing `detect_tier2`'s signature.
+Confidence tiers:
 
-The institutional-address filter (`_is_plausible_home_address` in
-`_tier2.py`) is reused by the caller so `Postbus 123`, `bezoekadres:
-Stadhuisplein 1`, etc. are dropped the same way as Deduce's own
-`adres` hits. A street at a gemeentehuis is public and should not be
-redacted.
+- **0.92** — a postcode sits within `POSTCODE_PROXIMITY_CHARS` of the
+  span: the invoice-letterhead case where the reviewer is *guaranteed*
+  to want the card at the top of the list.
+- **0.85** — strong suffix, no postcode ("Havenstraat 194 is het
+  bezoekadres").
+- **0.80** — weak suffix, kept only because a residence cue precedes it.
+
+The institutional-address filter is applied by the caller so `Postbus
+123`, `bezoekadres: Stadhuisplein 1`, etc. are dropped the same way as
+Deduce's own `adres` hits. A street at a gemeentehuis is public and
+should not be redacted.
 """
 
 from __future__ import annotations
 
 import re
 
-from app.services.name_engine import DUTCH_TUSSENVOEGSELS, build_tussenvoegsel_regex
-
-from ._tier1 import _POSTCODE_PATTERN
+from ._tier2_filters import (
+    POSTCODE_PROXIMITY_CHARS,
+    STRONG_STREET_SUFFIXES,
+    WEAK_STREET_SUFFIXES,
+    has_postcode_nearby,
+    has_strong_street_shape,
+)
 from ._types import NERDetection
 
-# Common Dutch straatnaam endings. Kept deliberately broad; adding a
-# new suffix is cheap. Longer suffixes are listed first so the
-# alternation prefers "plantsoen" over "hof" when both could match at
-# the same position.
-_STREET_SUFFIXES: tuple[str, ...] = (
-    "plantsoen",
-    "boulevard",
-    "straat",
-    "gracht",
-    "singel",
-    "kanaal",
-    "dreef",
-    "allee",
-    "poort",
-    "steeg",
-    "markt",
-    "plein",
-    "laan",
-    "kade",
-    "park",
-    "baan",
-    "dijk",
-    "ring",
-    "hout",
-    "veld",
-    "burg",
-    "wijk",
-    "oord",
-    "brug",
-    "pad",
-    "weg",
-    "wal",
-    "erf",
-    "lei",
-    "hof",
+# Longer suffixes first so the alternation prefers "plantsoen" over
+# "hof" when both could match at the same position.
+_ALL_SUFFIXES: tuple[str, ...] = tuple(
+    sorted(STRONG_STREET_SUFFIXES + WEAK_STREET_SUFFIXES, key=len, reverse=True)
 )
-
-_SUFFIX_GROUP = "|".join(_STREET_SUFFIXES)
+_SUFFIX_GROUP = "|".join(_ALL_SUFFIXES)
 
 # A capitalized name-word. Allows Dutch diacritics, apostrophes, and
 # hyphens so "Oranjeplein", "'s-Gravenhage-straat", and "Pré-park" all
@@ -90,18 +70,59 @@ _CAP_WORD = r"[A-ZÄËÏÖÜÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛ][A-Za-zëéèïüöä
 # because the cap-word prefix would greedily absorb the preceding line.
 _HSP = r"[^\S\n]+"
 
-# Optional leading tussenvoegsel run. Generated from the canonical
-# Dutch particle list in `name_engine` so additions propagate
-# automatically. Uses same-line whitespace (`_HSP`) so the match
-# doesn't bleed across line breaks.
-_TUSSEN_PREFIX = build_tussenvoegsel_regex(DUTCH_TUSSENVOEGSELS, separator=_HSP)
+# Capitalised prefix words that are never part of a street name but sit
+# right in front of one in prose and letter layouts: prepositions at
+# sentence start ("Aan de Kerkstraat 3 is …"), address labels
+# ("Adres Kerkstraat 3"), and connectors. Excluding them keeps the
+# emitted span (and therefore the redaction box) on the address itself.
+_PREFIX_STOPWORDS = (
+    "Aan",
+    "Op",
+    "In",
+    "Te",
+    "Bij",
+    "Voor",
+    "Naar",
+    "Door",
+    "Met",
+    "Van",  # handled by the tussenvoegsel prefix below
+    "Zie",
+    "Het",
+    "Een",
+    "En",
+    "Of",
+    "Adres",
+    "Woonadres",
+    "Postadres",
+    "Bezoekadres",
+    "Correspondentieadres",
+    "Afzender",
+    "Locatie",
+    "Wonende",
+    "Gevestigd",
+    "Gelegen",
+)
+_PREFIX_WORD = rf"(?!(?:{'|'.join(_PREFIX_STOPWORDS)})\b){_CAP_WORD}"
+
+# Optional leading tussenvoegsel run. Street names carry the particle
+# capitalised ("Van der Helstplein", "De Ruyterkade"), so — unlike the
+# person-name rules — the first letter is *required* to be uppercase.
+# A lowercase "aan de" / "in de" before a street is sentence prose,
+# not part of the name, and must stay out of the span.
+_TUSSEN_PREFIX = (
+    r"(?:"
+    rf"Van(?:{_HSP}(?:de|den|der|het|'t|’t))?|"
+    r"De|Den|Der|Ten|Ter"
+    r")"
+    rf"{_HSP}"
+)
 
 # Full street + number pattern:
 #
-# - Optional leading tussenvoegsel run.
-# - 0–3 capitalized prefix words on the same line ("Prinses",
-#   "Koningin Wilhelmina").
-# - A required final capitalized word that ends in one of the street
+# - Optional leading capitalised tussenvoegsel run.
+# - 0–3 capitalised prefix words on the same line ("Prinses",
+#   "Koningin Wilhelmina"), excluding prepositions and labels.
+# - A required final capitalised word that ends in one of the street
 #   suffixes. The suffix alternation is non-capturing and the cap-word
 #   regex is non-greedy enough to let the suffix anchor the tail.
 # - Same-line whitespace + a 1–4 digit house number with optional
@@ -114,7 +135,7 @@ _TUSSEN_PREFIX = build_tussenvoegsel_regex(DUTCH_TUSSENVOEGSELS, separator=_HSP)
 _STRAATNAAM_PATTERN = re.compile(
     r"\b"
     rf"(?:{_TUSSEN_PREFIX})?"
-    rf"(?:{_CAP_WORD}{_HSP}){{0,3}}"
+    rf"(?:{_PREFIX_WORD}{_HSP}){{0,3}}"
     rf"{_CAP_WORD}(?:{_SUFFIX_GROUP})"
     rf"{_HSP}"
     # House number + optional toevoeging. The toevoeging MUST touch
@@ -126,50 +147,44 @@ _STRAATNAAM_PATTERN = re.compile(
     re.UNICODE,
 )
 
-# How close a postcode must sit to the street span for the confidence
-# boost to fire. 80 chars comfortably covers a line break between
-# "Havenstraat 194" and "3024 TM Rotterdam" on any reasonable layout,
-# without bleeding into the next paragraph.
-_POSTCODE_PROXIMITY_CHARS = 80
+# Re-exported for callers/tests that reason about the proximity window.
+_POSTCODE_PROXIMITY_CHARS = POSTCODE_PROXIMITY_CHARS
 
 
 def _detect_adres_by_straatnaam(text: str) -> list[NERDetection]:
-    """Emit Tier 2 `adres` detections for Dutch street + number spans.
+    """Emit Tier 2 `adres` candidates for Dutch street + number spans.
 
-    Caller (`detect_tier2`) is responsible for applying the institutional
-    filter (`_is_plausible_home_address`) and deduping against
-    overlapping Deduce `adres` annotations.
+    Caller (`detect_tier2`) is responsible for applying
+    `is_plausible_home_address` (institutional filter + strong/weak
+    suffix gating) and deduping against overlapping Deduce `adres`
+    annotations. Weak-suffix candidates returned here are therefore
+    *not* detections yet — most of them are dropped by the caller.
     """
     detections: list[NERDetection] = []
-
-    # Collect postcode positions once so the proximity check is O(N·P)
-    # rather than rescanning the full text per street hit. Both lists
-    # are small (a handful of entries per document at most).
-    postcode_spans: list[tuple[int, int]] = [
-        (m.start(), m.end()) for m in _POSTCODE_PATTERN.finditer(text)
-    ]
 
     for m in _STRAATNAAM_PATTERN.finditer(text):
         span_start = m.start()
         span_end = m.end()
         span_text = m.group(0)
 
-        # Proximity boost: if a postcode hit sits within the window on
-        # either side, we're almost certainly looking at a full address
-        # block (invoice letterhead, factuuradres, correspondentie).
-        near_postcode = any(
-            (pc_start >= span_end and pc_start - span_end <= _POSTCODE_PROXIMITY_CHARS)
-            or (pc_end <= span_start and span_start - pc_end <= _POSTCODE_PROXIMITY_CHARS)
-            for pc_start, pc_end in postcode_spans
-        )
-        confidence = 0.92 if near_postcode else 0.85
+        near_postcode = has_postcode_nearby(text, span_start, span_end)
+        strong = has_strong_street_shape(span_text)
 
-        reasoning = (
-            "Straatnaam + huisnummer herkend, vlak bij een postcode — "
-            "vrijwel zeker een volledig adres."
-            if near_postcode
-            else "Straatnaam + huisnummer herkend (Nederlandse straatsuffix)."
-        )
+        if near_postcode:
+            confidence = 0.92
+            reasoning = (
+                "Straatnaam + huisnummer herkend, vlak bij een postcode — "
+                "vrijwel zeker een volledig adres."
+            )
+        elif strong:
+            confidence = 0.85
+            reasoning = "Straatnaam + huisnummer herkend (Nederlandse straatsuffix)."
+        else:
+            confidence = 0.80
+            reasoning = (
+                "Straatnaam + huisnummer herkend op basis van de woonaanduiding ervoor "
+                "(suffix alleen is niet eenduidig)."
+            )
 
         detections.append(
             NERDetection.tier2(

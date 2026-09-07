@@ -16,6 +16,7 @@ The engine is split across sub-modules by concern:
 - ``_initials``         — initials + surname structural rule
 - ``_straatnaam``       — Dutch street-suffix + house-number rule
 - ``_huisnummer``       — partial-anonymization "huisnummer N" rule
+- ``_corroboration``    — single-token persoon gate (document must vouch)
 - ``_label_anchored_id``— labelled reference-number rule
 - ``_tier2``            — Tier 2 orchestrator (Deduce + all sub-rules)
 

@@ -1268,3 +1268,252 @@ class TestDetectTier2WithTitleRule:
         assert len(bakker_hits) == 1
         assert bakker_hits[0].source == "deduce"
         assert bakker_hits[0].confidence >= 0.85
+
+
+# ---------------------------------------------------------------------------
+# False-positive hardening (2026-09): prefer a false negative over a
+# false positive. Table-of-contents lines, bare city names, event dates,
+# organisation names and uncorroborated one-word names must not reach
+# the reviewer.
+# ---------------------------------------------------------------------------
+
+
+class TestAddressPlausibility:
+    """Unit tests for `is_plausible_home_address` and its helpers — no
+    Deduce involved, so these lock in the evidence rules themselves."""
+
+    def test_strong_suffix_alone_is_enough(self):
+        from app.services.ner_engine._tier2_filters import is_plausible_home_address
+
+        text = "Het pand aan de Kerkstraat 12 is verkocht."
+        assert is_plausible_home_address("Kerkstraat 12", text, text.index("Kerkstraat")) is True
+
+    def test_strong_suffix_shapes(self):
+        from app.services.ner_engine._tier2_filters import has_strong_street_shape
+
+        assert has_strong_street_shape("Havenstraat 194")
+        assert has_strong_street_shape("Prinses Beatrixlaan 12a")
+        assert has_strong_street_shape("Van der Helstplein 3-5")
+        assert has_strong_street_shape("Meester Koolenweg 8")
+        # Weak suffixes and ordinary nouns
+        assert not has_strong_street_shape("Uitvoering 7")
+        assert not has_strong_street_shape("Amsterdam 26")
+        assert not has_strong_street_shape("Tekst 22")
+        assert not has_strong_street_shape("Loopbaan 14")
+        assert not has_strong_street_shape("Bestuursakkoord 17")
+        # Ordinary noun with a strong suffix (stoplist)
+        assert not has_strong_street_shape("Onderweg 3")
+
+    def test_weak_suffix_dropped_without_evidence(self):
+        from app.services.ner_engine._tier2_filters import is_plausible_home_address
+
+        text = "6. Monitoring en sturing 11\n7. Woningmarkt 14\n8. Tijdpad 18\n"
+        assert is_plausible_home_address("Woningmarkt 14", text, text.index("Woningmarkt")) is False
+        assert is_plausible_home_address("Tijdpad 18", text, text.index("Tijdpad")) is False
+
+    def test_weak_suffix_rescued_by_postcode(self):
+        from app.services.ner_engine._tier2_filters import is_plausible_home_address
+
+        text = "Gevestigd aan de Loopbaan 14, 5654 AB Eindhoven."
+        assert is_plausible_home_address("Loopbaan 14", text, text.index("Loopbaan")) is True
+
+    def test_weak_suffix_rescued_by_residence_cue(self):
+        from app.services.ner_engine._tier2_filters import is_plausible_home_address
+
+        text = "De bewoner van de Kerkbrink 3 heeft bezwaar gemaakt."
+        assert is_plausible_home_address("Kerkbrink 3", text, text.index("Kerkbrink")) is True
+
+    def test_city_only_span_dropped(self):
+        from app.services.ner_engine._tier2_filters import is_plausible_home_address
+
+        text = "De zitting vond plaats in Den Haag en in Alphen aan den Rijn."
+        assert is_plausible_home_address("Den Haag", text, text.index("Den Haag")) is False
+        assert is_plausible_home_address("Alphen aan den Rijn", text, text.index("Alphen")) is False
+
+    def test_postcode_city_span_kept(self):
+        from app.services.ner_engine._tier2_filters import is_plausible_home_address
+
+        text = "Havenstraat 194\n3024 TM Rotterdam"
+        assert is_plausible_home_address("3024 TM Rotterdam", text, text.index("3024")) is True
+
+    def test_bezoekadres_label_earlier_on_line_drops_postcode_span(self):
+        from app.services.ner_engine._tier2_filters import is_plausible_home_address
+
+        text = "Bezoekadres: Stadhuisplein 1, 3012 AR Rotterdam"
+        assert is_plausible_home_address("3012 AR Rotterdam", text, text.index("3012")) is False
+
+    def test_gemeente_in_body_prose_does_not_block(self):
+        from app.services.ner_engine._tier2_filters import is_plausible_home_address
+
+        text = "De gemeente heeft de bewoner van Kerkstraat 3 aangeschreven."
+        assert is_plausible_home_address("Kerkstraat 3", text, text.index("Kerkstraat")) is True
+
+
+class TestStraatnaamRegexSpan:
+    def test_sentence_initial_preposition_not_absorbed(self):
+        from app.services.ner_engine._straatnaam import _detect_adres_by_straatnaam
+
+        hits = _detect_adres_by_straatnaam("In de Kerkstraat 3 woont de aanvrager.")
+        assert [h.text for h in hits] == ["Kerkstraat 3"]
+
+    def test_address_label_not_absorbed(self):
+        from app.services.ner_engine._straatnaam import _detect_adres_by_straatnaam
+
+        hits = _detect_adres_by_straatnaam("Adres Havenstraat 194")
+        assert [h.text for h in hits] == ["Havenstraat 194"]
+
+    def test_capitalised_tussenvoegsel_kept(self):
+        from app.services.ner_engine._straatnaam import _detect_adres_by_straatnaam
+
+        hits = _detect_adres_by_straatnaam("Zie Van der Helstplein 3-5 en De Ruyterkade 7.")
+        assert [h.text for h in hits] == ["Van der Helstplein 3-5", "De Ruyterkade 7"]
+
+    def test_weak_suffix_candidate_has_lower_confidence(self):
+        from app.services.ner_engine._straatnaam import _detect_adres_by_straatnaam
+
+        hits = _detect_adres_by_straatnaam("De bewoner van Loopbaan 14 klaagde.")
+        assert len(hits) == 1
+        assert hits[0].confidence == 0.80
+
+
+class TestTableOfContentsNotAddresses:
+    """Integration: Deduce's own street pattern fires on `Tekst 22`,
+    `Amsterdam 26`, `Dienst 23`; the regex rule used to fire on
+    `Uitvoering 7`, `Financiering 9`, `Bestuursakkoord 17`. None of
+    them may surface."""
+
+    def test_toc_lines_produce_no_adres(self):
+        text = (
+            "Inhoudsopgave\n"
+            "1. Inleiding 3\n"
+            "2. Voorwoord 4\n"
+            "4. Uitvoering 7\n"
+            "5. Financiering 9\n"
+            "7. Beleidsveld Wonen 12\n"
+            "8. Woningmarkt 14\n"
+            "10. Bestuursakkoord 17\n"
+            "11. Tijdpad 18\n"
+            "14. Tekst 22\n"
+            "15. Dienst 23\n"
+            "17. Amsterdam 26\n"
+        )
+        results = detect_tier2(text)
+        assert [r for r in results if r.entity_type == "adres"] == []
+
+    def test_real_address_in_prose_still_detected(self):
+        text = "De familie El Khatib woont op Kerkstraat 22."
+        results = detect_tier2(text)
+        assert any(r.entity_type == "adres" and r.text == "Kerkstraat 22" for r in results)
+
+    def test_deduce_address_gets_postcode_tier(self):
+        text = "Factuuradres:\nHavenstraat 194\n3024 TM ROTTERDAM"
+        results = detect_tier2(text)
+        hits = [r for r in results if r.entity_type == "adres" and r.text == "Havenstraat 194"]
+        assert len(hits) == 1
+        assert hits[0].confidence == 0.92
+
+
+class TestDatumRequiresBirthCue:
+    def test_event_date_in_prose_dropped(self):
+        text = "De raad heeft op 12 maart 2019 besloten het plan vast te stellen."
+        results = detect_tier2(text)
+        assert [r for r in results if r.entity_type == "datum"] == []
+
+    def test_birth_cue_before_date_keeps_it(self):
+        from app.services.ner_engine._tier2_filters import has_birth_cue
+
+        text = "Betrokkene, geboren te Utrecht op 3 mei 1971, heeft bezwaar gemaakt."
+        assert has_birth_cue(text, text.index("3 mei")) is True
+        results = detect_tier2(text)
+        datum = [r for r in results if r.entity_type == "datum"]
+        # Deduce may tag the date; if it does the cue must let it through.
+        for r in datum:
+            assert "1971" in r.text
+
+    def test_no_cue_far_away(self):
+        from app.services.ner_engine._tier2_filters import has_birth_cue
+
+        text = "geboren " + ("x" * 250) + " 3 mei 1971"
+        assert has_birth_cue(text, text.index("3 mei")) is False
+
+
+class TestOrganisatieNotEmitted:
+    def test_hospital_not_a_detection(self):
+        text = "De GGD en het Erasmus MC waren bij het overleg aanwezig."
+        results = detect_tier2(text)
+        assert all(r.entity_type != "organisatie" for r in results)
+
+
+class TestSingleTokenPersoonGate:
+    def test_bare_flower_names_dropped(self):
+        text = "Roos en Storm gingen naar school. Bloem ook. Kunst 3 is de titel."
+        results = detect_tier2(text)
+        assert [r for r in results if r.entity_type == "persoon"] == []
+
+    def test_greeting_cue_keeps_bare_first_name(self):
+        text = "Beste Roos,\n\nDank voor je bericht."
+        results = detect_tier2(text)
+        assert any(r.entity_type == "persoon" and r.text == "Roos" for r in results)
+
+    def test_surname_corroborated_by_full_name(self):
+        text = "Jan Jansen diende bezwaar in. Later trok Jansen het bezwaar in."
+        results = detect_tier2(text)
+        persons = [r.text for r in results if r.entity_type == "persoon"]
+        assert "Jan Jansen" in persons
+        assert "Jansen" in persons
+
+    def test_uncorroborated_surname_dropped(self):
+        text = "Later trok Jansen het bezwaar in."
+        results = detect_tier2(text)
+        assert [r for r in results if r.entity_type == "persoon"] == []
+
+    def test_initial_plus_surname_is_self_evident(self):
+        text = "Ondertekend door M. van der Berg."
+        results = detect_tier2(text)
+        assert any(r.entity_type == "persoon" and "Berg" in r.text for r in results)
+
+    def test_title_rule_single_surname_kept(self):
+        text = "De heer Yilmaz sprak in tijdens de vergadering."
+        results = detect_tier2(text)
+        # Deduce keeps the salutation in its span ("De heer Yilmaz") and
+        # wins the overlap; either way the name must survive the gate.
+        assert any(r.entity_type == "persoon" and "Yilmaz" in r.text for r in results)
+
+    def test_motie_prefix_stripped_then_gated(self):
+        text = "Agendapunt 4 Motie Groen wordt besproken."
+        results = detect_tier2(text)
+        assert [r for r in results if r.entity_type == "persoon"] == []
+
+
+class TestSalutationPlusTitleDropped:
+    def test_mevrouw_wethouder_not_a_person(self):
+        text = "Mevrouw Wethouder sprak. De heer Voorzitter antwoordde."
+        results = detect_tier2(text)
+        assert [r for r in results if r.entity_type == "persoon"] == []
+
+    def test_title_rule_strips_absorbed_title(self):
+        from app.services.ner_engine._tier2_trim import trim_trailing_titles
+
+        assert trim_trailing_titles("Wethouder", 0, 9)[0] == ""
+        assert trim_trailing_titles("De heer Voorzitter", 0, 18)[0] == ""
+        assert trim_trailing_titles("Mevrouw De Voorzitter", 0, 21)[0] == ""
+        # A real name after a salutation survives.
+        assert trim_trailing_titles("De heer Jansen", 0, 14)[0] == "De heer Jansen"
+
+
+class TestPostcodeAmbiguity:
+    def test_year_range_not_a_postcode(self):
+        results = detect_tier1("BEGROTING 2019 EN 2020\nPROGRAMMA 2021 TM 2024")
+        assert [r for r in results if r.entity_type == "postcode"] == []
+
+    def test_invalid_letter_pairs_rejected(self):
+        results = detect_tier1("1234 SS, 1234 SA en 1234 SD zijn geen postcodes")
+        assert [r for r in results if r.entity_type == "postcode"] == []
+
+    def test_ambiguous_letters_followed_by_city_kept(self):
+        results = detect_tier1("3024 TM ROTTERDAM")
+        assert [r.text for r in results if r.entity_type == "postcode"] == ["3024 TM"]
+
+    def test_ambiguous_letters_at_line_end_kept(self):
+        results = detect_tier1("Havenstraat 194, 3024 TM\nRotterdam")
+        assert [r.text for r in results if r.entity_type == "postcode"] == ["3024 TM"]

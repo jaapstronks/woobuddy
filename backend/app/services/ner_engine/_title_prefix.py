@@ -22,6 +22,7 @@ import re
 from app.services.name_engine import NameLists
 
 from ._plausibility import _is_plausible_person_name
+from ._tier2_trim import trim_trailing_titles
 from ._types import NERDetection
 
 # Salutation / family anchors. Case-insensitive whole-word match, with a
@@ -179,9 +180,15 @@ def _detect_persoon_via_title_prefix(
 
         name_text = text[span_start:span_end]
 
-        # Sanity filter — reuses the Deduce heuristic so "de heer
-        # Voorzitter" / organisation-keyword false positives are dropped
-        # here too.
+        # Strip function titles the walk absorbed ("mevrouw Wethouder
+        # Jansen" → "Jansen") and drop the span when nothing but a title
+        # remains ("mevrouw Wethouder", "de heer Voorzitter").
+        name_text, span_start, span_end = trim_trailing_titles(name_text, span_start, span_end)
+        if not name_text:
+            continue
+
+        # Sanity filter — reuses the Deduce heuristic so organisation-
+        # keyword false positives are dropped here too.
         if not _is_plausible_person_name(name_text):
             continue
 
