@@ -26,7 +26,8 @@ backend/dist/
 .DS_Store
 
 # Claude Code local state (per-project scratch)
-.claude/
+.claude/*
+!.claude/skills/
 
 # Project instructions + working plans/briefs live in the private
 # `woobuddy-planning` sibling repo and are symlinked in (see its README).
