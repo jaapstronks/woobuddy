@@ -60,9 +60,15 @@ class TriageItem:
 
     @property
     def before(self) -> str:
-        """The part of the context that precedes the span, or all of it."""
+        """The part of the context that precedes the span.
+
+        Empty when the span opens the context; the whole context only
+        when the span cannot be located in it at all (bbox-less rows).
+        """
         idx = self.context.find(self.text)
-        return self.context[:idx] if idx > 0 else self.context
+        if idx == -1:
+            return self.context
+        return self.context[:idx]
 
     @property
     def after(self) -> str:

@@ -127,3 +127,16 @@ def test_rejected_causes_read_the_source_and_the_reasoning() -> None:
         reasoning="gedeputeerde staten van Drenthe is een bestuursorgaan",
     )
     assert "governing_body_as_title" in names(body)
+
+
+def test_before_is_empty_when_span_opens_the_context():
+    item = TriageItem(
+        kind="fp",
+        doc="x",
+        page=1,
+        text="Zonnepark 3",
+        entity_type="adres",
+        context="Zonnepark 3 ligt aan de Postbus 12, 6711 DE Ede",
+    )
+    assert item.before == ""
+    assert item.after.startswith(" ligt aan")
