@@ -1333,6 +1333,30 @@ class TestAddressPlausibility:
         text = "Gevestigd aan de Loopbaan 14, 5654 AB Eindhoven."
         assert is_plausible_home_address("Loopbaan 14", text, text.index("Loopbaan")) is True
 
+    def test_postcode_before_the_span_is_not_evidence(self):
+        from app.services.ner_engine._tier2_filters import (
+            has_postcode_nearby,
+            is_plausible_home_address,
+        )
+
+        # A Dutch address puts the postcode after the street, so a postcode
+        # that has already been read belongs to the address above, not to the
+        # next capitalised word with a number behind it.
+        text = "Loopbaan 14, 5654 AB Eindhoven. Zie bijlage Data 12 voor de meetreeks."
+        start = text.index("Data 12")
+
+        assert has_postcode_nearby(text, start, start + len("Data 12")) is False
+        assert is_plausible_home_address("Data 12", text, start) is False
+        # The real address on the same line keeps its evidence.
+        assert is_plausible_home_address("Loopbaan 14", text, text.index("Loopbaan")) is True
+
+    def test_postcode_inside_the_span_still_counts(self):
+        from app.services.ner_engine._tier2_filters import has_postcode_nearby
+
+        text = "Havenstraat 194\n3024 TM Rotterdam"
+        start = text.index("3024")
+        assert has_postcode_nearby(text, start, len(text)) is True
+
     def test_weak_suffix_rescued_by_residence_cue(self):
         from app.services.ner_engine._tier2_filters import is_plausible_home_address
 

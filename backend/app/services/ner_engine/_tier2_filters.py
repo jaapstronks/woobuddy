@@ -241,7 +241,7 @@ def has_strong_street_shape(span_text: str) -> bool:
     return False
 
 
-# How close a postcode must sit to an address span to count as
+# How far past an address span a postcode may sit and still count as
 # corroboration. 80 chars comfortably covers a line break between
 # "Loopbaan 14" and "5654 AB Eindhoven" on any reasonable layout
 # without bleeding into the next paragraph.
@@ -249,7 +249,14 @@ POSTCODE_PROXIMITY_CHARS = 80
 
 
 def has_postcode_nearby(full_text: str, start_char: int, end_char: int) -> bool:
-    """True when a genuine Dutch postcode sits inside or within ~80 chars of the span.
+    """True when a genuine Dutch postcode sits inside the span or ~80 chars after it.
+
+    A Dutch address writes the postcode *after* the street, so only a
+    postcode from the span onwards is evidence that the span is one.
+    Looking backwards as well turned every capitalised word plus number
+    within eighty characters of a delivery address into an address of
+    its own: "5654 AB Eindhoven … Data 12" gave "Data 12" a 0.92 card on
+    a production document.
 
     Only postcodes Tier 1 would accept count: "2019 EN 2020" is a year
     range, and Deduce's own postcode-shaped ``locatie`` span must not
@@ -258,9 +265,8 @@ def has_postcode_nearby(full_text: str, start_char: int, end_char: int) -> bool:
     organisation, so it does not vouch for the "Zonnepark 3" in the
     Onderwerp line right under it either.
     """
-    window_start = max(0, start_char - POSTCODE_PROXIMITY_CHARS)
     window_end = min(len(full_text), end_char + POSTCODE_PROXIMITY_CHARS)
-    for m in _POSTCODE_PATTERN.finditer(full_text, window_start, window_end):
+    for m in _POSTCODE_PATTERN.finditer(full_text, start_char, window_end):
         if not _is_plausible_postcode(full_text, m):
             continue
         if has_institutional_address_label(full_text, m.start()):
