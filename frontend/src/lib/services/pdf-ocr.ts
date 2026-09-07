@@ -19,6 +19,7 @@
  */
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { ExtractedTextItem, ExtractionResult, PageExtraction } from '$lib/types';
+import { joinTextItems } from './text-join';
 
 export interface OcrProgress {
 	/** 1-indexed page currently being processed. */
@@ -147,22 +148,18 @@ export async function runOcr(
 				}
 			}
 
-			// Re-assemble the page full-text using the same
-			// visually-adjacent-items rule as `pdf-text-extractor`, so
-			// detection on OCR'd docs behaves identically to detection on
-			// digital PDFs. Tesseract's own `data.text` inserts newlines
-			// between words on the same line for some inputs, which
-			// breaks regex matches that cross a (tesseract-internal) line
-			// boundary.
-			const SAME_LINE_TOLERANCE = 2;
-			const ADJACENT_X_TOLERANCE = 1.5;
-			const pageFullText = textItems.reduce((acc, item, idx) => {
-				if (idx === 0) return item.text;
-				const prev = textItems[idx - 1];
-				const sameLine = Math.abs(item.y0 - prev.y0) < SAME_LINE_TOLERANCE;
-				const touching = sameLine && item.x0 - prev.x1 < ADJACENT_X_TOLERANCE;
-				return acc + (touching ? '' : ' ') + item.text;
-			}, '');
+			// Re-assemble the page full-text with the same join rule as
+			// `pdf-text-extractor`, so detection on OCR'd docs behaves
+			// identically to detection on digital PDFs. Tesseract's own
+			// `data.text` inserts newlines between words on the same line for
+			// some inputs, which breaks regex matches that cross a
+			// (tesseract-internal) line boundary. The word boxes are already
+			// upright canvas coordinates, so they double as the layout boxes
+			// the join needs.
+			const pageFullText = joinTextItems(
+				textItems.map((i) => i.text),
+				textItems
+			);
 
 			pages.push({
 				pageNumber: pageIdx, // 0-indexed to match PyMuPDF convention

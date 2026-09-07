@@ -3,9 +3,17 @@
 The engine is pure text-in / spans-out — no Deduce, no pipeline. Tests
 build `ExtractionResult` stubs directly so offsets are deterministic and
 assertions can pin them down.
+
+Every fixture below runs twice, through the `shape` fixture: once as written
+(PyMuPDF-shaped, blank lines and all) and once reshaped into what the browser
+actually sends. The engine cuts its blocks on line boundaries, and production
+text has no blank lines to cut on — see `text_shapes.py` for why that
+distinction cost us a page-wide signature block.
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
 
 import pytest
 
@@ -16,6 +24,13 @@ from app.services.structure_engine import (
     detect_structures,
     find_enclosing_structure,
 )
+from tests.text_shapes import production_text
+
+
+@pytest.fixture(params=["pymupdf", "production"])
+def shape(request: pytest.FixtureRequest) -> Callable[[str], str]:
+    """Return a fixture reshaper for one of the two text shapes."""
+    return production_text if request.param == "production" else lambda text: text
 
 
 def _make_extraction(text: str) -> ExtractionResult:
@@ -43,8 +58,8 @@ def _kinds(spans: list[StructureSpan]) -> list[str]:
 
 
 class TestEmailHeaderDetection:
-    def test_single_header_block(self):
-        text = (
+    def test_single_header_block(self, shape):
+        text = shape(
             "Van: jan@example.nl\n"
             "Aan: piet@example.nl\n"
             "Onderwerp: Woo-verzoek\n"
@@ -64,11 +79,11 @@ class TestEmailHeaderDetection:
         assert "Beste Piet" not in text[block.start_char : block.end_char]
         assert block.evidence.lower().startswith("van:")
 
-    def test_email_thread_produces_multiple_headers_and_signatures(self):
+    def test_email_thread_produces_multiple_headers_and_signatures(self, shape):
         """The todo requires that a threaded reply chain emits three
         `email_header` spans and two `signature_block` spans on the
         standard fixture. This test nails both."""
-        text = (
+        text = shape(
             "Van: piet@example.nl\n"
             "Aan: jan@example.nl\n"
             "Onderwerp: Re: Woo-verzoek\n"
@@ -105,13 +120,13 @@ class TestEmailHeaderDetection:
         assert kinds.count("email_header") == 3
         assert kinds.count("signature_block") == 2
 
-    def test_case_insensitive_and_whitespace_tolerant(self):
-        text = "  VAN :   jan@example.nl\n  AAN :   piet@example.nl\n"
+    def test_case_insensitive_and_whitespace_tolerant(self, shape):
+        text = shape("  VAN :   jan@example.nl\n  AAN :   piet@example.nl\n")
         spans = detect_structures(_make_extraction(text))
         assert any(s.kind == "email_header" for s in spans)
 
-    def test_header_block_stops_at_non_header_line(self):
-        text = (
+    def test_header_block_stops_at_non_header_line(self, shape):
+        text = shape(
             "Van: jan@example.nl\n"
             "Aan: piet@example.nl\n"
             "Dit is gewoon tekst zonder dubbele punt.\n"
@@ -136,8 +151,8 @@ class TestEmailHeaderDetection:
 
 
 class TestSignatureBlockDetection:
-    def test_signature_includes_multi_line_tail(self):
-        text = (
+    def test_signature_includes_multi_line_tail(self, shape):
+        text = shape(
             "Het verzoek is in behandeling.\n"
             "\n"
             "Met vriendelijke groet,\n"
@@ -157,15 +172,15 @@ class TestSignatureBlockDetection:
         # 6-line cap: phone + email fit, anything further would be cut.
         assert "jan@example.nl" in body
 
-    def test_hoogachtend_trigger(self):
-        text = "Hoogachtend,\n\nMr. A. Janssen\nAdvocaat\n"
+    def test_hoogachtend_trigger(self, shape):
+        text = shape("Hoogachtend,\n\nMr. A. Janssen\nAdvocaat\n")
         spans = detect_structures(_make_extraction(text))
         sigs = [s for s in spans if s.kind == "signature_block"]
         assert len(sigs) == 1
         assert sigs[0].evidence.lower() == "hoogachtend"
 
-    def test_signature_stops_at_disclaimer_url(self):
-        text = (
+    def test_signature_stops_at_disclaimer_url(self, shape):
+        text = shape(
             "Met vriendelijke groet,\n"
             "\n"
             "Jan de Vries\n"
@@ -186,25 +201,25 @@ class TestSignatureBlockDetection:
 
 
 class TestSalutationDetection:
-    def test_geachte_heer_jansen(self):
-        text = "Geachte heer Jansen,\n\nBijgaand het besluit.\n"
+    def test_geachte_heer_jansen(self, shape):
+        text = shape("Geachte heer Jansen,\n\nBijgaand het besluit.\n")
         spans = detect_structures(_make_extraction(text))
         saluts = [s for s in spans if s.kind == "salutation"]
         assert len(saluts) == 1
         assert text[saluts[0].start_char : saluts[0].end_char].startswith("Geachte heer")
 
-    def test_beste_name(self):
-        text = "Beste Jan,\n\nDank voor je bericht.\n"
+    def test_beste_name(self, shape):
+        text = shape("Beste Jan,\n\nDank voor je bericht.\n")
         spans = detect_structures(_make_extraction(text))
         assert any(s.kind == "salutation" for s in spans)
 
-    def test_ls_formal_opener(self):
-        text = "L.S.\n\nHierbij doe ik u toekomen het besluit.\n"
+    def test_ls_formal_opener(self, shape):
+        text = shape("L.S.\n\nHierbij doe ik u toekomen het besluit.\n")
         spans = detect_structures(_make_extraction(text))
         assert any(s.kind == "salutation" for s in spans)
 
-    def test_salutation_extent_is_trigger_line_only(self):
-        text = "Geachte mevrouw De Jong,\nBijgaand de reactie.\n"
+    def test_salutation_extent_is_trigger_line_only(self, shape):
+        text = shape("Geachte mevrouw De Jong,\nBijgaand de reactie.\n")
         spans = detect_structures(_make_extraction(text))
         saluts = [s for s in spans if s.kind == "salutation"]
         assert len(saluts) == 1
@@ -219,8 +234,8 @@ class TestSalutationDetection:
 
 
 class TestNoStructure:
-    def test_plain_body_text_returns_empty_list(self):
-        text = (
+    def test_plain_body_text_returns_empty_list(self, shape):
+        text = shape(
             "Het college heeft besloten tot uitbreiding van de subsidieregeling. "
             "Het besluit wordt ter inzage gelegd bij de balie van het stadhuis.\n"
         )
@@ -237,8 +252,8 @@ class TestNoStructure:
 
 
 class TestFindEnclosingStructure:
-    def test_detection_inside_signature(self):
-        text = "Met vriendelijke groet,\n\nJan de Vries\nWethouder\n"
+    def test_detection_inside_signature(self, shape):
+        text = shape("Met vriendelijke groet,\n\nJan de Vries\nWethouder\n")
         spans = detect_structures(_make_extraction(text))
         start = text.index("Jan de Vries")
         end = start + len("Jan de Vries")
@@ -246,8 +261,8 @@ class TestFindEnclosingStructure:
         assert enclosing is not None
         assert enclosing.kind == "signature_block"
 
-    def test_detection_outside_any_structure(self):
-        text = "Jan de Vries loopt over straat.\n"
+    def test_detection_outside_any_structure(self, shape):
+        text = shape("Jan de Vries loopt over straat.\n")
         spans = detect_structures(_make_extraction(text))
         start = text.index("Jan de Vries")
         end = start + len("Jan de Vries")
@@ -282,8 +297,8 @@ class TestFindEnclosingStructure:
 
 class TestPipelineStructureIntegration:
     @pytest.mark.asyncio
-    async def test_name_in_signature_block_is_auto_accepted(self):
-        text = (
+    async def test_name_in_signature_block_is_auto_accepted(self, shape):
+        text = shape(
             "Geachte heer Jansen,\n"
             "\n"
             "Bijgaand het besluit op uw Woo-verzoek.\n"

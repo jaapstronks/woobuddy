@@ -11,11 +11,11 @@ Two things in here are less obvious than they look.
 
 **The text comes from pdf.js, not PyMuPDF.** Production text is
 `getTextContent()` items in content-stream order, joined with '' when they
-touch on the same line and with ' ' otherwise, with no newlines anywhere.
-`page.get_text()` gives a different tokenisation *and* newlines, so a harness
-built on it measures its own tokenizer. `pdfjs_extract.mjs` runs the real
-library; `--extractor pymupdf` is a lower-fidelity fallback for machines
-without node.
+touch on the same line, with ' ' when they share a line, and with '\n' where a
+new line starts. `page.get_text()` gives a different tokenisation *and* a
+different line split, so a harness built on it measures its own tokenizer.
+`pdfjs_extract.mjs` runs the real library; `--extractor pymupdf` is a
+lower-fidelity fallback for machines without node.
 
 **Planted values are moved back into reading order.** `ontlak.py` writes its
 fictional values with `insert_text(..., overlay=True)`, which appends to the
@@ -46,8 +46,8 @@ _HERE = Path(__file__).resolve().parent
 EXTRACTOR_SCRIPT = _HERE / "pdfjs_extract.mjs"
 
 #: Mirrors `SAME_LINE_TOLERANCE` / `ADJACENT_X_TOLERANCE` in
-#: `frontend/src/lib/services/pdf-text-extractor.ts`. Change one, change all
-#: three (the .mjs has its own copy because it is the real join).
+#: `frontend/src/lib/services/text-join.ts`. Change one, change all three
+#: (the .mjs has its own copy because it is the real join).
 SAME_LINE_TOLERANCE = 2.0
 ADJACENT_X_TOLERANCE = 1.5
 
@@ -76,12 +76,18 @@ def fullpage_image(page: Any) -> bool:
 
 
 def join_items(texts: list[str], boxes: list[Box]) -> str:
-    """Build a page's `full_text` the way `extractText()` does.
+    """Build a page's `full_text` the way `joinTextItems()` does.
 
-    Items that touch on the same line are joined with nothing, everything else
-    with a single space, and no newline is ever emitted. pdf.js splits long
-    tokens (URLs, IBANs, phone numbers) across text items, so a blind `' '`
-    join inserts phantom spaces that break both regexes and NER.
+    Items that touch on the same line are joined with nothing, items that
+    merely share a line with a single space, and a new line starts with a
+    single ``\n``. pdf.js splits long tokens (URLs, IBANs, phone numbers)
+    across text items, so a blind `' '` join inserts phantom spaces that break
+    both regexes and NER; joining *lines* with a space is just as damaging the
+    other way, because a dozen rules in `ner_engine` and the whole structure
+    engine read "the same line" off those newlines.
+
+    Every separator is one character, so `join_items_with_offsets` can hand
+    back offsets that mean the same thing whichever separator was chosen.
 
     `boxes` must be the *unrotated* (layout viewport) boxes: on a /Rotate 90
     page a line runs top-to-bottom in viewer space and every same-line test
@@ -109,9 +115,10 @@ def join_items_with_offsets(
         sep = ""
         if idx:
             box, prev = boxes[idx], boxes[idx - 1]
-            same_line = abs(box["y0"] - prev["y0"]) < SAME_LINE_TOLERANCE
-            touching = same_line and box["x0"] - prev["x1"] < ADJACENT_X_TOLERANCE
-            sep = "" if touching else " "
+            if abs(box["y0"] - prev["y0"]) >= SAME_LINE_TOLERANCE:
+                sep = "\n"
+            elif box["x0"] - prev["x1"] >= ADJACENT_X_TOLERANCE:
+                sep = " "
         parts.append(sep + text)
         cursor += len(sep)
         spans.append((cursor, cursor + len(text)))

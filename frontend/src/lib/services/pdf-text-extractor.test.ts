@@ -127,12 +127,14 @@ describe('extractText bbox geometry', () => {
 
 describe('extractText reading order', () => {
 	// pdf.js splits long tokens across items; the extractor rejoins them when
-	// they touch. That test runs on unrotated coordinates, because at /Rotate
-	// 90 a single baseline runs top-to-bottom in viewer space and every
-	// same-line comparison there would fail.
+	// they touch, spaces them when they merely share a line, and starts a new
+	// line with '\n'. That test runs on unrotated coordinates, because at
+	// /Rotate 90 a single baseline runs top-to-bottom in viewer space and
+	// every same-line comparison there would fail.
 	const split: FakeItem[] = [
 		{ str: 'NL91', transform: [12, 0, 0, 12, 100, 700], width: 30 },
 		{ str: 'ABNA', transform: [12, 0, 0, 12, 130, 700], width: 30 },
+		{ str: 'Postbus', transform: [12, 0, 0, 12, 200, 700], width: 40 },
 		{ str: 'volgende', transform: [12, 0, 0, 12, 100, 660], width: 50 }
 	];
 
@@ -140,9 +142,23 @@ describe('extractText reading order', () => {
 		it(`joins touching items and breaks lines at /Rotate ${rotation}`, async () => {
 			const result = await extractText(fakeDoc(rotation, split));
 
-			expect(result.pages[0].fullText).toBe('NL91ABNA volgende');
+			expect(result.pages[0].fullText).toBe('NL91ABNA Postbus\nvolgende');
 		});
 	}
+
+	// The backend reads "the same line" off these newlines: without them a
+	// letterhead label vouches for whatever the reader meets 40 characters
+	// later, wherever on the page that happens to be (#95).
+	it('separates every line with exactly one newline', async () => {
+		const result = await extractText(fakeDoc(0, split));
+		const text = result.pages[0].fullText;
+
+		expect(text.split('\n')).toHaveLength(2);
+		expect(text).not.toContain('\n\n');
+		// One character per separator, so detection offsets keep meaning the
+		// same thing whichever separator the join picked.
+		expect(text).toHaveLength('NL91ABNAPostbusvolgende'.length + 2);
+	});
 });
 
 // #87 — the boxes above are in viewer space, which is only enough to *draw*.

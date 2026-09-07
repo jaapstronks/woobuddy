@@ -17,6 +17,7 @@ from app.services.ner_engine._tier1 import (
     _validate_luhn,
 )
 from app.services.ner_engine._title_prefix import _detect_persoon_via_title_prefix
+from tests.text_shapes import production_text
 
 # ---------------------------------------------------------------------------
 # Tier 1: BSN (Burgerservicenummer) — 9 digits with 11-proef
@@ -1435,10 +1436,12 @@ class TestTableOfContentsNotAddresses:
         # window of both year ranges and must not vouch for them.
         text = "BEGROTING 2019 EN 2020\nPROGRAMMA 2021 TM 2024\nAdres: Kerkstraat 3, 1234 EN Ede"
         results = detect_tier2(text)
-        assert [r.text for r in results if r.entity_type == "adres"] == [
-            "Kerkstraat 3",
-            "1234 EN Ede",
-        ]
+        # Sorted by offset: `detect_tier2` does not promise an order, and on
+        # this fixture it genuinely alternates between runs (see #103).
+        adressen = sorted(
+            (r for r in results if r.entity_type == "adres"), key=lambda r: r.start_char
+        )
+        assert [r.text for r in adressen] == ["Kerkstraat 3", "1234 EN Ede"]
 
     def test_institutional_postcode_does_not_vouch_for_weak_span(self):
         text = "Gemeente Ede\nBezoekadres: Raadhuisplein 2, 6711 DE Ede\nOnderwerp: Zonnepark 3"
@@ -1550,3 +1553,75 @@ class TestPostcodeAmbiguity:
     def test_ambiguous_letters_at_line_end_kept(self):
         results = detect_tier1("Havenstraat 194, 3024 TM\nRotterdam")
         assert [r.text for r in results if r.entity_type == "postcode"] == ["3024 TM"]
+
+
+class TestProductionTextLineBoundaries:
+    """The line-window rules, measured on the text production actually sends.
+
+    Ten rules in this package treat a line as a unit of meaning: `[^\\n]*$`
+    look-behinds for address labels and residence cues, `rfind("\\n")` for the
+    greeting cue. Before #95 the browser joined every line with a space, so
+    "the same line" silently became "the last 40 to 60 characters" and a rule
+    reached across the page in both directions — dropping real findings and
+    keeping false ones. `production_text` builds the fixture the browser
+    would send; `_flattened` is the pre-#95 shape, kept so each test shows
+    both halves of the bug it pins.
+    """
+
+    LETTERHEAD = (
+        "Provincie Drenthe\n"
+        "Postbus 122\n"
+        "9400 AC Assen\n"
+        "Aan de bewoner van\n"
+        "Schoolpad 172-2\n"
+        "9471 AC Zuidlaren\n"
+    )
+
+    @staticmethod
+    def _flattened(text: str) -> str:
+        """The same page as the browser joined it before #95: no newlines."""
+        return " ".join(text.split("\n"))
+
+    def test_letterhead_postbus_does_not_reach_the_resident_address(self):
+        from app.services.ner_engine._tier2_filters import has_institutional_address_label
+
+        text = production_text(self.LETTERHEAD)
+        start = text.index("Schoolpad")
+
+        assert has_institutional_address_label(text, start) is False
+        # Pre-#95: "Postbus" sat inside the 60-character "same line" window.
+        assert has_institutional_address_label(self._flattened(text), start) is True
+
+    def test_resident_address_survives_under_a_letterhead(self):
+        from app.services.ner_engine._tier2_filters import is_plausible_home_address
+
+        text = production_text(self.LETTERHEAD)
+        start = text.index("Schoolpad")
+
+        assert is_plausible_home_address("Schoolpad 172-2", text, start) is True
+        # The false negative this item was opened for: the addressee's own
+        # street disappeared because the sender's PO box vouched for it.
+        assert is_plausible_home_address("Schoolpad 172-2", self._flattened(text), start) is False
+
+    def test_greeting_cue_does_not_cross_a_line_break(self):
+        text = production_text(
+            "Het besluit is genomen op verzoek van\nStorm en regen teisterden de kust.\n"
+        )
+        assert [r for r in detect_tier2(text) if r.entity_type == "persoon"] == []
+        # Pre-#95 the "van" ending the previous line read as a mail-header cue
+        # and kept a weather report as a person.
+        flat = [r.text for r in detect_tier2(self._flattened(text)) if r.entity_type == "persoon"]
+        assert flat == ["Storm"]
+
+    def test_residence_cue_does_not_reach_over_a_full_line(self):
+        from app.services.ner_engine._tier2_filters import has_address_cue
+
+        # One line of prose between the cue and the span is enough: `[^\n]`
+        # cannot cross it. A cue on the *immediately* preceding line still
+        # leaks through, because `$` also matches before a trailing newline —
+        # a narrower hole in the same wall, tracked as its own item (#104).
+        text = production_text("Perceel van de bewoner\nis groot\nWoningmarkt 14 telt mee.\n")
+        start = text.index("Woningmarkt")
+
+        assert has_address_cue(text, start) is False
+        assert has_address_cue(self._flattened(text), start) is True

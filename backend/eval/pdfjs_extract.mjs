@@ -2,19 +2,20 @@
 /**
  * Extract text the way the browser does, for the evaluation harness.
  *
- * KEEP IN SYNC WITH `frontend/src/lib/services/pdf-text-extractor.ts`.
+ * KEEP IN SYNC WITH `frontend/src/lib/services/text-join.ts`.
  * ------------------------------------------------------------------
  * The harness only measures something real if the text it feeds the pipeline
  * is byte-for-byte what the frontend would have sent. That text is not
  * `page.get_text()` from PyMuPDF: it is pdf.js `getTextContent()` items in
- * content-stream order, joined with '' when they touch on the same line and
- * with ' ' otherwise, with no newlines anywhere. Reimplementing that join in
- * Python was how the first version of this harness ended up measuring its own
- * tokenizer instead of the detector, so this script runs the real pdf.js and
- * mirrors `extractText()` line by line: same transform maths, same viewport
- * pair, same tolerances, same `normalizeRotation`.
+ * content-stream order, joined with '' when they touch on the same line, with
+ * ' ' when they share a line, and with '\n' where a new line starts.
+ * Reimplementing that join in Python was how the first version of this harness
+ * ended up measuring its own tokenizer instead of the detector, so this script
+ * runs the real pdf.js and mirrors `extractText()` line by line: same
+ * transform maths, same viewport pair, same tolerances, same
+ * `normalizeRotation`.
  *
- * Any change to `extractText()` has to be repeated here (and vice versa).
+ * Any change to `text-join.ts` has to be repeated here (and vice versa).
  * `test_pdfjs_extract.py` pins the join rule so the two cannot drift silently.
  *
  * Usage:  node pdfjs_extract.mjs <file.pdf>
@@ -98,12 +99,12 @@ function toViewportBox(viewport, x0, yBottom, x1, yTop) {
 	};
 }
 
-// Mirror of the constants in `extractText()`.
+// Mirror of the constants in `text-join.ts`.
 const SAME_LINE_TOLERANCE = 2; // points
 const ADJACENT_X_TOLERANCE = 1.5; // points
 
 /**
- * Join text items into one line of page text, exactly as `extractText()` does.
+ * Join text items into page text, exactly as `joinTextItems()` does.
  *
  * `boxes` are the *unrotated* (layout viewport) boxes. `pdfio.join_items()`
  * is the Python twin, used to rebuild `full_text` after a planted item has
@@ -115,8 +116,8 @@ function joinItems(texts, boxes) {
 		if (idx === 0) return text;
 		const box = boxes[idx];
 		const prev = boxes[idx - 1];
-		const sameLine = Math.abs(box.y0 - prev.y0) < SAME_LINE_TOLERANCE;
-		const touching = sameLine && box.x0 - prev.x1 < ADJACENT_X_TOLERANCE;
+		if (Math.abs(box.y0 - prev.y0) >= SAME_LINE_TOLERANCE) return acc + '\n' + text;
+		const touching = box.x0 - prev.x1 < ADJACENT_X_TOLERANCE;
 		return acc + (touching ? '' : ' ') + text;
 	}, '');
 }
