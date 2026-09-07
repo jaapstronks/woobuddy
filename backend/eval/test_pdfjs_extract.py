@@ -57,11 +57,14 @@ def _extract(path: Path) -> dict:
 
 
 def test_join_rule_matches_the_frontend(tmp_path: Path) -> None:
-    """Touching items join with nothing, everything else with one space.
+    """Touching items join with nothing, a shared line with one space, a new
+    line with one newline.
 
     pdf.js hands the browser one text item per show-text operator, so an IBAN
     split over three operators must come back as one token: a phantom space
-    there breaks both the Tier 1 regexes and Deduce.
+    there breaks both the Tier 1 regexes and Deduce. The newline matters just
+    as much in the other direction — the structure engine and a dozen rules in
+    `ner_engine` read "the same line" off it (#95).
     """
     doc = fitz.open()
     page = doc.new_page()
@@ -82,8 +85,9 @@ def test_join_rule_matches_the_frontend(tmp_path: Path) -> None:
     page_data = raw["pages"][0]
     assert page_data["page_number"] == 1
     assert page_data["rotation"] == 0
-    # Hand-computed: no newline anywhere, and the IBAN survives whole.
-    assert page_data["full_text"] == "NL91ABNA0417 Rekening Geachte"
+    # Hand-computed: the IBAN survives whole, and the second line starts on a
+    # newline rather than melting into the first.
+    assert page_data["full_text"] == "NL91ABNA0417 Rekening\nGeachte"
 
     # And the Python twin agrees on the same items.
     assert (
@@ -116,7 +120,9 @@ def test_planted_values_move_back_into_reading_order(tmp_path: Path) -> None:
 
     without = pages_payload(pdf, planted=None)
     assert without.relocated == 0
-    assert without.pages[0]["full_text"] == "Geachte Met vriendelijke groet Jansen"
+    # Content-stream order, so the join sees the y jump back up to the first
+    # line and breaks there too: "Jansen" is stranded on a line of its own.
+    assert without.pages[0]["full_text"] == "Geachte\nMet vriendelijke groet\nJansen"
 
     planted = [
         {
@@ -127,7 +133,7 @@ def test_planted_values_move_back_into_reading_order(tmp_path: Path) -> None:
     ]
     with_truth = pages_payload(pdf, planted=planted)
     assert with_truth.relocated == 1
-    assert with_truth.pages[0]["full_text"] == "Geachte Jansen Met vriendelijke groet"
+    assert with_truth.pages[0]["full_text"] == "Geachte Jansen\nMet vriendelijke groet"
     # The bboxes are untouched: only the order changed.
     assert {i["text"] for i in with_truth.pages[0]["text_items"]} == {
         i["text"] for i in without.pages[0]["text_items"]
