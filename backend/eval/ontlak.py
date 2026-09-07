@@ -152,6 +152,9 @@ class Slot:
     type: str
     max_width: float
     fontsize: float
+    #: The font of the surrounding text. Recorded for diagnosis only: values
+    #: are written in one embedded Unicode TrueType face (see FONT_CANDIDATES),
+    #: because matching the original family costs the diacritics.
     font: str
     context: str
     bar: tuple[float, float, float, float] | None = None
@@ -666,19 +669,39 @@ class FakeFactory:
 # --------------------------------------------------------------------------
 
 
-def _base14(font: str) -> str:
-    """Match the family of the surrounding text, but never its weight.
+#: Where to look for a font with a full Latin repertoire, in order. The
+#: base-14 fonts are not an option: they are Latin-1 only, so `Yıldırım`
+#: renders as `Y·ld·r·m` and the text layer hands the detector a name no
+#: wordlist and no NER model will ever recognise. Half the point of the
+#: fixture is that Dutch names carry Turkish, Slavic and Maghrebi diacritics,
+#: so the font has to be embedded and it has to be Unicode.
+FONT_CANDIDATES = (
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",  # macOS
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Debian/Ubuntu
+    "/usr/share/fonts/dejavu/DejaVuSans.ttf",  # Fedora/Arch
+    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+)
 
-    The anchor span is usually the *label* ("Van:", "Behandeld door"), which is
-    often bold while the value that followed it was not. Inheriting the weight
-    makes every inserted value look like a heading.
+#: The name the embedded font gets inside the output PDF. One name for the
+#: whole document means PyMuPDF embeds one subset, not one per insertion.
+FONT_ALIAS = "ontlak"
+
+
+def resolve_font(explicit: str | None) -> str:
+    """Pick the TrueType file to write inserted values with.
+
+    Fails loudly rather than falling back to a base-14 font: a silent fallback
+    would produce a fixture that looks fine and quietly measures the detector
+    against mangled names.
     """
-    f = font.lower()
-    if "courier" in f or "mono" in f:
-        return "cour"
-    if any(k in f for k in ("times", "serif", "georgia", "garamond", "roman")):
-        return "tiro"
-    return "helv"
+    candidates = [explicit] if explicit else list(FONT_CANDIDATES)
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            return candidate
+    tried = "\n  ".join(c for c in candidates if c)
+    sys.exit(
+        f"geen Unicode-TrueType-font gevonden; geef er een op met --font.\ngeprobeerd:\n  {tried}"
+    )
 
 
 # When the redactor left a narrow slot, a full value will not fit. Fall back to
@@ -700,11 +723,18 @@ def _zone_of(slot: Slot, reason: str) -> UnknownZone:
 
 
 def fill(
-    doc, slots: list[Slot], factory: FakeFactory, min_width: float = 24.0
+    doc,
+    slots: list[Slot],
+    factory: FakeFactory,
+    fontfile: str,
+    min_width: float = 24.0,
 ) -> tuple[list[dict], list[UnknownZone]]:
     truth: list[dict] = []
     unknown: list[UnknownZone] = []
     skipped = 0
+    # Measure with the same font we write with, or the ground-truth bbox is a
+    # base-14 width around a TrueType string.
+    font = fitz.Font(fontfile=fontfile)
     for slot in slots:
         if slot.max_width < min_width:
             skipped += 1
@@ -712,16 +742,15 @@ def fill(
             continue
 
         typ = slot.type
-        fontname = _base14(slot.font)
         size = max(6.5, min(slot.fontsize or 9.5, 12))
 
         for _ in range(4):
             value = factory.make(typ)
-            width = fitz.get_text_length(value, fontname=fontname, fontsize=size)
+            width = font.text_length(value, fontsize=size)
             trial = size
             while width > slot.max_width and trial > 6.0:
                 trial -= 0.25
-                width = fitz.get_text_length(value, fontname=fontname, fontsize=trial)
+                width = font.text_length(value, fontsize=trial)
             if width <= slot.max_width:
                 size = trial
                 break
@@ -745,7 +774,8 @@ def fill(
         page.insert_text(
             (slot.x, slot.y),
             value,
-            fontname=fontname,
+            fontname=FONT_ALIAS,
+            fontfile=fontfile,
             fontsize=size,
             color=(0, 0, 0),
             overlay=True,
@@ -788,6 +818,13 @@ def main() -> int:
     )
     ap.add_argument("--seed", type=int, default=20260907)
     ap.add_argument(
+        "--font",
+        help=(
+            "TrueType-bestand om ingevulde waarden mee te schrijven "
+            f"(standaard de eerste van: {', '.join(FONT_CANDIDATES)})"
+        ),
+    )
+    ap.add_argument(
         "--off-list-ratio",
         type=float,
         default=0.4,
@@ -796,6 +833,8 @@ def main() -> int:
     args = ap.parse_args()
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    fontfile = resolve_font(args.font)
+    print(f"font: {fontfile}")
     rng = random.Random(args.seed)
     factory = FakeFactory(args.data_dir, rng, args.off_list_ratio)
     if not factory.voornamen:
@@ -805,7 +844,7 @@ def main() -> int:
     for path in args.pdfs:
         doc = fitz.open(path)
         slots, unknown = find_slots(doc)
-        truth, narrow = fill(doc, slots, factory)
+        truth, narrow = fill(doc, slots, factory, fontfile)
         unknown.extend(narrow)
         stem = path.stem
         out_pdf = args.out_dir / f"{stem}-ontlakt.pdf"
@@ -824,6 +863,7 @@ def main() -> int:
                 {
                     "bron": path.name,
                     "seed": args.seed,
+                    "font": fontfile,
                     "off_list_ratio": args.off_list_ratio,
                     "aantal": len(truth),
                     "detections": truth,
