@@ -90,16 +90,33 @@ def join_items(texts: list[str], boxes: list[Box]) -> str:
     The Node twin lives in `pdfjs_extract.mjs`; `test_pdfjs_extract.py` pins
     the two together.
     """
+    return join_items_with_offsets(texts, boxes)[0]
+
+
+def join_items_with_offsets(
+    texts: list[str], boxes: list[Box]
+) -> tuple[str, list[tuple[int, int]]]:
+    """`join_items`, plus where each item ended up in the result.
+
+    The offsets are what lets the evaluator say whether a detection sits on
+    text we planted or on the document's own — the difference between a
+    fixture artefact and a real finding.
+    """
     parts: list[str] = []
+    spans: list[tuple[int, int]] = []
+    cursor = 0
     for idx, text in enumerate(texts):
-        if idx == 0:
-            parts.append(text)
-            continue
-        box, prev = boxes[idx], boxes[idx - 1]
-        same_line = abs(box["y0"] - prev["y0"]) < SAME_LINE_TOLERANCE
-        touching = same_line and box["x0"] - prev["x1"] < ADJACENT_X_TOLERANCE
-        parts.append(("" if touching else " ") + text)
-    return "".join(parts)
+        sep = ""
+        if idx:
+            box, prev = boxes[idx], boxes[idx - 1]
+            same_line = abs(box["y0"] - prev["y0"]) < SAME_LINE_TOLERANCE
+            touching = same_line and box["x0"] - prev["x1"] < ADJACENT_X_TOLERANCE
+            sep = "" if touching else " "
+        parts.append(sep + text)
+        cursor += len(sep)
+        spans.append((cursor, cursor + len(text)))
+        cursor += len(text)
+    return "".join(parts), spans
 
 
 @dataclass
@@ -117,6 +134,10 @@ class Payload:
     #: the number of planted values, give or take values pdf.js split across
     #: several items.
     relocated: int = 0
+    #: Per 1-based page number, the `[start, end)` character ranges the
+    #: relocated items occupy in that page's `full_text`. Lets a caller tell a
+    #: detection on planted text from one on the document's own.
+    relocated_ranges: dict[int, list[tuple[int, int]]] = field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------
@@ -198,11 +219,14 @@ def extract_pymupdf(path: Path) -> dict[str, Any]:
 # --------------------------------------------------------------------------
 
 
-def relocate_planted(page: dict[str, Any], truth_boxes: list[Box]) -> int:
+def relocate_planted(
+    page: dict[str, Any], truth_boxes: list[Box]
+) -> tuple[int, list[tuple[int, int]]]:
     """Move this page's planted items from the end of the stream into place.
 
-    Returns how many items moved. `page` is edited in place: `text_items`,
-    `layout_boxes` and `full_text` all come back consistent.
+    Returns how many items moved and the `[start, end)` character ranges they
+    occupy in the rebuilt `full_text`. `page` is edited in place:
+    `text_items`, `layout_boxes` and `full_text` all come back consistent.
 
     Reading position is computed from the moved items' own *layout* boxes, not
     from the ground-truth box, so a rotated page works without translating
@@ -213,7 +237,7 @@ def relocate_planted(page: dict[str, Any], truth_boxes: list[Box]) -> int:
     items: list[dict[str, Any]] = page["text_items"]
     layout: list[Box] = page["layout_boxes"]
     if not items or not truth_boxes:
-        return 0
+        return 0, []
 
     # Which item belongs to which planted value. Groups keep their internal
     # order, so a value pdf.js split over two items stays readable.
@@ -230,7 +254,7 @@ def relocate_planted(page: dict[str, Any], truth_boxes: list[Box]) -> int:
                 claimed.add(idx)
                 break
     if not claimed:
-        return 0
+        return 0, []
 
     keep = [i for i in range(len(items)) if i not in claimed]
 
@@ -257,8 +281,11 @@ def relocate_planted(page: dict[str, Any], truth_boxes: list[Box]) -> int:
 
     page["text_items"] = [items[i] for i in keep]
     page["layout_boxes"] = [layout[i] for i in keep]
-    page["full_text"] = join_items([items[i]["text"] for i in keep], [layout[i] for i in keep])
-    return len(claimed)
+    page["full_text"], offsets = join_items_with_offsets(
+        [items[i]["text"] for i in keep], [layout[i] for i in keep]
+    )
+    ranges = [offsets[slot] for slot, i in enumerate(keep) if i in claimed]
+    return len(claimed), ranges
 
 
 # --------------------------------------------------------------------------
@@ -296,7 +323,10 @@ def pages_payload(
             if skip_scanned and fullpage_image(doc[pno - 1]):
                 payload.scanned_pages.append(pno)
                 continue
-            payload.relocated += relocate_planted(page, by_page.get(pno, []))
+            moved, ranges = relocate_planted(page, by_page.get(pno, []))
+            payload.relocated += moved
+            if ranges:
+                payload.relocated_ranges[pno] = ranges
             payload.pages.append(
                 {
                     "page_number": pno,

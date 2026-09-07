@@ -90,6 +90,16 @@ LEFT_CONTEXT = [
     (re.compile(r"(?i)\b(kvk|kamer van koophandel)\W*$"), "kvk"),
 ]
 
+#: Minimum horizontal gap, in points, between whatever already ends on a
+#: baseline and the value planted after it. The frontend joins two text items
+#: with *no* separator when the second starts within `ADJACENT_X_TOLERANCE`
+#: (1.5pt) of the first's right edge, so a value set flush against its label
+#: comes out of extraction as `Y. TurenhoutPauline` and no detector can win.
+#: The 0.35em `find_slots` leaves is under that threshold at small font sizes,
+#: and says nothing at all about a bar's left edge or a value planted just
+#: before this one, so the guard lives at insertion time in `fill()`.
+MIN_NEIGHBOUR_GAP = 3.0
+
 LABEL_TO_TYPE = {
     "van": "email_met_naam",
     "aan": "email_met_naam",
@@ -735,6 +745,38 @@ def fill(
     # Measure with the same font we write with, or the ground-truth bbox is a
     # base-14 width around a TrueType string.
     font = fitz.Font(fontfile=fontfile)
+    # Per page: every word already on it, plus every value planted so far, as
+    # (top, bottom, right). Two planted recipients on one `Aan:` line fuse just
+    # as readily as a value and its label, and the second one is not in the
+    # page's word list yet.
+    neighbours: dict[int, list[tuple[float, float, float]]] = {}
+
+    def line_neighbours(slot: Slot, size: float) -> tuple[float, float]:
+        """What already occupies this baseline: nearest edge left, and right.
+
+        Returns `(left_edge, right_edge)` in page coordinates, with 0.0 and
+        `inf` meaning "nothing in the way". Both matter: a redactor's bar
+        sometimes runs straight over surviving text on the same line, so a
+        value sized to the bar would overprint it and fuse with it in the
+        extracted text just as readily as with its own label.
+        """
+        page_no = slot.page
+        if page_no not in neighbours:
+            neighbours[page_no] = [(w[1], w[3], w[0], w[2]) for w in doc[page_no].get_text("words")]
+        top, bottom = slot.y - size, slot.y
+        left, right = 0.0, float("inf")
+        for n_top, n_bottom, n_left, n_right in neighbours[page_no]:
+            # Vertical overlap, not equal baselines: PyMuPDF measures a word
+            # box from its ascender and pdf.js from `baseline - fontHeight`, so
+            # an exact comparison would miss neighbours that visibly touch.
+            if n_bottom <= top or n_top >= bottom:
+                continue
+            if n_right <= slot.x + MIN_NEIGHBOUR_GAP:
+                left = max(left, n_right)
+            elif n_left >= slot.x:
+                right = min(right, n_left)
+        return left, right
+
     for slot in slots:
         if slot.max_width < min_width:
             skipped += 1
@@ -743,15 +785,32 @@ def fill(
 
         typ = slot.type
         size = max(6.5, min(slot.fontsize or 9.5, 12))
+        # Shift right off whatever precedes the slot on this line, and pay for
+        # it out of the available width so the value still fits its bar; then
+        # stop short of whatever follows it.
+        left, right = line_neighbours(slot, size)
+        x = max(slot.x, left + MIN_NEIGHBOUR_GAP) if left else slot.x
+        avail = slot.max_width - (x - slot.x)
+        # Stop short of the next word, but never at the price of the slot: a
+        # bar that overlaps surviving text is worth a slightly overprinted
+        # value, and 20 fewer planted values costs more ground truth than the
+        # handful of fused tokens it would buy back.
+        capped = right - MIN_NEIGHBOUR_GAP - x
+        if right < float("inf") and capped >= min_width:
+            avail = min(avail, capped)
+        if avail < min_width:
+            skipped += 1
+            unknown.append(_zone_of(slot, "too_narrow"))
+            continue
 
         for _ in range(4):
             value = factory.make(typ)
             width = font.text_length(value, fontsize=size)
             trial = size
-            while width > slot.max_width and trial > 6.0:
+            while width > avail and trial > 6.0:
                 trial -= 0.25
                 width = font.text_length(value, fontsize=trial)
-            if width <= slot.max_width:
+            if width <= avail:
                 size = trial
                 break
             nxt = NARROW_FALLBACK.get(typ)
@@ -762,7 +821,7 @@ def fill(
         else:
             value = None
 
-        if value is None or width > slot.max_width:
+        if value is None or width > avail:
             skipped += 1
             unknown.append(_zone_of(slot, "too_narrow"))
             continue
@@ -772,7 +831,7 @@ def fill(
         if slot.bar:
             page.draw_rect(fitz.Rect(*slot.bar), color=None, fill=(1, 1, 1), overlay=True)
         page.insert_text(
-            (slot.x, slot.y),
+            (x, slot.y),
             value,
             fontname=FONT_ALIAS,
             fontfile=fontfile,
@@ -780,14 +839,12 @@ def fill(
             color=(0, 0, 0),
             overlay=True,
         )
+        neighbours[slot.page].append((slot.y - size, slot.y, x, x + width))
 
         truth.append(
             {
                 "page": slot.page + 1,
-                "bbox": [
-                    round(v, 2)
-                    for v in (slot.x, slot.y - size, slot.x + width, slot.y + size * 0.25)
-                ],
+                "bbox": [round(v, 2) for v in (x, slot.y - size, x + width, slot.y + size * 0.25)],
                 "type": typ,
                 "value": value,
                 "slot_kind": slot.kind,

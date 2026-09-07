@@ -37,6 +37,7 @@ import unicodedata
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +51,8 @@ import fitz  # noqa: E402
 from pdfio import pages_payload  # noqa: E402, I001
 
 from app.logging_config import configure_logging  # noqa: E402
+from app.services.name_engine import _normalize as _name_token  # noqa: E402
+from app.services.name_engine import load_name_lists  # noqa: E402
 from app.services.pdf_engine import extraction_from_client_data  # noqa: E402
 from app.services.pipeline_engine import _run_pipeline_sync  # noqa: E402
 
@@ -106,6 +109,40 @@ TYPE_COMPAT: dict[str, frozenset[str]] = {
     "kenteken": frozenset({"kenteken"}),
     "geboortedatum": frozenset({"geboortedatum"}),
 }
+
+#: A `partial` whose uncovered remainder is only these is promoted to `found`
+#: and flagged `lenient`. "de Wegerif" found as "Wegerif" leaves nothing
+#: identifying on the page, and neither does "9401 AC Assen" found as
+#: "9401 AC" — the postcode is the identifier, the place is not. The count is
+#: reported separately so nobody reads it as exact coverage.
+LENIENT_PLACE_TYPES = frozenset({"postcode_plaats"})
+
+
+@lru_cache(maxsize=1)
+def _tussenvoegsel_tokens() -> frozenset[str]:
+    """Every token that can appear inside a Dutch name particle.
+
+    Taken from the detector's own list rather than a copy here, so the harness
+    cannot be lenient about a particle the pipeline does not know.
+    """
+    lists = load_name_lists()
+    tokens = set(lists.tussenvoegsels)
+    for seq in lists.tussenvoegsel_sequences:
+        tokens.update(seq)
+    return frozenset(tokens)
+
+
+def _lenient_reason(truth_type: str, uncovered: str) -> str | None:
+    """Why an incomplete match is a full hit for redaction purposes, or None."""
+    words = [w for w in re.split(r"[\s<>,;.'\u2019]+", uncovered) if w]
+    if not words:
+        return None
+    if all(_name_token(w) in _tussenvoegsel_tokens() for w in words):
+        return "tussenvoegsel_only"
+    if truth_type in LENIENT_PLACE_TYPES and not any(c.isdigit() for c in uncovered):
+        return "place_only"
+    return None
+
 
 DEFAULT_CORPUS = Path(
     os.environ.get("WOOBUDDY_EVAL_CORPUS") or Path.home() / "Github NW/woobuddy-eval-corpus"
@@ -218,6 +255,11 @@ class TruthResult:
     slot_type: str | None
     in_wordlist: bool | None
     outcome: str  # found | partial | rejected | missed
+    #: `found` only because the uncovered remainder was a tussenvoegsel or a
+    #: place name; `lenient_reason` says which. Coverage below still reports
+    #: what was actually covered.
+    lenient: bool
+    lenient_reason: str
     coverage: float
     match_mode: str | None  # bbox | text | None
     type_ok: bool | None
@@ -239,6 +281,45 @@ class FalsePositive:
     review_status: str
     confidence: float
     severity: str  # hard | soft
+    context: str
+
+
+def _page_index(payload: Any) -> list[tuple[int, int, int]]:
+    """`(start, end, page_number)` of each page inside the joined full_text.
+
+    `extraction_from_client_data` joins page texts with a blank line, so the
+    same arithmetic here turns a detection's `start_char` back into a page and
+    lets a planted character range be compared against it.
+    """
+    index: list[tuple[int, int, int]] = []
+    cursor = 0
+    for page in payload.pages:
+        length = len(page["full_text"])
+        index.append((cursor, cursor + length, int(page["page_number"])))
+        cursor += length + 2  # "\n\n"
+    return index
+
+
+@dataclass
+class NoBBox:
+    """A detection the pipeline produced without a bounding box.
+
+    Nothing is drawn on the page for these, so the reviewer sees a suggestion
+    they cannot place. `region` says whether the span sits on text this fixture
+    planted — where a span-resolution failure is partly our own doing — or on
+    the document's own text, where it is a plain bug.
+    """
+
+    doc: str
+    page: int | None
+    entity_text: str
+    entity_type: str
+    tier: str
+    source: str
+    review_status: str
+    start_char: int | None
+    end_char: int | None
+    region: str  # planted | original | unknown
     context: str
 
 
@@ -271,6 +352,10 @@ class DocReport:
     on_unknown_zone: int = 0
     detections: int = 0
     detections_without_bbox: int = 0
+    detections_without_bbox_planted: int = 0
+    detections_without_bbox_original: int = 0
+    detections_without_bbox_items: list[dict[str, Any]] = field(default_factory=list)
+    lenient: int = 0
     #: Text items moved out of the tail of the content stream and back into
     #: reading order. Should track the number of planted values.
     relocated: int = 0
@@ -420,6 +505,7 @@ class DocOutcome:
     truth_results: list[TruthResult]
     false_positives: list[FalsePositive]
     suppressed: list[Suppressed]
+    no_bbox: list[NoBBox] = field(default_factory=list)
 
 
 def evaluate_document(
@@ -485,6 +571,8 @@ def evaluate_document(
             used = active or matches
             coverage = _coverage(item, used) if used else 0.0
 
+            uncovered = _uncovered_parts(item["value"], used)
+            lenient, lenient_reason = False, ""
             if not matches:
                 outcome = "missed"
             elif not active:
@@ -493,6 +581,10 @@ def evaluate_document(
                 outcome = "found"
             else:
                 outcome = "partial"
+                reason = _lenient_reason(item["type"], uncovered)
+                if reason:
+                    # Not a leak: what is left uncovered identifies nobody.
+                    outcome, lenient, lenient_reason = "found", True, reason
 
             compat = TYPE_COMPAT.get(item["type"], frozenset())
             type_ok = any(r.entity_type in compat for r, _ in used) if used else None
@@ -517,6 +609,8 @@ def evaluate_document(
                     slot_type=item.get("slot_type"),
                     in_wordlist=item.get("in_wordlist"),
                     outcome=outcome,
+                    lenient=lenient,
+                    lenient_reason=lenient_reason,
                     coverage=round(coverage, 3),
                     match_mode=mode,
                     type_ok=type_ok,
@@ -531,13 +625,59 @@ def evaluate_document(
                         }
                         for r, m in matches
                     ],
-                    uncovered=_uncovered_parts(item["value"], used),
+                    uncovered=uncovered,
                     context=context,
                 )
             )
             setattr(report, outcome, getattr(report, outcome) + 1)
+            report.lenient += lenient
     finally:
         doc.close()
+
+    # Where each page's text sits in the joined document text, and which of
+    # those characters we planted ourselves.
+    page_index = _page_index(payload)
+    page_base = {pno: start for start, _end, pno in page_index}
+    planted_spans = [
+        (page_base[pno] + a, page_base[pno] + b)
+        for pno, ranges in payload.relocated_ranges.items()
+        if pno in page_base
+        for a, b in ranges
+    ]
+
+    def _page_of(pos: int | None) -> int | None:
+        if pos is None:
+            return None
+        return next((pno for start, end, pno in page_index if start <= pos <= end), None)
+
+    def _region(rec: DetectionRecord) -> str:
+        if rec.start_char is None or rec.end_char is None:
+            return "unknown"
+        return (
+            "planted"
+            if any(rec.start_char < b and a < rec.end_char for a, b in planted_spans)
+            else "original"
+        )
+
+    # Every bbox-less detection, including ones that matched a truth item by
+    # text: the reviewer cannot place any of them.
+    no_bbox = [
+        NoBBox(
+            doc=pdf.name,
+            page=_page_of(rec.start_char),
+            entity_text=rec.entity_text,
+            entity_type=rec.entity_type,
+            tier=rec.tier,
+            source=rec.source,
+            review_status=rec.review_status,
+            start_char=rec.start_char,
+            end_char=rec.end_char,
+            region=_region(rec),
+            context=rec.context,
+        )
+        for rec in records
+        if not rec.bboxes
+    ]
 
     false_positives: list[FalsePositive] = []
     suppressed: list[Suppressed] = []
@@ -557,7 +697,8 @@ def evaluate_document(
             continue
         if not rec.bboxes:
             # No box means nothing is drawn on the page; it cannot be checked
-            # against an unknown zone either. Counted, not charged.
+            # against an unknown zone either. Counted and listed above, but not
+            # charged as a false positive.
             continue
         if _on_unknown_zone(rec, zones):
             report.on_unknown_zone += 1
@@ -579,6 +720,9 @@ def evaluate_document(
         )
 
     report.suppressed = len(suppressed)
+    report.detections_without_bbox_items = [asdict(n) for n in no_bbox]
+    report.detections_without_bbox_planted = sum(1 for n in no_bbox if n.region == "planted")
+    report.detections_without_bbox_original = sum(1 for n in no_bbox if n.region != "planted")
     if not report.fp_scored:
         # The redactor left personal data standing here, so "not redacted" is
         # not a decision we can score against. Recall above still counts: a
@@ -587,7 +731,7 @@ def evaluate_document(
         false_positives = []
     report.fp_hard = sum(1 for f in false_positives if f.severity == "hard")
     report.fp_soft = sum(1 for f in false_positives if f.severity == "soft")
-    return DocOutcome(report, truth_results, false_positives, suppressed)
+    return DocOutcome(report, truth_results, false_positives, suppressed, no_bbox)
 
 
 # --------------------------------------------------------------------------
@@ -622,13 +766,13 @@ def _bucket_table(title: str, buckets: dict[str, Counter[str]], key_label: str) 
     lines = [
         f"### {title}",
         "",
-        f"| {key_label} | truth | found | partial | rejected | missed | recall |",
-        "|---|---:|---:|---:|---:|---:|---:|",
+        f"| {key_label} | truth | found | (lenient) | partial | rejected | missed | recall |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for key in sorted(buckets, key=lambda k: -buckets[k]["truth"]):
         c = buckets[key]
         lines.append(
-            f"| {key} | {c['truth']} | {c['found']} | {c['partial']} | "
+            f"| {key} | {c['truth']} | {c['found']} | {c['lenient']} | {c['partial']} | "
             f"{c['rejected']} | {c['missed']} | {_rate(c['found'], c['truth'])} |"
         )
     lines.append("")
@@ -644,6 +788,7 @@ def build_report(
     truth_results = [t for o in outcomes for t in o.truth_results]
     fps = [f for o in outcomes for f in o.false_positives]
     supp = [s for o in outcomes for s in o.suppressed]
+    nobox = [n for o in outcomes for n in o.no_bbox]
     reports = [o.report for o in outcomes]
 
     per_type: dict[str, Counter[str]] = defaultdict(Counter)
@@ -656,10 +801,12 @@ def build_report(
         ):
             bucket[key]["truth"] += 1
             bucket[key][t.outcome] += 1
+            bucket[key]["lenient"] += t.lenient
         if t.in_wordlist is not None:
             key = "in wordlist" if t.in_wordlist else "outside wordlist"
             per_wordlist[key]["truth"] += 1
             per_wordlist[key][t.outcome] += 1
+            per_wordlist[key]["lenient"] += t.lenient
 
     summary = {
         "documents": len(reports),
@@ -669,6 +816,7 @@ def build_report(
         "truth_items": len(truth_results),
         "unknown_zones": sum(r.unknown_zones for r in reports),
         "found": sum(1 for t in truth_results if t.outcome == "found"),
+        "lenient": sum(1 for t in truth_results if t.lenient),
         "partial": sum(1 for t in truth_results if t.outcome == "partial"),
         "rejected": sum(1 for t in truth_results if t.outcome == "rejected"),
         "missed": sum(1 for t in truth_results if t.outcome == "missed"),
@@ -677,6 +825,10 @@ def build_report(
         "matches_by_text": sum(1 for t in truth_results if t.match_mode == "text"),
         "detections_total": sum(r.detections for r in reports),
         "detections_without_bbox": sum(r.detections_without_bbox for r in reports),
+        "detections_without_bbox_planted": sum(r.detections_without_bbox_planted for r in reports),
+        "detections_without_bbox_original": sum(
+            r.detections_without_bbox_original for r in reports
+        ),
         "detections_on_unknown_zone": sum(r.on_unknown_zone for r in reports),
         "fp_hard": sum(r.fp_hard for r in reports),
         "fp_soft": sum(r.fp_soft for r in reports),
@@ -706,6 +858,7 @@ def build_report(
         "truth_results": [asdict(t) for t in truth_results],
         "false_positives": [asdict(f) for f in fps],
         "suppressed": [asdict(s) for s in supp],
+        "detections_without_bbox_items": [asdict(n) for n in nobox],
     }
 
 
@@ -777,6 +930,7 @@ def render_markdown(data: dict[str, Any]) -> str:
     out.append("|---|---:|---:|")
     for label, key in (
         ("found", "found"),
+        ("of which lenient (particle / place only)", "lenient"),
         ("partial", "partial"),
         ("rejected (found, then suppressed)", "rejected"),
         ("missed", "missed"),
@@ -866,6 +1020,57 @@ def render_markdown(data: dict[str, Any]) -> str:
             f"{statuses} | {len(grp['docs'])} | {ctx} |"
         )
     out.append("")
+
+    out.append("### Detections without a bounding box")
+    out.append("")
+    nobox = data.get("detections_without_bbox_items") or []
+    if not nobox:
+        out.append("_none_")
+        out.append("")
+    else:
+        planted = sum(1 for n in nobox if n["region"] == "planted")
+        out.append(
+            f"{len(nobox)} detections came back with no bounding box, so nothing "
+            f"is drawn on the page and the reviewer gets a suggestion they "
+            f"cannot place. {len(nobox) - planted} sit on the document's own "
+            f"text — a span-resolution bug — and {planted} on text this fixture "
+            f"planted, where the fixture shares the blame."
+        )
+        out.append("")
+        out.append("| count | region | text | entity_type | source | docs | example context |")
+        out.append("|---:|---|---|---|---|---:|---|")
+        groups: dict[tuple[str, str], dict[str, Any]] = {}
+        for n in nobox:
+            key = (norm(n["entity_text"]) or n["entity_text"].lower(), n["region"])
+            g = groups.setdefault(
+                key,
+                {
+                    "text": n["entity_text"],
+                    "region": n["region"],
+                    "count": 0,
+                    "types": Counter(),
+                    "sources": Counter(),
+                    "docs": set(),
+                    "context": n["context"],
+                },
+            )
+            g["count"] += 1
+            g["types"][n["entity_type"]] += 1
+            g["sources"][n["source"]] += 1
+            g["docs"].add(n["doc"])
+            if not g["context"]:
+                g["context"] = n["context"]
+        for g in sorted(
+            groups.values(), key=lambda g: (g["region"] != "original", -g["count"], g["text"])
+        ):
+            ctx = g["context"].replace("|", "\\|")[:120]
+            text = g["text"].replace("|", "\\|")[:60]
+            out.append(
+                f"| {g['count']} | {g['region']} | `{text}` | "
+                f"{', '.join(sorted(g['types']))} | {', '.join(sorted(g['sources']))} | "
+                f"{len(g['docs'])} | {ctx} |"
+            )
+        out.append("")
 
     out.append("### Suppressed by a rule (informational)")
     out.append("")
@@ -1042,6 +1247,7 @@ def print_summary(data: dict[str, Any]) -> None:
     print("--- recall ---")
     for label in ("found", "partial", "rejected", "missed"):
         print(f"  {label:<10} {s[label]:4d}  {_rate(s[label], s['truth_items'])}")
+    print(f"  {'(lenient)':<10} {s.get('lenient', 0):4d}  particle- or place-only remainder")
     print()
     print("--- recall per type ---")
     for typ, c in sorted(data["per_type"].items(), key=lambda kv: -kv[1]["truth"]):
@@ -1065,7 +1271,11 @@ def print_summary(data: dict[str, Any]) -> None:
     print(f"  soft (suggested)      {s['fp_soft']}")
     print(f"  suppressed by a rule  {s['suppressed']}")
     print(f"  on an unknown zone    {s['detections_on_unknown_zone']} (excused)")
-    print(f"  without a bounding box {s['detections_without_bbox']} (not charged)")
+    print(
+        f"  without a bounding box {s['detections_without_bbox']} "
+        f"({s.get('detections_without_bbox_original', 0)} on original text, "
+        f"{s.get('detections_without_bbox_planted', 0)} on planted text)"
+    )
     if s.get("fp_excluded_documents"):
         print(
             f"  excluded from scoring {s['fp_excluded']} "
