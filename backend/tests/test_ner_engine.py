@@ -1288,6 +1288,21 @@ class TestAddressPlausibility:
         text = "Het pand aan de Kerkstraat 12 is verkocht."
         assert is_plausible_home_address("Kerkstraat 12", text, text.index("Kerkstraat")) is True
 
+    def test_postcode_nearby_ignores_year_ranges(self):
+        from app.services.ner_engine._tier2_filters import has_postcode_nearby
+
+        text = "BEGROTING 2019 EN 2020"
+        assert has_postcode_nearby(text, text.index("2019"), text.index("2019") + 7) is False
+        text = "Loopbaan 14, 5654 AB Eindhoven"
+        assert has_postcode_nearby(text, 0, len("Loopbaan 14")) is True
+
+    def test_postcode_nearby_ignores_institutional_postcode(self):
+        from app.services.ner_engine._tier2_filters import has_postcode_nearby
+
+        text = "Bezoekadres: Raadhuisplein 2, 6711 DE Ede\nOnderwerp: Zonnepark 3"
+        start = text.index("Zonnepark")
+        assert has_postcode_nearby(text, start, start + len("Zonnepark 3")) is False
+
     def test_strong_suffix_shapes(self):
         from app.services.ner_engine._tier2_filters import has_strong_street_shape
 
@@ -1411,6 +1426,24 @@ class TestTableOfContentsNotAddresses:
         hits = [r for r in results if r.entity_type == "adres" and r.text == "Havenstraat 194"]
         assert len(hits) == 1
         assert hits[0].confidence == 0.92
+
+    def test_year_range_heading_produces_no_adres(self):
+        # Deduce tags "2019 EN" as a postcode-shaped locatie; the Tier 2
+        # postcode corroboration must apply the same plausibility rule
+        # as Tier 1 or the span vouches for itself at 0.92.
+        # The real postcode on the third line sits within the proximity
+        # window of both year ranges and must not vouch for them.
+        text = "BEGROTING 2019 EN 2020\nPROGRAMMA 2021 TM 2024\nAdres: Kerkstraat 3, 1234 EN Ede"
+        results = detect_tier2(text)
+        assert [r.text for r in results if r.entity_type == "adres"] == [
+            "Kerkstraat 3",
+            "1234 EN Ede",
+        ]
+
+    def test_institutional_postcode_does_not_vouch_for_weak_span(self):
+        text = "Gemeente Ede\nBezoekadres: Raadhuisplein 2, 6711 DE Ede\nOnderwerp: Zonnepark 3"
+        results = detect_tier2(text)
+        assert [r for r in results if r.entity_type == "adres"] == []
 
 
 class TestDatumRequiresBirthCue:

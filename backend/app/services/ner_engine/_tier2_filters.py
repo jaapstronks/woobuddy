@@ -16,7 +16,7 @@ from __future__ import annotations
 import datetime
 import re
 
-from ._tier1 import _POSTCODE_PATTERN
+from ._tier1 import _POSTCODE_PATTERN, _is_plausible_postcode
 from ._types import ORGANIZATION_KEYWORDS
 
 # ---------------------------------------------------------------------------
@@ -249,10 +249,24 @@ POSTCODE_PROXIMITY_CHARS = 80
 
 
 def has_postcode_nearby(full_text: str, start_char: int, end_char: int) -> bool:
-    """True when a Dutch postcode sits inside or within ~80 chars of the span."""
+    """True when a genuine Dutch postcode sits inside or within ~80 chars of the span.
+
+    Only postcodes Tier 1 would accept count: "2019 EN 2020" is a year
+    range, and Deduce's own postcode-shaped ``locatie`` span must not
+    vouch for itself. A postcode on an institutional address line
+    ("Bezoekadres: Raadhuisplein 2, 6711 DE Ede") belongs to the
+    organisation, so it does not vouch for the "Zonnepark 3" in the
+    Onderwerp line right under it either.
+    """
     window_start = max(0, start_char - POSTCODE_PROXIMITY_CHARS)
     window_end = min(len(full_text), end_char + POSTCODE_PROXIMITY_CHARS)
-    return _POSTCODE_PATTERN.search(full_text[window_start:window_end]) is not None
+    for m in _POSTCODE_PATTERN.finditer(full_text, window_start, window_end):
+        if not _is_plausible_postcode(full_text, m):
+            continue
+        if has_institutional_address_label(full_text, m.start()):
+            continue
+        return True
+    return False
 
 
 # Residence cues that vouch for an otherwise ambiguous street span:
@@ -271,6 +285,9 @@ def has_address_cue(full_text: str, start_char: int) -> bool:
     """True when a residence cue word precedes the span on the same line."""
     ctx_start = max(0, start_char - _ADDRESS_CUE_WINDOW_CHARS)
     return _ADDRESS_CUE_PATTERN.search(full_text[ctx_start:start_char]) is not None
+
+
+_BARE_POSTCODE_SHAPE = re.compile(r"\d{4}\s?[A-Z]{2}")
 
 
 def is_plausible_home_address(span_text: str, full_text: str, start_char: int) -> bool:
@@ -310,6 +327,13 @@ def is_plausible_home_address(span_text: str, full_text: str, start_char: int) -
         return False
 
     if not any(ch.isdigit() for ch in stripped):
+        return False
+
+    # A bare postcode shape is never an adres card: a genuine one is
+    # already a Tier 1 `postcode` hit, and an implausible one ("2019 EN"
+    # from "BEGROTING 2019 EN 2020") must not be rescued by a real
+    # postcode a line further down.
+    if _BARE_POSTCODE_SHAPE.fullmatch(stripped):
         return False
 
     if has_strong_street_shape(stripped):
