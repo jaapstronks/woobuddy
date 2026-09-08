@@ -1,0 +1,40 @@
+name: release-please
+
+# Keeps a single open "Release PR" up to date on every push to main: it carries
+# the next version (computed from Conventional-Commit types since the last tag)
+# and a generated CHANGELOG. Merging that PR is what cuts a release — it bumps
+# VERSION, package.json, package-lock.json and pyproject.toml, updates
+# CHANGELOG.md, tags vX.Y.Z and publishes a GitHub Release. The tag in turn
+# triggers `release.yml`, which builds and pushes the container images.
+#
+# Merges to main are continuous integration; a release is the deliberate
+# outward signal. See docs/reference/versioning.md.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Never run two release-please passes at once for main.
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v5
+        with:
+          # A PAT (fine-grained: contents RW + pull-requests RW) does two things
+          # the built-in token cannot: it lets the Release PR trigger CI so the
+          # required checks can pass, and it makes the tag push trigger
+          # `release.yml` so the images actually get built. Falls back to the
+          # built-in token so this workflow is never red while the secret is
+          # missing. See docs/reference/versioning.md → "One-time setup".
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
