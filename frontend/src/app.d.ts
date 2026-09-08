@@ -16,6 +16,15 @@ declare global {
 	 * to `"dev"` when git isn't available at build time.
 	 */
 	const __WOOBUDDY_BUILD_COMMIT__: string;
+
+	/**
+	 * The release version (`0.2.0`), baked in at build time from
+	 * `package.json`, which release-please keeps in step with `VERSION` in
+	 * the repository root. Shown in the site footer so it is visible which
+	 * version an install is actually running. See
+	 * `docs/reference/versioning.md`.
+	 */
+	const __WOOBUDDY_VERSION__: string;
 }
 
 export {};
