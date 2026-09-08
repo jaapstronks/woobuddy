@@ -34,12 +34,14 @@ still _documented_ — the `⚠ BREAKING CHANGES` section in the changelog is th
 point — but they ship as a MINOR bump.
 
 Keep writing the `BREAKING CHANGE:` trailer when a change genuinely meets the
-criteria below; the warning in the notes is worth more than the digit. But
-`BREAKING CHANGE:` and `!` force a MAJOR bump automatically, and no release-please
-setting caps that. So while we are pre-1.0 the Release PR's version is **reviewed,
-not trusted**: if it proposes a `1.x`, override it down to the next MINOR before
-merging (see [Correcting a version](#correcting-a-version)). A `0.x` release
-carrying a `⚠ BREAKING CHANGES` section is the intended shape here, not a mistake.
+criteria below; the warning in the notes is worth more than the digit. What keeps
+it from becoming a MAJOR is `bump-minor-pre-major: true` in
+`release-please-config.json`: while the version is below 1.0, a breaking change
+bumps MINOR, and so does a `feat:` (`bump-patch-for-minor-pre-major: false`). A
+`0.x` release carrying a `⚠ BREAKING CHANGES` section is therefore the intended
+shape here, not a mistake. Still read the Release PR's version before merging:
+if it ever proposes something else, the config has drifted, so fix that and
+override the number (see [Correcting a version](#correcting-a-version)).
 
 `1.0.0` is reserved for a deliberate moment, and it is the moment the stable
 surfaces below become promises rather than descriptions.
@@ -115,7 +117,7 @@ reads — keep it a valid Conventional Commit. A scope is optional:
 | `security:`                                                                  | PATCH | Security                |
 | `perf:` / `revert:`                                                          | PATCH | Changed                 |
 | `docs:` `chore:` `refactor:` `style:` `test:` `ci:` `build:`                 | none  | hidden                  |
-| any of the above with **`!`** (e.g. `feat!:`) or a `BREAKING CHANGE:` trailer | MAJOR | flagged breaking        |
+| any of the above with **`!`** (e.g. `feat!:`) or a `BREAKING CHANGE:` trailer | MAJOR (MINOR pre-1.0) | flagged breaking |
 
 Only `feat`/`fix`/`security`/`perf`/`revert` and breaking changes surface in the
 changelog and move the version; the rest are invisible to consumers by design.
@@ -173,8 +175,8 @@ there are unreleased `feat`/`fix` commits on `main`.
 
 Step 3 above says you never pick the number by hand, and that holds for the normal
 path. The exception is when a commit already on `main` computed the wrong bump — a
-`BREAKING CHANGE:` trailer on something that is not breaking, or a MAJOR before
-1.0. History cannot be unwritten, so you override the result instead.
+`BREAKING CHANGE:` trailer on something that is not breaking, or a `feat:` that
+was really a `fix:`. History cannot be unwritten, so you override the result instead.
 
 Push a commit to `main` whose message carries a `Release-As:` trailer with the
 version you actually want:
