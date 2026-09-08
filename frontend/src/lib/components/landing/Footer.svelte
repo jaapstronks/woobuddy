@@ -48,7 +48,18 @@
 		</div>
 
 		<div class="mt-10 border-t border-border pt-6 text-xs text-ink-mute">
-			<p>MIT License · WOO Buddy</p>
+			<p>
+				MIT License · WOO Buddy ·
+				<!-- Which version this install is actually running (#101). Baked in
+				     from package.json at build time; see vite.config.ts. -->
+				<span class="version">v{__WOOBUDDY_VERSION__}</span>
+			</p>
 		</div>
 	</div>
 </footer>
+
+<style>
+	.version {
+		font-variant-numeric: tabular-nums;
+	}
+</style>

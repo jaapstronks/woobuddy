@@ -1,4 +1,6 @@
 import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
@@ -22,6 +24,14 @@ function resolveBuildCommit(): string {
   }
 }
 
+// The release version, read from package.json — which release-please keeps in
+// step with `VERSION` in the repository root, so there is no second place to
+// bump. See docs/reference/versioning.md.
+function resolveVersion(): string {
+  const path = fileURLToPath(new URL('./package.json', import.meta.url));
+  return JSON.parse(readFileSync(path, 'utf8')).version as string;
+}
+
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
   optimizeDeps: {
@@ -29,5 +39,6 @@ export default defineConfig({
   },
   define: {
     __WOOBUDDY_BUILD_COMMIT__: JSON.stringify(resolveBuildCommit()),
+    __WOOBUDDY_VERSION__: JSON.stringify(resolveVersion()),
   },
 });

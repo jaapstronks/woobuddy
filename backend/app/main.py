@@ -18,6 +18,7 @@ from app.security import (
     limiter,
     rate_limit_exceeded_handler,
 )
+from app.version import get_version
 
 configure_logging()
 logger = get_logger(__name__)
@@ -198,6 +199,12 @@ def create_app() -> FastAPI:
     async def health() -> dict[str, str]:
         """Advisory health endpoint. Always returns 200.
 
+        `version` is the running release (#101), read from the installed
+        package metadata. It is what `deploy/deploy.sh` asserts against
+        after a deploy, and what tells a self-hoster which version an
+        instance is on without shelling into it. A development virtualenv
+        that never installed the package reports "dev".
+
         `lead_mail` reports whether the contact form can actually send.
         It carries no secret — only "is a key present" — so it is safe to
         expose, and it gives the deploy script something to assert against
@@ -214,6 +221,7 @@ def create_app() -> FastAPI:
 
         return {
             "status": "ok",
+            "version": get_version(),
             "lead_mail": "configured" if settings.scaleway_secret_key else "missing",
             "newsletter_opt_in": "configured" if opt_in_available() else "disabled",
         }

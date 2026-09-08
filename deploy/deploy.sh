@@ -195,5 +195,31 @@ log "Running ${REMOTE_DIR}/deploy/install.sh"
 ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_IP}" \
 	"chmod +x ${REMOTE_DIR}/deploy/install.sh && ${REMOTE_DIR}/deploy/install.sh"
 
+# ---------------------------------------------------------------------------
+# Report which version is now live
+# ---------------------------------------------------------------------------
+# Two numbers, because they answer different questions. `git describe` says
+# what was rsynced off this working copy: a bare tag when deploying from a
+# release, `v0.2.0-3-gabc1234` when deploying a few commits past one, which
+# is allowed but should be named as such in the handoff. `/api/health` says
+# what the running process reports, which is the version release-please
+# baked into pyproject.toml. They disagree when someone deployed a dirty
+# tree, and that is worth seeing. See docs/reference/versioning.md.
 log "Deploy finished"
-echo "Verify with: curl -I https://woobuddy.nl/"
+
+deployed_ref="$(git -C "${REPO_ROOT}" describe --tags --always --dirty 2>/dev/null || echo "unknown")"
+
+live_version="unavailable"
+for _ in {1..10}; do
+	live_version="$(curl -fsS --max-time 5 "${PUBLIC_SITE_URL}/api/health" 2>/dev/null \
+		| python3 -c 'import sys,json; print(json.load(sys.stdin).get("version",""))' 2>/dev/null || echo "")"
+	[[ -n "${live_version}" ]] && break
+	live_version="unavailable"
+	sleep 3
+done
+
+echo
+echo "  deployed from: ${deployed_ref}"
+echo "  live version:  ${live_version}   (${PUBLIC_SITE_URL}/api/health)"
+echo
+echo "Verify with: curl -I ${PUBLIC_SITE_URL}/"
