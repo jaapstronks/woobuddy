@@ -46,13 +46,27 @@ def _find_overlapping_detection(
     start_char: int,
     end_char: int,
 ) -> PipelineDetection | None:
-    """Return the first existing detection that overlaps [start, end)."""
-    for existing in detections:
-        if existing.start_char is None or existing.end_char is None:
-            continue
-        if existing.start_char < end_char and start_char < existing.end_char:
-            return existing
-    return None
+    """Return the existing detection that overlaps [start, end), if any.
+
+    A custom term can straddle both a Tier 1 identifier and a Tier 2
+    span (a postcode inside an address, say), and only one of them gets
+    the term's Woo article. This used to be "the first one in the list",
+    which happened to mean Tier 1 because `detect_all` returned Tier 1
+    hits before Tier 2 ones. That list is sorted by offset now (#103),
+    so state the preference instead of inheriting it: the harder tier
+    wins, then the earlier span.
+    """
+    candidates = [
+        d
+        for d in detections
+        if d.start_char is not None
+        and d.end_char is not None
+        and d.start_char < end_char
+        and start_char < d.end_char
+    ]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda d: (d.tier, d.start_char, d.end_char))
 
 
 def _merge_custom_into_existing(

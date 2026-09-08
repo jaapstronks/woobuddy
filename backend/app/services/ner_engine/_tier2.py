@@ -44,7 +44,18 @@ def detect_tier2(text: str) -> list[NERDetection]:
     doc = deduce.deidentify(text)
     name_lists = _get_name_lists()
     detections: list[NERDetection] = []
-    for annotation in doc.annotations:
+    # `doc.annotations` is a `docdeid.AnnotationSet`, i.e. a plain `set`
+    # subclass — iterating it yields hash order, and `Annotation` is a
+    # frozen dataclass whose hash comes from its `text`/`tag` strings.
+    # Python randomizes string hashing per process, so the same document
+    # handed to the same code produced a different annotation order on
+    # every run. That leaked all the way through: the overlap dedup in
+    # `_merge_without_overlap` and `_deduplicate` below keeps whichever
+    # hit it sees first, so the order decided not only how the list was
+    # laid out but occasionally which detection survived (#103). Sort
+    # once, here at the source, and everything downstream is a
+    # deterministic list operation.
+    for annotation in doc.annotations.sorted(by=("start_char", "end_char", "tag")):
         tag = annotation.tag.lower()
         entity_type = _DEDUCE_TAG_MAP.get(tag, tag)
 
