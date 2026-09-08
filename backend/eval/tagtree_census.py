@@ -101,8 +101,21 @@ class RedactionCheck:
     mcids_before: int
     mcids_after: int
     rects: int
-    text_removed: bool
+    words_before: int
+    words_after: int
     error: str = ""
+
+    @property
+    def text_removed(self) -> bool:
+        """Whether the redaction on the first page took words with it.
+
+        A redaction that quietly misses leaves the tree intact too, so an
+        "intact" verdict without this is worthless. Counted in words rather
+        than by probing for one word: a probe is a substring match against
+        the page text, and a Dutch word like "zich" survives inside
+        "zichzelf" while the passage itself is gone.
+        """
+        return self.words_after < self.words_before
 
     @property
     def verdict(self) -> str:
@@ -205,14 +218,14 @@ def _mcid_count(pdf_bytes: bytes, page: int = 0) -> int:
         return len(re.findall(rb"/MCID", raw))
 
 
-def _redaction_rects(pdf_bytes: bytes, max_pages: int) -> tuple[list[dict[str, Any]], str]:
-    """Pick a run of real words per page, so the redaction hits tagged content.
+def _word_count(pdf_bytes: bytes, page: int) -> int:
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+        return len(doc[page].get_text("words")) if page < len(doc) else 0
 
-    Returns the rects plus one word we expect to disappear, which is how the
-    caller tells a redaction that landed from one that quietly missed.
-    """
+
+def _redaction_rects(pdf_bytes: bytes, max_pages: int) -> list[dict[str, Any]]:
+    """Pick a run of real words per page, so the redaction hits tagged content."""
     rects: list[dict[str, Any]] = []
-    probe = ""
     with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
         for page_no in range(min(len(doc), max_pages)):
             words = doc[page_no].get_text("words")
@@ -229,12 +242,7 @@ def _redaction_rects(pdf_bytes: bytes, max_pages: int) -> tuple[list[dict[str, A
                     "woo_article": "5.1.2e",
                 }
             )
-            if not probe:
-                # A word that occurs once on the page, so its absence afterwards
-                # means this redaction removed it rather than some other one.
-                counts = Counter(w[4] for w in words)
-                probe = next((w[4] for w in run if counts[w[4]] == 1 and len(w[4]) > 3), "")
-    return rects, probe
+    return rects
 
 
 def check_redaction(path: Path, max_pages: int) -> RedactionCheck | None:
@@ -244,25 +252,24 @@ def check_redaction(path: Path, max_pages: int) -> RedactionCheck | None:
     if before is None or sum(before.values()) < MIN_MEANINGFUL_NODES:
         return None
     try:
-        rects, probe = _redaction_rects(pdf_bytes, max_pages)
+        rects = _redaction_rects(pdf_bytes, max_pages)
         if not rects:
             return None
-        outcome = apply_redactions(pdf_bytes, rects)
-        redacted = getattr(outcome, "pdf_bytes", None) or outcome[0]
+        redacted = apply_redactions(pdf_bytes, rects).pdf_bytes
         after = tag_types(redacted)
-        with fitz.open(stream=redacted, filetype="pdf") as doc:
-            text_removed = bool(probe) and probe not in doc[rects[0]["page"]].get_text()
+        page = rects[0]["page"]
         return RedactionCheck(
             name=path.name,
             nodes_before=sum(before.values()),
             nodes_after=sum(after.values()) if after else 0,
-            mcids_before=_mcid_count(pdf_bytes, rects[0]["page"]),
-            mcids_after=_mcid_count(redacted, rects[0]["page"]),
+            mcids_before=_mcid_count(pdf_bytes, page),
+            mcids_after=_mcid_count(redacted, page),
             rects=len(rects),
-            text_removed=text_removed,
+            words_before=_word_count(pdf_bytes, page),
+            words_after=_word_count(redacted, page),
         )
     except Exception as exc:
-        return RedactionCheck(path.name, sum(before.values()), 0, 0, 0, 0, False, str(exc)[:120])
+        return RedactionCheck(path.name, sum(before.values()), 0, 0, 0, 0, 0, 0, str(exc)[:120])
 
 
 def corpus_documents(corpus: Path, pattern: str) -> list[Path]:
@@ -353,11 +360,11 @@ def render_report(
             "> of this. What this rules out is the tree being dropped or",
             "> truncated by the redaction pass.",
             "",
-            "| document | nodes before | after | MCIDs before | after | text gone | verdict |",
-            "|---|---:|---:|---:|---:|:--:|---|",
+            "| document | nodes before | after | MCIDs before | after | words gone | verdict |",
+            "|---|---:|---:|---:|---:|---:|---|",
         ]
         for check in checks:
-            gone = "yes" if check.text_removed else "no"
+            gone = f"yes ({check.words_before - check.words_after})" if check.text_removed else "no"
             lines.append(
                 f"| {check.name} | {check.nodes_before} | {check.nodes_after} | "
                 f"{check.mcids_before} | {check.mcids_after} | {gone} | {check.verdict} |"
