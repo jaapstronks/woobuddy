@@ -127,6 +127,13 @@ _ADRES_ORG_KEYWORDS = ORGANIZATION_KEYWORDS | {
 #   only evidence when they sit *directly* before the span
 #   ("gemeente Kerkstraat 3"); "de gemeente schreef de bewoner van
 #   Kerkstraat 3 aan" must not trip them.
+#
+# The address patterns anchor on ``\Z``, not ``$``. Their window ends
+# exactly at the span, so ``$`` — which without ``re.MULTILINE`` also
+# matches just before a trailing newline — would let a label on the
+# *previous* line vouch for a span at the start of the next one. Same
+# reason the whitespace before the anchor is horizontal only: ``\s*``
+# swallows the line break.
 _ADRES_CONTEXT_WINDOW_CHARS = 30
 _ADRES_CONTEXT_PATTERN = re.compile(
     r"(?:"
@@ -134,13 +141,13 @@ _ADRES_CONTEXT_PATTERN = re.compile(
     r"postbus|gemeentehuis|stadhuis|raadhuis|"
     r"provinciehuis|ministerie|rijksoverheid|"
     r"gemeente|provincie"
-    r")\s*[:\-]?\s*$",
+    r")[ \t]*[:\-]?[ \t]*\Z",
     re.IGNORECASE,
 )
 _ADRES_LABEL_LINE_WINDOW_CHARS = 60
 _ADRES_LABEL_LINE_PATTERN = re.compile(
     r"\b(?:postadres|bezoekadres|correspondentieadres|postbus|"
-    r"gemeentehuis|stadhuis|raadhuis|provinciehuis)\b[^\n]*$",
+    r"gemeentehuis|stadhuis|raadhuis|provinciehuis)\b[^\n]*\Z",
     re.IGNORECASE,
 )
 
@@ -279,10 +286,13 @@ def has_postcode_nearby(full_text: str, start_char: int, end_char: int) -> bool:
 # "de bewoner van de Kerkbrink 3", "wonende Loopbaan 14", "gevestigd
 # aan het Marktveld 2". Deliberately excludes generic location words
 # ("locatie", "plaats") that planning documents use for everything.
+# Anchored on ``\Z`` so a cue on the line above does not vouch for a
+# span at the start of the next line — see the note above
+# ``_ADRES_CONTEXT_WINDOW_CHARS``.
 _ADDRESS_CUE_WINDOW_CHARS = 40
 _ADDRESS_CUE_PATTERN = re.compile(
     r"(?:adres|wonende|woonachtig|gevestigd|gelegen|woont|woonde|wonen|"
-    r"bewoners?|bewoonster|perceel|kadastraal)\b[^\n]{0,30}$",
+    r"bewoners?|bewoonster|perceel|kadastraal)\b[^\n]{0,30}\Z",
     re.IGNORECASE,
 )
 

@@ -1749,11 +1749,49 @@ class TestProductionTextLineBoundaries:
         from app.services.ner_engine._tier2_filters import has_address_cue
 
         # One line of prose between the cue and the span is enough: `[^\n]`
-        # cannot cross it. A cue on the *immediately* preceding line still
-        # leaks through, because `$` also matches before a trailing newline —
-        # a narrower hole in the same wall, tracked as its own item (#104).
+        # cannot cross it.
         text = production_text("Perceel van de bewoner\nis groot\nWoningmarkt 14 telt mee.\n")
         start = text.index("Woningmarkt")
 
         assert has_address_cue(text, start) is False
         assert has_address_cue(self._flattened(text), start) is True
+
+    def test_residence_cue_does_not_reach_the_line_directly_above(self):
+        from app.services.ner_engine._tier2_filters import has_address_cue
+
+        # The narrow hole #95 left open. The window ends exactly at the span,
+        # so a cue closing the previous line sits right before a trailing
+        # newline — which `$` matches without `re.MULTILINE`. `\Z` does not.
+        text = production_text("Wij schrijven u als bewoner\nWoningmarkt 14 telt mee.\n")
+        start = text.index("Woningmarkt")
+
+        assert has_address_cue(text, start) is False
+
+        same_line = production_text("Wij schrijven u als bewoner van Woningmarkt 14.\n")
+        assert has_address_cue(same_line, same_line.index("Woningmarkt")) is True
+
+    def test_address_label_does_not_reach_the_line_directly_above(self):
+        from app.services.ner_engine._tier2_filters import has_institutional_address_label
+
+        # Same hole on the whitelisting side, where it costs a finding: the
+        # sender's PO box vouched for the addressee's own street below it.
+        text = production_text("Postbus 122, 9400 AC Assen\nSchoolpad 172-2 in Zuidlaren\n")
+        start = text.index("Schoolpad")
+
+        assert has_institutional_address_label(text, start) is False
+
+        same_line = production_text("Postbus 122, Schoolpad 172-2\n")
+        assert has_institutional_address_label(same_line, same_line.index("Schoolpad")) is True
+
+    def test_institution_word_does_not_reach_the_line_directly_above(self):
+        from app.services.ner_engine._tier2_filters import has_institutional_address_label
+
+        # `_ADRES_CONTEXT_PATTERN` wants the word *directly* before the span;
+        # its `\s*` used to let a line break count as "directly".
+        text = production_text("Afdeling gemeente\nKerkstraat 3 is verkocht.\n")
+        start = text.index("Kerkstraat")
+
+        assert has_institutional_address_label(text, start) is False
+
+        same_line = production_text("Afdeling gemeente Kerkstraat 3 is verkocht.\n")
+        assert has_institutional_address_label(same_line, same_line.index("Kerkstraat")) is True
