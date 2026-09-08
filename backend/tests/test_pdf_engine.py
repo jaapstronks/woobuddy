@@ -13,6 +13,7 @@ from app.services.span_resolver import (
     find_span_for_text,
     resolve_occurrence_bboxes,
 )
+from tests.text_shapes import production_text
 
 
 def _page(spans: list[TextSpan]) -> PageText:
@@ -206,7 +207,7 @@ class TestMultiItemMerge:
         assert abs(bbox["x1"] - (10 + len(iban) * char_w)) < 0.01
 
     def test_per_glyph_merge_assembles_multiword_address(self):
-        """"Kerkstraat 14" in a per-glyph text stream. The space item is
+        """ "Kerkstraat 14" in a per-glyph text stream. The space item is
         dropped by the extractor (pdf.js emits space-only items that get
         trimmed), so the joined glyph stream is "Kerkstraat14" but the
         search is "Kerkstraat 14". The whitespace-stripped equality path
@@ -284,9 +285,7 @@ class TestOccurrenceIndex:
         assert second[0]["y0"] == 40
 
     def test_occurrence_index_out_of_range_returns_empty(self):
-        page = _page(
-            [TextSpan(text="A.B. Bakker", page=0, x0=10, y0=10, x1=80, y1=20)]
-        )
+        page = _page([TextSpan(text="A.B. Bakker", page=0, x0=10, y0=10, x1=80, y1=20)])
         assert find_span_for_text([page], "A.B. Bakker", occurrence_index=3) == []
 
     def test_mixed_split_and_unsplit_occurrences_on_same_page(self):
@@ -332,9 +331,7 @@ class TestOccurrenceIndex:
         assert count_word_boundary_matches(text, "A.B. Bakker") == 2
         # Everything up to just before the second occurrence → 1.
         second_pos = text.rfind("A.B. Bakker")
-        assert (
-            count_word_boundary_matches(text, "A.B. Bakker", limit=second_pos) == 1
-        )
+        assert count_word_boundary_matches(text, "A.B. Bakker", limit=second_pos) == 1
         # Limit at the start → 0.
         assert count_word_boundary_matches(text, "A.B. Bakker", limit=0) == 0
 
@@ -561,3 +558,82 @@ class TestRotatedPages:
         assert len(results) == 1
         assert results[0]["y0"] == 10 and results[0]["y1"] == 20
         assert results[0]["x0"] > 10 and results[0]["x1"] == 100
+
+
+# ---------------------------------------------------------------------------
+# Spans that wrap across a line break (#93)
+# ---------------------------------------------------------------------------
+
+
+def _wrapped_postcode_page(ca_span: TextSpan) -> tuple[list[PageText], str, int]:
+    r"""A pdf.js-shaped page where a postcode wraps: `(Postadres: Postbus
+    6700` ends one line and `CA Wageningen)` starts the next.
+
+    Returns the pages, the joined document text in the shape the browser
+    sends (`production_text`: one `\n` per line boundary, single spaces,
+    no blank lines) and the offset of the wrapped span in it. The caller
+    supplies the `CA` span so a test can move it around and check the
+    adjacency guard.
+    """
+    spans = [
+        TextSpan(text="(Postadres:", page=0, x0=50, y0=100, x1=110, y1=112),
+        TextSpan(text="Postbus", page=0, x0=115, y0=100, x1=155, y1=112),
+        TextSpan(text="6700", page=0, x0=160, y0=100, x1=190, y1=112),
+        ca_span,
+        TextSpan(text="Wageningen)", page=0, x0=75, y0=116, x1=145, y1=128),
+    ]
+    full_text = production_text("(Postadres: Postbus 6700\nCA Wageningen)")
+    page = PageText(page_number=0, full_text=full_text, spans=spans)
+    return [page], full_text, full_text.index("6700")
+
+
+_CA_NEXT_LINE = TextSpan(text="CA", page=0, x0=50, y0=116, x1=70, y1=128)
+
+
+class TestSpanAcrossLineBreak:
+    def test_wrapped_span_gets_one_bbox_per_line(self):
+        r"""Regression (#93): `'6700\nCA'` resolved to nothing at all. No
+        text item holds the newline and the same-line merge refuses to
+        cross it, so the reviewer got a card with no bar on the page and
+        the export redacted nothing."""
+        pages, full_text, at = _wrapped_postcode_page(_CA_NEXT_LINE)
+
+        boxes = resolve_occurrence_bboxes(pages, full_text, "6700\nCA", at)
+
+        assert len(boxes) == 2
+        assert boxes[0] == {"page": 0, "x0": 160, "y0": 100, "x1": 190, "y1": 112}
+        assert boxes[1] == {"page": 0, "x0": 50, "y0": 116, "x1": 70, "y1": 128}
+
+    def test_segments_on_the_same_line_are_refused(self):
+        """Two matches on one line are not a wrapped span — they are two
+        unrelated words. Drawing a bar over each would report a redaction
+        of something we never detected."""
+        same_line = TextSpan(text="CA", page=0, x0=195, y0=100, x1=215, y1=112)
+        pages, full_text, at = _wrapped_postcode_page(same_line)
+
+        assert resolve_occurrence_bboxes(pages, full_text, "6700\nCA", at) == []
+
+    def test_segments_far_apart_on_the_page_are_refused(self):
+        """A short segment ('CA', 'AA', 'Van') occurs all over a document.
+        Half a page below the first line is not the next line."""
+        far_below = TextSpan(text="CA", page=0, x0=50, y0=400, x1=70, y1=412)
+        pages, full_text, at = _wrapped_postcode_page(far_below)
+
+        assert resolve_occurrence_bboxes(pages, full_text, "6700\nCA", at) == []
+
+    def test_one_unplaceable_line_yields_no_boxes_at_all(self):
+        """All lines or none. Half a bar under a value reports a redaction
+        that only covered half of it."""
+        pages, full_text, at = _wrapped_postcode_page(_CA_NEXT_LINE)
+
+        assert resolve_occurrence_bboxes(pages, full_text, "6700\nZZ", at) == []
+
+    def test_a_stray_newline_still_resolves_the_one_real_line(self):
+        """Deduce sometimes hands back a span with leading or trailing
+        whitespace around the newline. One non-empty line is an ordinary
+        single-line span."""
+        pages, full_text, at = _wrapped_postcode_page(_CA_NEXT_LINE)
+
+        boxes = resolve_occurrence_bboxes(pages, full_text, "6700\n", at)
+
+        assert boxes == [{"page": 0, "x0": 160, "y0": 100, "x1": 190, "y1": 112}]
