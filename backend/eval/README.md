@@ -338,8 +338,29 @@ LOG_LEVEL=ERROR ./eval/evaluate.py --baseline "$WOOBUDDY_EVAL_CORPUS/reports/bas
 | `triage.py` | groups a report's errors by suspected cause; also the report's last section |
 | `triage_rules.py` | the cause catalogue: one predicate per known failure shape, with its brief |
 | `pdfio.py` | shared: scanned-page detection, the page payload, the relocation |
+| `tagtree_census.py` | how much logical structure the corpus carries, and what redaction does to it |
 | `pdfjs_extract.mjs` | the real pdf.js, mirroring the frontend's `extractText()` |
 | `test_pdfjs_extract.py` | pins the join rule and the relocation; run by hand |
+
+`tagtree_census.py` answers a different question from the rest of this
+directory: not what the detector finds, but what structure the documents
+themselves carry. It exists because Bos & Marx (*Why Reconstruct What Was
+Never Lost?*, IRLab UvA 2026) argue for preserving structure at authoring time
+and name government corpora as future work, and because the same paper's
+author reported that redacting without destroying the tag tree had failed in
+practice. Both claims are measurable here:
+
+```sh
+cd backend && python eval/tagtree_census.py --redaction
+```
+
+Two thirds of the corpus carries a `/StructTreeRoot`, but almost all of it is
+flat paragraph tagging - 11 heading tags and 4 table tags across every
+document. Formal structure is common; usable structure is not. The redaction
+round-trip leaves the tree node-for-node intact, which rules out the tree
+being dropped, but says nothing about validity: the redacted passage leaves an
+empty marked-content span behind and veraPDF has never been run over the
+result.
 
 `pdfio.py` exists so the generator and the evaluator can never disagree about
 what counts as a scanned page. If they did, the evaluator would score
