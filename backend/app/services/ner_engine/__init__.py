@@ -75,7 +75,18 @@ def detect_all(text: str) -> list[NERDetection]:
             d.confidence = min(d.confidence + 0.10, 1.0)
         deduped_tier2.append(d)
 
-    return tier1 + deduped_tier2
+    # One explicit sort for the whole list. Callers read this order:
+    # `_run_pipeline_sync` appends to `result.detections` in it, and the
+    # custom-term pass then walks that list looking for overlaps. Leaving
+    # it as "tier 1 first, then whatever order the rules fired in" made
+    # that walk depend on an accident (#103). Reading order — by start
+    # offset, with `end_char` and `entity_type` as tiebreaks so equal
+    # starts never fall back to list position — is the order a reviewer
+    # expects anyway.
+    #
+    # Note this runs *after* the dedupe above, which deliberately relies
+    # on Tier 1 being complete before any Tier 2 hit is examined.
+    return sorted(tier1 + deduped_tier2, key=lambda d: (d.start_char, d.end_char, d.entity_type))
 
 
 __all__ = [

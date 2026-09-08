@@ -1120,6 +1120,114 @@ class TestDetectAll:
 
 
 # ---------------------------------------------------------------------------
+# Deterministic ordering (#103)
+#
+# Deduce hands its annotations back in a `set`, so the order the Tier 2
+# rules saw them in changed from process to process. That reshuffled the
+# detection list and, because the overlap dedup keeps whichever hit it
+# meets first, occasionally changed which detection survived.
+# ---------------------------------------------------------------------------
+
+
+class _StubAnnotations:
+    """Stands in for ``docdeid.AnnotationSet``.
+
+    Iterating it deliberately yields the reverse of the order the
+    annotations were found in — the real set's hash order is just as
+    arbitrary. ``sorted()`` behaves like the real one, so a caller that
+    goes through it gets a stable answer and a caller that iterates
+    directly does not.
+    """
+
+    def __init__(self, annotations):
+        self._annotations = list(annotations)
+
+    def __iter__(self):
+        return iter(reversed(self._annotations))
+
+    def sorted(self, by, callbacks=None, deterministic=True):
+        return sorted(
+            self._annotations,
+            key=lambda a: a.get_sort_key(
+                by=by, callbacks=callbacks, deterministic=deterministic
+            ),
+        )
+
+
+class _StubDoc:
+    def __init__(self, annotations):
+        self.annotations = _StubAnnotations(annotations)
+
+
+class _StubDeduce:
+    def __init__(self, annotations):
+        self._annotations = annotations
+
+    def deidentify(self, text):  # noqa: ARG002 — signature parity with Deduce
+        return _StubDoc(self._annotations)
+
+
+class TestDeterministicOrder:
+    # Two addresses on one line, plus a name, so both tiers and several
+    # sub-rules contribute to the list.
+    TEXT = (
+        "Betreft: Kerkstraat 3, 1234 EN Ede en Havenstraat 194, 5678 AB Delft.\n"
+        "Contact: Jan de Vries, BSN 111222333, jan@example.com."
+    )
+
+    def test_detect_all_is_sorted_by_offset(self):
+        results = detect_all(self.TEXT)
+        keys = [(r.start_char, r.end_char, r.entity_type) for r in results]
+        assert keys == sorted(keys)
+
+    def test_detect_tier2_repeats_itself(self):
+        first = detect_tier2(self.TEXT)
+        second = detect_tier2(self.TEXT)
+        assert [(r.start_char, r.end_char, r.entity_type, r.text) for r in first] == [
+            (r.start_char, r.end_char, r.entity_type, r.text) for r in second
+        ]
+
+    def test_detect_tier2_ignores_deduce_annotation_order(self, monkeypatch):
+        """Spans found in reverse order must come back the same way.
+
+        The stub yields its annotations back-to-front on iteration.
+        Reverting to ``for annotation in doc.annotations`` fails here.
+        """
+        from docdeid.annotation import Annotation
+
+        from app.services.ner_engine import _tier2
+
+        text = "Adres: Kerkstraat 3, 1234 EN Ede en Havenstraat 194, 5678 AB Delft."
+        annotations = [
+            Annotation(
+                text=text[start:end], start_char=start, end_char=end, tag="locatie"
+            )
+            for start, end in (
+                (text.index("Kerkstraat 3"), text.index("Kerkstraat 3") + len("Kerkstraat 3")),
+                (text.index("1234 EN Ede"), text.index("1234 EN Ede") + len("1234 EN Ede")),
+                (
+                    text.index("Havenstraat 194"),
+                    text.index("Havenstraat 194") + len("Havenstraat 194"),
+                ),
+                (
+                    text.index("5678 AB Delft"),
+                    text.index("5678 AB Delft") + len("5678 AB Delft"),
+                ),
+            )
+        ]
+        monkeypatch.setattr(_tier2, "_get_deduce", lambda: _StubDeduce(annotations))
+
+        results = detect_tier2(text)
+        adressen = [r for r in results if r.entity_type == "adres"]
+        assert [r.text for r in adressen] == [
+            "Kerkstraat 3",
+            "1234 EN Ede",
+            "Havenstraat 194",
+            "5678 AB Delft",
+        ]
+
+
+# ---------------------------------------------------------------------------
 # Title-prefix rule (#48) — non-Dutch surname coverage
 #
 # Catches person names that Deduce + the CBS achternamenlijst miss
