@@ -1,5 +1,8 @@
 # WOO Buddy
 
+[![Laatste release](https://img.shields.io/github/v/release/jaapstronks/woobuddy?label=release&color=%230f766e)](https://github.com/jaapstronks/woobuddy/releases)
+[![Licentie: MIT](https://img.shields.io/badge/licentie-MIT-blue)](LICENSE)
+
 **Jouw slimme assistent voor het lakken van Woo-documenten.**
 
 WOO Buddy is een open-source, self-hostable webapplicatie die Nederlandse overheidsmedewerkers helpt bij het afhandelen van Woo-verzoeken (Wet open overheid). De tool detecteert privacygevoelige informatie in PDF-documenten en begeleidt een menselijke beoordelaar door het lakproces.
@@ -8,6 +11,7 @@ WOO Buddy is een open-source, self-hostable webapplicatie die Nederlandse overhe
 - **Geen taalmodel** in de codebase — detectie is 100% regex + Nederlandse NER + woordenlijsten + structuurheuristieken
 - **Client-first**: PDF's verlaten nooit de browser van de gebruiker; de server slaat geen documentinhoud op
 - **Gehoste versie**: <https://woobuddy.nl>
+- **Releases**: [release notes](https://github.com/jaapstronks/woobuddy/releases) volgens [semver](docs/reference/versioning.md); self-hosters pinnen een `vX.Y.Z`-tag
 
 ---
 

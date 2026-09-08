@@ -57,7 +57,7 @@ CI draait dezelfde checks op elke PR, plus de image-build. Falende CI = geen rev
 - **Schrijf een testplan.** Wat heb je handmatig getest, met welke input, en wat was de verwachte uitkomst? Screenshots voor UI-werk, API-output of logs voor backend-werk.
 - **Geen nieuwe dependencies** zonder reden in de PR-beschrijving. We houden de stack bewust klein.
 - **Geen stilzwijgende gedragsveranderingen.** Als bestaand gedrag wijzigt, zet het expliciet in de PR-beschrijving en werk de tests bij.
-- **Commits** bij voorkeur Conventional Commits-achtig (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`). Geen harde eis, wel prettig voor changelogs.
+- **Commits en PR-titels** in [Conventional Commits](https://www.conventionalcommits.org/)-vorm (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`). Dit is geen stijlvoorkeur: we squash-mergen, dus je PR-titel wordt de commit op `main`, en `release-please` leest die titels om het volgende versienummer en de changelog te berekenen. `feat:` geeft een MINOR-bump en komt in de release notes, `fix:` een PATCH, en `docs:`/`chore:`/`refactor:` bewegen niets en blijven onzichtbaar voor gebruikers. Raakt je verandering de HTTP-API, het export-contract, de `.env`-sleutels of de IndexedDB-schema's, gebruik dan `feat:` of `fix:` en niet `refactor:`, ook als de diff refactor-achtig oogt. Zie [`docs/reference/versioning.md`](docs/reference/versioning.md).
 
 ## AI-assistentie bij bijdragen
 
@@ -106,7 +106,7 @@ WOO Buddy is a small, opinionated codebase. Contributions welcome, but the bar i
 - No LLM in the default path. See [`docs/reference/llm-revival.md`](docs/reference/llm-revival.md) before considering one.
 - UI text in Dutch; code, commits, docs in English.
 
-**PR guidelines:** one change per PR, include a manual test plan (screenshots for UI, output for backend), no new dependencies without justification, all CI checks must pass.
+**PR guidelines:** one change per PR, include a manual test plan (screenshots for UI, output for backend), no new dependencies without justification, all CI checks must pass. Title the PR as a [Conventional Commit](https://www.conventionalcommits.org/) — we squash-merge and `release-please` derives the version number and changelog from those titles. See [`docs/reference/versioning.md`](docs/reference/versioning.md).
 
 **AI-assisted contributions** (the 2026 reality):
 
