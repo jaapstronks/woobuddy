@@ -1,13 +1,19 @@
 /**
- * Doctrine gate for the landing page (#68).
+ * Doctrine gate for the SSR-rendered routes (#68, widened in #101).
  *
  * CLAUDE.md: "The landing page at `/` stays SSR-compatible and does NOT use
  * Shoelace." Until #68 that was false — `ProgressSteps` and
  * `ProviderPickerButtons` pulled `progress-bar.js` in at top level, so Lit
  * was evaluated in Node on every render of `/` and shipped in the landing
- * chunk. This test walks the static import graph from `routes/+page.svelte`
- * (and the root layout / error page it renders inside) and fails on the
- * first reachable module that imports `@shoelace-style`.
+ * chunk. This test walks the static import graph from the SSR entrypoints
+ * (the landing page, the root layout and error page it renders inside, and
+ * the marketing pages under `(hosted)/`) and fails on the first reachable
+ * module that imports `@shoelace-style`.
+ *
+ * Every route added under `(hosted)/` belongs in ENTRYPOINTS: they are read,
+ * not interacted with, and they share the landing page's Header and Footer,
+ * so one Shoelace import in a shared component would put Lit back in the SSR
+ * path for all of them at once.
  *
  * Same technique as `file-picker/network-isolation.test.ts`: sources are
  * read through Vite's raw glob so we don't need `node:fs` or a full
@@ -22,7 +28,13 @@ const SOURCES = import.meta.glob('/src/**/*.{ts,svelte}', {
 	eager: true
 }) as Record<string, string>;
 
-const ENTRYPOINTS = ['/src/routes/+page.svelte', '/src/routes/+layout.svelte', '/src/routes/+error.svelte'];
+const ENTRYPOINTS = [
+	'/src/routes/+page.svelte',
+	'/src/routes/+layout.svelte',
+	'/src/routes/+error.svelte',
+	'/src/routes/(hosted)/roadmap/+page.svelte',
+	'/src/routes/(hosted)/changelog/+page.svelte'
+];
 
 // The `from` clause may sit several lines below `import {` — a multi-line
 // named import is common in this tree (`HeroUploadPanel`, `upload-flow`).
@@ -81,7 +93,7 @@ function reachable(entries: string[]): Set<string> {
 	return seen;
 }
 
-describe('landing page — no Shoelace in the SSR import graph (#68)', () => {
+describe('SSR routes — no Shoelace in the import graph (#68)', () => {
 	for (const entry of ENTRYPOINTS) {
 		it(`${entry} exists`, () => {
 			expect(entry in SOURCES).toBe(true);
@@ -96,6 +108,10 @@ describe('landing page — no Shoelace in the SSR import graph (#68)', () => {
 		// Only reachable through a multi-line `import { … } from` — proves the
 		// scanner follows those, not just single-line imports.
 		expect(graph.has('/src/lib/services/upload-flow.ts')).toBe(true);
+		// Reachable only from the `(hosted)/` entrypoints — proves those are
+		// actually walked and not silently resolving to nothing.
+		expect(graph.has('/src/lib/components/landing/Footer.svelte')).toBe(true);
+		expect(graph.has('/src/lib/content/releases.ts')).toBe(false);
 	});
 
 	it('reaches zero @shoelace-style modules', () => {

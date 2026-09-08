@@ -32,6 +32,7 @@
 					<a href="/cookies" class="hover:text-ink">Cookies</a>
 					<a href="/verwerkersovereenkomst" class="hover:text-ink">Verwerkersovereenkomst</a>
 					<a href="/roadmap" class="hover:text-ink">Roadmap</a>
+					<a href="/changelog" class="hover:text-ink">Changelog</a>
 				{/if}
 				<a
 					href="https://github.com/jaapstronks/woobuddy"
