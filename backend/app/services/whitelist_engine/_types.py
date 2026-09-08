@@ -58,8 +58,20 @@ class WhitelistIndex:
 
 @dataclass(frozen=True)
 class PersonWhitelistHit:
-    """A successful public-official whitelist match."""
+    """A public-official whitelist match, confirmed or merely suggested.
+
+    ``confirmed`` is the load-bearing field (#92). It is only True when
+    a given name or initials identified this specific official *and* the
+    municipality is named near the detection. A hit with
+    ``confirmed=False`` says "the surname fits someone on the list" and
+    nothing more — the caller must leave such a detection pending and
+    show ``hint_reason`` so the reviewer knows what is missing.
+    """
 
     official: PublicOfficial
     municipality_name: str  # "Gemeente Aalsmeer"
     used_initials: bool  # whether the initials-gate actually fired
+    confirmed: bool = False  # safe to default the card to "niet lakken"
+    # Why the hit stayed unconfirmed: "no_given_name",
+    # "official_without_initials" or "gemeente_far". Empty when confirmed.
+    hint_reason: str = ""

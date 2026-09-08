@@ -27,13 +27,16 @@ The engine exposes three whitelisting decisions:
    detections and only when the caller passes the surrounding document
    text so the engine can inspect the window before the span.
 
-3. **Public-official whitelisting** (context gated). A person matches
-   only if their municipality name appears somewhere in the same
-   document's full text (``find_active_gemeenten``). For common Dutch
-   surnames the match additionally requires the detection's visible
-   initials to prefix-match the CSV's initials — otherwise a raadslid
-   whose name happens to collide with a private citizen in an unrelated
-   document would be un-redacted by accident.
+3. **Public-official whitelisting** (context gated, identity gated).
+   A person only *confirms* when three things line up: their
+   municipality is named in the document (``find_gemeente_mentions``),
+   that mention is near the detection or in the letterhead, and a given
+   name or initials in the text agree with the CSV's initials. Miss any
+   of those and the engine still returns a hit, but with
+   ``confirmed=False`` — a lead for the reviewer, never a silent
+   un-redaction. A bare surname on its own never confirms (#92):
+   "Geachte van der Groot" must not be waved through because some
+   raadslid Groot exists in the gemeente that wrote the letter.
 
 Both CSVs are loaded once at app startup via ``init_whitelist_index``
 and cached in the module (``get_whitelist_index``) so tests and lazy
@@ -64,7 +67,7 @@ from ._loader import (
     load_whitelist_index,
     reset_cache,
 )
-from ._persons import find_active_gemeenten, match_person_whitelist
+from ._persons import find_gemeente_mentions, match_person_whitelist
 from ._types import (
     Municipality,
     PersonWhitelistHit,
@@ -77,7 +80,7 @@ __all__ = [
     "PersonWhitelistHit",
     "PublicOfficial",
     "WhitelistIndex",
-    "find_active_gemeenten",
+    "find_gemeente_mentions",
     "get_whitelist_index",
     "init_whitelist_index",
     "is_postbus_context_postcode",

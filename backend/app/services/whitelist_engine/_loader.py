@@ -116,9 +116,12 @@ def _compile_alias_patterns(
     """Pre-compile word-boundary regexes for every alias.
 
     Patterns are compiled against an NFKD-normalized, lowercase document
-    view, which is what ``find_active_gemeenten`` feeds in. Using `\\b`
-    is safe against ASCII apostrophes and hyphens — the two cases that
-    matter for "'s-hertogenbosch" etc. are handled by stripping bbox
+    view, which is what ``find_gemeente_mentions`` feeds in. That view
+    keeps character offsets intact and therefore does *not* collapse
+    whitespace, so the space between alias words is compiled as ``\\s+``
+    to still match "gemeente\nAalsmeer" across a line break. Using
+    ``\\b`` is safe against ASCII apostrophes and hyphens — the two cases
+    that matter for "'s-hertogenbosch" etc. are handled by stripping bbox
     markers on the document side before matching.
     """
     compiled: list[tuple[re.Pattern[str], str]] = []
@@ -127,7 +130,8 @@ def _compile_alias_patterns(
             # Escape so punctuation like the apostrophe in 's-hertogenbosch
             # is literal. `\b` anchors guard against substring false hits
             # (e.g. "ede" inside "moede").
-            pattern = re.compile(rf"\b{re.escape(alias)}\b")
+            body = r"\s+".join(re.escape(word) for word in alias.split())
+            pattern = re.compile(rf"\b{body}\b")
             compiled.append((pattern, muni.gm_code))
     return tuple(compiled)
 
