@@ -11,7 +11,7 @@ WOO Buddy is een open-source, self-hostable webapplicatie die Nederlandse overhe
 - **Geen taalmodel** in de codebase — detectie is 100% regex + Nederlandse NER + woordenlijsten + structuurheuristieken
 - **Client-first**: PDF's verlaten nooit de browser van de gebruiker; de server slaat geen documentinhoud op
 - **Gehoste versie**: <https://woobuddy.nl>
-- **Releases**: [release notes](https://github.com/jaapstronks/woobuddy/releases) volgens [semver](docs/reference/versioning.md); self-hosters pinnen een `vX.Y.Z`-tag
+- **Releases**: [release notes](https://github.com/jaapstronks/woobuddy/releases) volgens [semver](docs/reference/versioning.md); self-hosters pinnen een `vX.Y.Z`-tag; Nederlandse toelichting per versie op [woobuddy.nl/changelog](https://woobuddy.nl/changelog)
 
 ---
 
