@@ -42,6 +42,7 @@ from app.services.structure_engine import (
     StructureSpan,
     detect_structures,
     find_enclosing_structure,
+    is_email_subject_line,
 )
 from app.services.title_match_rules import (
     mandate_cue_to_detection,
@@ -480,9 +481,15 @@ def _classify_persoon(
         if rule_det is not None:
             return rule_det
 
-    # 5. Structure enclosure (email header / signature block / salutation)
+    # 5. Structure enclosure (email header / signature block / salutation).
+    # The `Onderwerp:` line is part of the header block but carries prose,
+    # not a header value, so a hit there falls through to the rules below
+    # and stays at most `pending` (#105).
     enclosing = find_enclosing_structure(ctx.structure_spans, det.start_char, det.end_char)
-    if enclosing is not None:
+    if enclosing is not None and not (
+        enclosing.kind == "email_header"
+        and is_email_subject_line(ctx.extraction.full_text, det.start_char)
+    ):
         return _structure_to_pipeline_detection(det, bboxes, enclosing)
 
     # 6. Ambtenaar title → pending with pre-filled role

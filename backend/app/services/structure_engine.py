@@ -293,6 +293,25 @@ def detect_structures(extraction: ExtractionResult) -> list[StructureSpan]:
     return spans
 
 
+# The subject field of an email header. `Onderwerp:` opens and grows a
+# header block like any other field, but unlike `Van:`/`Aan:`/`CC:` its
+# value is free-text prose — a document title, a case name, a place. The
+# header is therefore no evidence that a name-shaped hit on this line is
+# a person, so the pipeline must not auto-accept there (#105). `Subject:`
+# is included even though it can't *open* a block: inside a block opened
+# by a Dutch trigger it is picked up as a header-shaped continuation.
+_SUBJECT_FIELD_LINE = re.compile(r"^\s*(onderwerp|subject)\s*:", re.IGNORECASE)
+
+
+def is_email_subject_line(text: str, start_char: int) -> bool:
+    """True if `start_char` sits on an `Onderwerp:`/`Subject:` line of `text`."""
+    line_start = text.rfind("\n", 0, start_char) + 1
+    line_end = text.find("\n", start_char)
+    if line_end == -1:
+        line_end = len(text)
+    return _SUBJECT_FIELD_LINE.match(text[line_start:line_end]) is not None
+
+
 def find_enclosing_structure(
     structure_spans: list[StructureSpan],
     start_char: int,
