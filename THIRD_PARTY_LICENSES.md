@@ -25,6 +25,7 @@ WOO Buddy is licensed under the MIT License. This file documents the licenses of
 | Shoelace | MIT | |
 | Lucide | ISC | |
 | pdf.js (pdfjs-dist) | Apache-2.0 | |
+| marked | MIT | Markdown-renderer voor de handgeschreven release notes op `/changelog`. Draait alleen server-side; komt niet in de clientbundle. |
 
 ## Infrastructure
 
