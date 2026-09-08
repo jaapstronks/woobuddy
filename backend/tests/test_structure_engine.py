@@ -23,6 +23,7 @@ from app.services.structure_engine import (
     StructureSpan,
     detect_structures,
     find_enclosing_structure,
+    is_email_subject_line,
 )
 from tests.text_shapes import production_text
 
@@ -291,6 +292,37 @@ class TestFindEnclosingStructure:
 
 
 # ---------------------------------------------------------------------------
+# Subject-line recognition inside an email header (#105)
+# ---------------------------------------------------------------------------
+
+
+class TestIsEmailSubjectLine:
+    """`Onderwerp:`/`Subject:` lines carry prose, so the pipeline must be
+    able to single them out inside a header block it otherwise trusts."""
+
+    def test_subject_line_is_recognised(self):
+        text = "Van: Pieter Bakker\nOnderwerp: Aanmeldnotitie Emmen\n"
+        assert is_email_subject_line(text, text.index("Aanmeldnotitie")) is True
+
+    def test_english_subject_line_is_recognised(self):
+        text = "Van: Pieter Bakker\nSubject: Aanmeldnotitie Emmen\n"
+        assert is_email_subject_line(text, text.index("Aanmeldnotitie")) is True
+
+    def test_other_header_fields_are_not_subject_lines(self):
+        text = "Van: Pieter Bakker\nAan: Klaas Jansen\nCC: Marie de Wit\n"
+        for name in ("Pieter", "Klaas", "Marie"):
+            assert is_email_subject_line(text, text.index(name)) is False
+
+    def test_last_line_without_trailing_newline(self):
+        text = "Van: Pieter Bakker\nOnderwerp: Aanmeldnotitie Emmen"
+        assert is_email_subject_line(text, text.index("Aanmeldnotitie")) is True
+
+    def test_prose_mentioning_onderwerp_is_not_a_subject_line(self):
+        text = "Het onderwerp van de vergadering was Jan de Vries.\n"
+        assert is_email_subject_line(text, text.index("Jan")) is False
+
+
+# ---------------------------------------------------------------------------
 # Pipeline regression — persoon inside a signature block auto-accepts.
 # ---------------------------------------------------------------------------
 
@@ -326,3 +358,35 @@ class TestPipelineStructureIntegration:
         assert karel, "Expected Deduce to detect the name inside the signature"
         assert any(p.review_status == "auto_accepted" for p in karel)
         assert any("handtekeningblok" in p.reasoning for p in karel)
+
+    @pytest.mark.asyncio
+    async def test_name_on_subject_line_is_not_auto_accepted(self, shape):
+        """#105 — the header block runs through `Onderwerp:`, but its value
+        is prose. A name-shaped hit there must stay reviewable while the
+        `Van:`/`Aan:` names keep their auto-accept."""
+        text = shape(
+            "Van: Pieter Bakker\n"
+            "Aan: Klaas Jansen\n"
+            "Onderwerp: Aanmeldnotitie Jan Willem Alexander\n"
+            "\n"
+            "Beste collega,\n"
+        )
+        extraction = _make_extraction(text)
+
+        result = await run_pipeline(extraction)
+
+        assert any(s.kind == "email_header" for s in result.structure_spans)
+        persons = [d for d in result.detections if d.entity_type == "persoon"]
+
+        subject_start = text.index("Onderwerp:")
+        on_subject = [p for p in persons if p.start_char >= subject_start]
+        assert on_subject, "Expected Deduce to detect a name on the subject line"
+        for p in on_subject:
+            assert p.review_status == "pending"
+
+        # The addressing fields keep the auto-accept the block is for.
+        header_names = [p for p in persons if p.start_char < subject_start]
+        assert len(header_names) >= 2, "Expected the Van:/Aan: names to be detected"
+        for p in header_names:
+            assert p.review_status == "auto_accepted"
+            assert "e-mailheader" in p.reasoning
