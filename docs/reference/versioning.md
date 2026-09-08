@@ -215,8 +215,11 @@ that too.
   `release.yml`, so no images are built. Add a **fine-grained PAT** (repository
   access: this repository only; permissions: **Contents: Read and write**,
   **Pull requests: Read and write**) as a repository secret named
-  `RELEASE_PLEASE_TOKEN`. The workflow falls back to `GITHUB_TOKEN` if it is
-  missing, so it is never red — it is just not useful.
+  `RELEASE_PLEASE_TOKEN`. The workflow falls back to `GITHUB_TOKEN` when it is
+  missing, but in this repository that run fails: GitHub Actions is not allowed to
+  create pull requests here (Settings → Actions → General → Workflow permissions),
+  so a red `release-please` run on `main` means the secret is missing, not that
+  the configuration broke.
 
 ## How people hear about a release
 
