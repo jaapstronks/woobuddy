@@ -9,6 +9,8 @@ tested and grown in isolation. The two public helpers are:
 - `title_match_to_detection`: map a `FunctionTitleMatch` onto a
   `PipelineDetection` with the correct review semantics (publiek →
   rejected, ambtenaar → pending with pre-filled role).
+- `mandate_cue_to_detection`: map a "namens dezen" hit onto a pending
+  ambtenaar card (#94).
 """
 
 from app.services.ner_engine import DEFAULT_WOO_ARTICLE, NERDetection
@@ -17,6 +19,7 @@ from app.services.role_engine import (
     FunctionTitleMatch,
     find_function_title_near,
     get_function_title_lists,
+    mask_organ_phrases,
 )
 
 
@@ -47,7 +50,10 @@ def match_function_title(
     # that's an after-context case that already goes through the
     # character-window path). Same tie-breaking as before: publiek beats
     # ambtenaar if both happen to fit the prefix (extremely rare).
-    stripped = (span_text or "").lstrip()
+    #
+    # Mask here too: a span that swallowed "Gedeputeerde Staten" must not
+    # be read as a title-led span either.
+    stripped = mask_organ_phrases((span_text or "").lstrip(), lists.organ_patterns)
     best: FunctionTitleMatch | None = None
     for list_name, title, pattern in lists.iter_all():
         m = pattern.match(stripped)
@@ -113,6 +119,37 @@ def title_match_to_detection(
             f"Vermoedelijk ambtenaar in functie: voorafgegaan door '{match.title}'."
             if match.position == "before"
             else f"Vermoedelijk ambtenaar in functie: gevolgd door '{match.title}'."
+        ),
+        source="rule",
+        subject_role="ambtenaar",
+        start_char=det.start_char,
+        end_char=det.end_char,
+    )
+
+
+def mandate_cue_to_detection(
+    det: NERDetection,
+    bboxes: list[Bbox],
+) -> PipelineDetection:
+    """Map a "namens dezen" hit onto a pending ambtenaar card (#94).
+
+    Deliberately `pending`, not `rejected`: whether the name of a civil
+    servant signing in mandaat is redacted is a policy question the team
+    has not settled (brief #99, question 3). Until it is, the card goes
+    to the reviewer with the role already filled in — which is still a
+    change, because the signature block used to auto-accept it.
+    """
+    return PipelineDetection(
+        entity_text=det.text,
+        entity_type="persoon",
+        tier="2",
+        confidence=det.confidence,
+        woo_article=DEFAULT_WOO_ARTICLE,
+        review_status="pending",
+        bounding_boxes=bboxes,
+        reasoning=(
+            "Ondertekenaar in mandaat: 'namens dezen' vlak vóór de naam. "
+            "Beoordeel of deze ambtenaar gelakt moet worden."
         ),
         source="rule",
         subject_role="ambtenaar",

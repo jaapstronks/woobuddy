@@ -13,14 +13,18 @@ case.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 
-from app.services.pipeline_engine import run_pipeline
 from app.services.pdf_engine import ExtractionResult, PageText, TextSpan
+from app.services.pipeline_engine import run_pipeline
 from app.services.role_engine import (
     find_function_title_near,
+    find_mandate_cue_before,
     load_function_title_lists,
 )
+from tests.text_shapes import production_text
 
 
 @pytest.fixture(scope="module")
@@ -142,3 +146,143 @@ async def test_pipeline_publiek_functionaris_rule_fires():
     assert hit.review_status == "rejected"
     assert hit.subject_role == "publiek_functionaris"
     assert "wethouder" in hit.reasoning.lower()
+
+
+# ---------------------------------------------------------------------------
+# #94 — bestuursorganen and the mandate cue
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(params=["pymupdf", "production"])
+def shape(request: pytest.FixtureRequest) -> Callable[[str], str]:
+    """Return a fixture reshaper for one of the two text shapes."""
+    return production_text if request.param == "production" else lambda text: text
+
+
+#: The closing of a Drenthe decision letter, with the redacted name
+#: refilled above the college and the mandated signatory below it. Both
+#: names sit inside the "Hoogachtend," signature block.
+_GS_CLOSING = """\
+Hoogachtend,
+
+Stefanie Öztürk
+
+Gedeputeerde Staten van Drenthe,
+namens dezen,
+W.J. van Elsacker,
+teammanager Ruimte, Energie en Wonen
+"""
+
+
+class TestBestuursorganen:
+    def test_gedeputeerde_staten_is_not_a_title(self, lists, shape):
+        """The name above "Gedeputeerde Staten van Drenthe" is not a gedeputeerde."""
+        text = shape(_GS_CLOSING)
+        start, end = _span_of(text, "Stefanie Öztürk")
+        assert find_function_title_near(text, start, end, lists) is None
+
+    def test_singular_gedeputeerde_still_publiek(self, lists, shape):
+        """ "gedeputeerde <Naam>" keeps its title — only the college is masked."""
+        text = shape("Het besluit is genomen door gedeputeerde Y. Turenhout.")
+        start, end = _span_of(text, "Y. Turenhout")
+        match = find_function_title_near(text, start, end, lists)
+        assert match is not None
+        assert match.list_name == "publiek"
+        assert match.title == "gedeputeerde"
+
+    def test_provinciale_staten_is_not_a_title(self, lists, shape):
+        text = shape("Provinciale Staten van Drenthe\nKarel Bosman\n")
+        start, end = _span_of(text, "Karel Bosman")
+        assert find_function_title_near(text, start, end, lists) is None
+
+    def test_college_van_bw_is_not_a_title(self, lists, shape):
+        text = shape("Namens het college van burgemeester en wethouders,\nSanne de Groot\n")
+        start, end = _span_of(text, "Sanne de Groot")
+        assert find_function_title_near(text, start, end, lists) is None
+
+    def test_organ_glued_to_the_span_is_still_masked(self, lists, shape):
+        """A refilled redaction box can run straight into the phrase.
+
+        pdf.js hands us "Brian Vechtburgemeester en wethouders van
+        Emmen" for a letter whose signature line was blacked out; the
+        "wethouders" there is still the college's, not Brian's.
+        """
+        text = shape("Hoogachtend,\nBrian Vechtburgemeester en wethouders van Emmen,\n")
+        start, end = _span_of(text, "Brian Vechtburgemeester")
+        assert find_function_title_near(text, start, end, lists) is None
+
+    def test_solitary_burgemeester_still_publiek(self, lists, shape):
+        text = shape("De vergadering werd geleid door burgemeester Anne Klaassen.")
+        start, end = _span_of(text, "Anne Klaassen")
+        match = find_function_title_near(text, start, end, lists)
+        assert match is not None
+        assert match.list_name == "publiek"
+
+
+class TestMandateCue:
+    def test_namens_dezen_directly_before_the_name(self, shape):
+        text = shape(_GS_CLOSING)
+        start, _end = _span_of(text, "W.J. van Elsacker")
+        assert find_mandate_cue_before(text, start) is True
+
+    def test_namens_deze_singular(self, shape):
+        text = shape(
+            "Met vriendelijke groet,\nde Nationale ombudsman,\nnamens deze,\nHanneke van Essen\n"
+        )
+        start, _end = _span_of(text, "Hanneke van Essen")
+        assert find_mandate_cue_before(text, start) is True
+
+    def test_cue_reaches_across_a_function_title_line(self, shape):
+        text = shape(
+            "Hoogachtend,\nburgemeester en wethouders van Emmen,\nnamens dezen,\n"
+            "teamleider Ruimtelijke ontwikkeling,\nmevrouw M.A.E. Holwarda\n"
+        )
+        start, _end = _span_of(text, "M.A.E. Holwarda")
+        assert find_mandate_cue_before(text, start) is True
+
+    def test_cue_does_not_reach_the_name_above_the_college(self, shape):
+        """The addressee printed *before* the cue is not a mandated signatory."""
+        text = shape(_GS_CLOSING)
+        start, _end = _span_of(text, "Stefanie Öztürk")
+        assert find_mandate_cue_before(text, start) is False
+
+    def test_cue_does_not_reach_across_prose(self):
+        text = (
+            "Het besluit is namens dezen genomen. Voor de volledigheid melden wij "
+            "dat de aanvraag door Jan de Vries is ingediend."
+        )
+        start, _end = _span_of(text, "Jan de Vries")
+        assert find_mandate_cue_before(text, start) is False
+
+    def test_cue_does_not_reach_across_a_blank_line(self):
+        text = "namens dezen,\n\nJan de Vries\n"
+        start, _end = _span_of(text, "Jan de Vries")
+        assert find_mandate_cue_before(text, start) is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reshape", [lambda t: t, production_text], ids=["pymupdf", "production"])
+async def test_pipeline_mandate_signatory_stays_pending(reshape):
+    """#94: the "namens dezen" signatory must not be auto-accepted.
+
+    Both names in the closing sit inside the "Hoogachtend," signature
+    block, which used to auto-accept everything it enclosed. The
+    mandated signatory now reaches the reviewer as a pending ambtenaar
+    card instead, and the name above the college is no longer rejected
+    as a publiek functionaris.
+    """
+    text = reshape(_GS_CLOSING)
+    result = await run_pipeline(_make_extraction(text))
+
+    by_text = {d.entity_text: d for d in result.detections if d.entity_type == "persoon"}
+    assert "W.J. van Elsacker" in by_text, f"expected the signatory, got {list(by_text)}"
+
+    signatory = by_text["W.J. van Elsacker"]
+    assert signatory.review_status == "pending"
+    assert signatory.subject_role == "ambtenaar"
+    assert signatory.source == "rule"
+    assert "namens dezen" in signatory.reasoning
+
+    addressee = by_text.get("Stefanie Öztürk")
+    assert addressee is not None, f"expected the refilled name, got {list(by_text)}"
+    assert addressee.review_status != "rejected"

@@ -1,0 +1,33 @@
+# Bestuursorganen — geen functietitel van de naam ernaast
+#
+# Phrases that name a *body*, not a person. "Gedeputeerde Staten van
+# Drenthe" is the college; the name printed above or below it is the
+# addressee or the mandated signatory, not a gedeputeerde. Before the
+# role engine looks for a function title around a persoon span, every
+# phrase in this file is blanked out of the surrounding text, so the
+# title it contains ("gedeputeerde", "burgemeester", "wethouders")
+# cannot be read as that person's title.
+#
+# Curation notes:
+# - Only phrases that *contain* a title from functietitels_publiek.txt or
+#   functietitels_ambtenaar.txt do any work here. "de raad van de
+#   gemeente" holds no title ("raadslid" does) and would mask nothing, so
+#   it is deliberately absent.
+# - Matching is case-insensitive and whole-word, whitespace inside a
+#   phrase matches any run of whitespace (including the newlines pdf.js
+#   emits at line boundaries).
+# - Masking preserves length and whitespace, so token distances and
+#   character offsets around the span are unaffected.
+# - The singular use stays a title: "gedeputeerde Y. Turenhout" is a
+#   publiek functionaris and is not touched by any phrase below.
+# - Extend this file (not the code) to add new bodies.
+
+# Provinciaal
+gedeputeerde staten
+provinciale staten
+college van gedeputeerde staten
+
+# Gemeentelijk
+burgemeester en wethouders
+college van burgemeester en wethouders
+college van b&w
