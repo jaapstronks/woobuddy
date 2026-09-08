@@ -1,11 +1,14 @@
 """Unit tests for `app.services.whitelist_engine`.
 
-Exercises the CSV loader, the `find_active_gemeenten` context scan, the
-global address whitelist, and the context-gated public-officials
-whitelist including the common-surname initials gate.
+Exercises the CSV loader, the `find_gemeente_mentions` context scan, the
+global address whitelist, and the context- and identity-gated
+public-officials whitelist: the initials gate, the given-name gate and
+the gemeente-proximity gate that together keep a bare surname from
+silently rejecting a private citizen (#92).
 
 Also includes a pipeline-level smoke test that verifies a whitelist hit
-produces a `review_status="rejected"` detection via `run_pipeline`.
+produces a `review_status="rejected"` detection via `run_pipeline`, and
+two classifier-level tests for the confirmed/unconfirmed split.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ import pytest
 from app.services.pipeline_engine import run_pipeline
 from app.services.pdf_engine import ExtractionResult, PageText, TextSpan
 from app.services.whitelist_engine import (
-    find_active_gemeenten,
+    find_gemeente_mentions,
     load_whitelist_index,
     match_address_whitelist,
     match_person_whitelist,
@@ -66,28 +69,28 @@ def test_loader_captures_public_contact_data(index):
 
 
 # ---------------------------------------------------------------------------
-# find_active_gemeenten
+# find_gemeente_mentions
 # ---------------------------------------------------------------------------
 
 
-def test_find_active_gemeenten_matches_explicit_prefix(index):
+def test_find_gemeente_mentions_matches_explicit_prefix(index):
     text = "Betreft: subsidieaanvraag gemeente Aalsmeer."
-    active = find_active_gemeenten(text, index)
+    active = find_gemeente_mentions(text, index)
     # gm0358 is Aalsmeer's TOOi code in our index.
     assert "gm0358" in active
 
 
-def test_find_active_gemeenten_matches_bare_long_name(index):
+def test_find_gemeente_mentions_matches_bare_long_name(index):
     # Bare "Alblasserdam" (>= 5 chars) fires without a "gemeente " prefix.
     text = "De raad van Alblasserdam heeft vergaderd op 3 april."
-    active = find_active_gemeenten(text, index)
+    active = find_gemeente_mentions(text, index)
     assert "gm0482" in active
 
 
-def test_find_active_gemeenten_empty_without_mention(index):
+def test_find_gemeente_mentions_empty_without_mention(index):
     text = "Beste mevrouw Jansen, hartelijk dank voor uw bericht."
-    active = find_active_gemeenten(text, index)
-    assert active == set()
+    active = find_gemeente_mentions(text, index)
+    assert active == {}
 
 
 # ---------------------------------------------------------------------------
@@ -266,21 +269,26 @@ def _span(text: str, needle: str) -> tuple[int, int]:
 
 
 def test_person_whitelist_hits_when_gemeente_mentioned(index):
+    # The surname is on Alblasserdam's officials list, so there is a hit
+    # — but "van der Ende" carries no given name or initials, so it is a
+    # lead and not a licence to un-redact (#92).
     text = "Geachte raadsleden van gemeente Alblasserdam, namens dhr. van der Ende..."
-    active = find_active_gemeenten(text, index)
+    mentions = find_gemeente_mentions(text, index)
     start, end = _span(text, "van der Ende")
-    hit = match_person_whitelist("van der Ende", start, end, text, active, index)
+    hit = match_person_whitelist("van der Ende", start, end, text, mentions, index)
     assert hit is not None
     assert hit.municipality_name == "Gemeente Alblasserdam"
+    assert hit.confirmed is False
+    assert hit.hint_reason == "no_given_name"
 
 
 def test_person_whitelist_requires_gemeente_in_document(index):
     # No gemeente name in text → whitelist stays inert even for a name
     # that happens to match a raadslid somewhere.
     text = "Klacht ingediend door mw. Erdogan over overlast."
-    active = find_active_gemeenten(text, index)
+    mentions = find_gemeente_mentions(text, index)
     start, end = _span(text, "Erdogan")
-    hit = match_person_whitelist("Erdogan", start, end, text, active, index)
+    hit = match_person_whitelist("Erdogan", start, end, text, mentions, index)
     assert hit is None
 
 
@@ -288,9 +296,9 @@ def test_person_whitelist_common_surname_needs_initials(index):
     # Utrecht is in the text, but "Jansen" is common: without visible
     # initials the whitelist must refuse to fire.
     text = "Bezoek aan gemeente Utrecht door burger Jansen."
-    active = find_active_gemeenten(text, index)
+    mentions = find_gemeente_mentions(text, index)
     start, end = _span(text, "Jansen")
-    hit = match_person_whitelist("Jansen", start, end, text, active, index)
+    hit = match_person_whitelist("Jansen", start, end, text, mentions, index)
     assert hit is None
 
 
@@ -314,12 +322,13 @@ def test_person_whitelist_common_surname_with_matching_initials(index):
     # Use the first initial from the CSV official so the gate fires.
     initial_letter = official.initials[0].upper()
     text = f"Brief aan {muni.official_name}: {initial_letter}. Jansen heeft gereageerd."
-    active = find_active_gemeenten(text, index)
+    mentions = find_gemeente_mentions(text, index)
     needle = f"{initial_letter}. Jansen"
     start, end = _span(text, needle)
-    hit = match_person_whitelist(needle, start, end, text, active, index)
+    hit = match_person_whitelist(needle, start, end, text, mentions, index)
     assert hit is not None
     assert hit.used_initials is True
+    assert hit.confirmed is True
 
 
 def test_person_whitelist_rejects_mismatching_initials(index):
@@ -335,16 +344,134 @@ def test_person_whitelist_rejects_mismatching_initials(index):
     wrong_letter = "Z" if official.initials[0].upper() != "Z" else "Q"
     display_surname = official.display_name.split()[-1]
     text = f"Gemeente Alblasserdam: {wrong_letter}. {display_surname} niet aanwezig."
-    active = find_active_gemeenten(text, index)
+    mentions = find_gemeente_mentions(text, index)
     needle = f"{wrong_letter}. {display_surname}"
     start, end = _span(text, needle)
-    hit = match_person_whitelist(needle, start, end, text, active, index)
+    hit = match_person_whitelist(needle, start, end, text, mentions, index)
     # Either no match (surname uncommon → strict initial gate) or a
     # match that did NOT use initials. The important invariant is that
     # a mismatching explicit initial never produces a used_initials
     # match — it either fails or falls through the uncommon-surname path
     # without initials.
     assert hit is None or hit.used_initials is False
+
+
+# ---------------------------------------------------------------------------
+# #92 — identity gate: a surname alone never rejects
+# ---------------------------------------------------------------------------
+
+
+def _official_with_initials(index, gm_code: str, *, common: bool = False):
+    """Pick a deterministic official from a gemeente for gate probing."""
+    from app.services.whitelist_engine._text import _COMMON_SURNAMES
+
+    for official in index.officials_by_gm.get(gm_code, ()):
+        if not official.initials:
+            continue
+        if (official.surname_normalized in _COMMON_SURNAMES) is not common:
+            continue
+        if len(official.surname_normalized.split()) > 1:
+            continue
+        return official
+    return None
+
+
+def test_person_whitelist_given_name_mismatch_never_hits(index):
+    # The #92 leak: a private citizen whose surname collides with a
+    # raadslid. Her given name starts with a letter the official's
+    # initials do not, so the whitelist must not produce a hit at all.
+    official = _official_with_initials(index, "gm0482")
+    if official is None:
+        pytest.skip("no single-token Alblasserdam official with initials in this CSV")
+    wrong_given = "Quirina" if official.initials[0] != "q" else "Zeger"
+    surname = official.surname_normalized.title()
+    text = f"Gemeente Alblasserdam ontving een brief van {wrong_given} {surname}."
+    mentions = find_gemeente_mentions(text, index)
+    needle = f"{wrong_given} {surname}"
+    start, end = _span(text, needle)
+    hit = match_person_whitelist(needle, start, end, text, mentions, index)
+    assert hit is None
+
+
+def test_person_whitelist_given_name_match_confirms(index):
+    # Same shape, but the given name agrees with the official's first
+    # initial — that is enough to confirm and default to "niet lakken".
+    official = _official_with_initials(index, "gm0482")
+    if official is None:
+        pytest.skip("no single-token Alblasserdam official with initials in this CSV")
+    given = official.initials[0].upper() + "arolien"
+    surname = official.surname_normalized.title()
+    text = f"Gemeente Alblasserdam: {given} {surname} was aanwezig."
+    mentions = find_gemeente_mentions(text, index)
+    needle = f"{given} {surname}"
+    start, end = _span(text, needle)
+    hit = match_person_whitelist(needle, start, end, text, mentions, index)
+    assert hit is not None
+    assert hit.confirmed is True
+    assert hit.used_initials is True
+
+
+def test_person_whitelist_bare_surname_is_only_a_hint(index):
+    # "Geachte van der Groot" — an uncommon surname with nothing to
+    # identify it. A hit, but unconfirmed, so the caller keeps it pending.
+    official = _official_with_initials(index, "gm0482")
+    if official is None:
+        pytest.skip("no single-token Alblasserdam official with initials in this CSV")
+    surname = official.surname_normalized.title()
+    text = f"Gemeente Alblasserdam. Geachte {surname}, hierbij ons antwoord."
+    mentions = find_gemeente_mentions(text, index)
+    start, end = _span(text, surname)
+    hit = match_person_whitelist(surname, start, end, text, mentions, index)
+    assert hit is not None
+    assert hit.confirmed is False
+    assert hit.hint_reason == "no_given_name"
+
+
+def test_person_whitelist_distant_gemeente_downgrades_to_hint(index):
+    # The gemeente is named far past the letterhead and far from the
+    # span, so even a matching given name only earns a hint.
+    official = _official_with_initials(index, "gm0482")
+    if official is None:
+        pytest.skip("no single-token Alblasserdam official with initials in this CSV")
+    given = official.initials[0].upper() + "arolien"
+    surname = official.surname_normalized.title()
+    filler = "Deze alinea gaat over iets volstrekt anders. " * 30
+    text = f"{filler}Gemeente Alblasserdam wordt hier genoemd. {filler}{given} {surname} tekende."
+    mentions = find_gemeente_mentions(text, index)
+    needle = f"{given} {surname}"
+    start, end = _span(text, needle)
+    hit = match_person_whitelist(needle, start, end, text, mentions, index)
+    assert hit is not None
+    assert hit.confirmed is False
+    assert hit.hint_reason == "gemeente_far"
+
+
+def test_person_whitelist_leading_placename_is_trimmed(index):
+    # Deduce runs a city into the following name ("Assen Berkant Vecht").
+    # The city must not become the surname the whitelist matches on.
+    from app.services.whitelist_engine._persons import _detection_name_tokens
+
+    assert _detection_name_tokens("Assen Berkant Vecht", index) == ["berkant", "vecht"]
+    # ...but a two-token name that happens to start with a place name
+    # keeps its surname, so real officials still match.
+    assert _detection_name_tokens("M.H. Assen", index) == ["assen"]
+
+
+def test_person_whitelist_common_surname_stays_silent_without_evidence(index):
+    # Regression guard on the negative case: a common surname carries no
+    # information, so it earns neither a rejection nor a hint.
+    official = _official_with_initials(index, "gm0344", common=True) or _official_with_initials(
+        index, "gm0363", common=True
+    )
+    if official is None:
+        pytest.skip("no common-surname official with initials in this CSV")
+    muni = next(m for m in index.municipalities if m.gm_code == official.gm_code)
+    surname = official.surname_normalized.title()
+    text = f"{muni.official_name} ontving een klacht van {surname}."
+    mentions = find_gemeente_mentions(text, index)
+    start, end = _span(text, surname)
+    hit = match_person_whitelist(surname, start, end, text, mentions, index)
+    assert hit is None
 
 
 # ---------------------------------------------------------------------------
@@ -386,3 +513,66 @@ async def test_pipeline_whitelists_municipal_postcode():
     assert pc, "expected a postcode detection"
     assert pc[0].review_status == "rejected"
     assert pc[0].source == "whitelist_gemeente"
+
+
+# ---------------------------------------------------------------------------
+# #92 — the classifier turns the two hit strengths into two review states
+# ---------------------------------------------------------------------------
+
+
+def _classify_name(index, text: str, needle: str):
+    """Run the Tier 2 persoon classifier over one hand-placed name.
+
+    Goes through the real `_build_doc_context` + `_classify_persoon` so
+    the rule ordering is exercised, but skips Deduce: the detection is
+    handed in directly, which keeps the test deterministic.
+    """
+    from app.services.ner_engine import DEFAULT_WOO_ARTICLE, NERDetection
+    from app.services.pipeline_engine import _build_doc_context, _classify_persoon
+
+    start, end = _span(text, needle)
+    det = NERDetection(
+        text=needle,
+        entity_type="persoon",
+        tier="2",
+        confidence=0.7,
+        woo_article=DEFAULT_WOO_ARTICLE,
+        source="deduce",
+        start_char=start,
+        end_char=end,
+    )
+    ctx = _build_doc_context(_single_page_extraction(text), None)
+    return _classify_persoon(det, [], ctx)
+
+
+def test_classifier_rejects_a_confirmed_official(index):
+    # The negative control for #92: a real raadslid, named with a given
+    # name that matches the CSV initials, must keep defaulting to
+    # "niet lakken".
+    official = _official_with_initials(index, "gm0482")
+    if official is None:
+        pytest.skip("no single-token Alblasserdam official with initials in this CSV")
+    given = official.initials[0].upper() + "arolien"
+    surname = official.surname_normalized.title()
+    needle = f"{given} {surname}"
+    text = f"Gemeente Alblasserdam meldt dat {needle} het voorstel steunde."
+    result = _classify_name(index, text, needle)
+    assert result.review_status == "rejected"
+    assert result.source == "whitelist_gemeente"
+    assert result.subject_role == "publiek_functionaris"
+
+
+def test_classifier_keeps_a_bare_surname_pending_with_the_lead(index):
+    # The leak itself: the same surname without a given name stays
+    # pending, so the reviewer still sees it as a redaction candidate.
+    official = _official_with_initials(index, "gm0482")
+    if official is None:
+        pytest.skip("no single-token Alblasserdam official with initials in this CSV")
+    surname = official.surname_normalized.title()
+    text = f"Gemeente Alblasserdam meldt dat {surname} het voorstel steunde."
+    result = _classify_name(index, text, surname)
+    assert result.review_status == "pending"
+    assert result.source == "whitelist_gemeente_hint"
+    assert result.subject_role is None
+    assert result.woo_article is not None
+    assert "niet bevestigd" in result.reasoning

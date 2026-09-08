@@ -1,16 +1,23 @@
 """Public-official person whitelisting.
 
 Context-gated: a person only matches when their municipality name
-appears somewhere in the document's full text. Common Dutch surnames
-additionally require the detection's visible initials to prefix-match
-the official's — otherwise a private citizen whose name happens to
-collide with a raadslid in an unrelated document would be un-redacted
-by accident.
+appears in the document, near the detection or in the letterhead. On
+top of that the match must be *identified* — a surname alone is never
+enough. The detection has to carry a given name or initials that agree
+with the CSV's initials for that official; when it does not, the match
+degrades to a hint that keeps the detection `pending` instead of
+silently rejecting it.
+
+The asymmetry is deliberate. A missed public official costs a reviewer
+one click; a wrongly whitelisted private citizen leaves their name in a
+published Woo document (#92).
 """
 
 from __future__ import annotations
 
 import re
+import unicodedata
+from collections.abc import Mapping, Sequence
 
 from ._text import (
     _COMMON_SURNAMES,
@@ -22,26 +29,112 @@ from ._text import (
 )
 from ._types import PersonWhitelistHit, WhitelistIndex
 
+# A gemeente mentioned this many characters away from the detection (or
+# closer) counts as the document's subject for that detection. Beyond it
+# the mention is background noise — a list of neighbouring municipalities,
+# a citation, a footer — and cannot carry a whitelist decision on its own.
+_GEMEENTE_PROXIMITY_CHARS = 300
 
-def find_active_gemeenten(full_text: str, index: WhitelistIndex) -> set[str]:
-    """Return the set of gm_codes whose name aliases appear in the text.
+# A gemeente named inside this prefix of the document is the sender
+# (letterhead / "Aan het college van ..."), which makes it the subject of
+# the whole document rather than of one passage.
+_LETTERHEAD_CHARS = 600
 
-    Called once per analyze request. The match is a word-boundary
-    substring scan on the NFKD-lowered full text; bbox markers like
-    parentheses are stripped so "(gemeente Aalsmeer)" still fires.
-    Returns an empty set when no municipality is mentioned — the
+# Tussenvoegsels belong to the surname, not to the given name. They are
+# skipped when looking for the given name in front of a matched surname,
+# so "Isabelle van Westerman" yields "isabelle" and not "van".
+_TUSSENVOEGSELS: frozenset[str] = frozenset(
+    {
+        "van",
+        "de",
+        "den",
+        "der",
+        "het",
+        "'t",
+        "ten",
+        "ter",
+        "te",
+        "op",
+        "aan",
+        "bij",
+        "in",
+        "tot",
+        "uit",
+        "voor",
+        "vande",
+        "vander",
+        "von",
+        "zu",
+        "la",
+        "le",
+        "du",
+        "des",
+        "di",
+        "da",
+        "dos",
+        "el",
+        "al",
+    }
+)
+
+
+def _normalize_keeping_offsets(text: str) -> str:
+    """Lowercase + strip diacritics without moving any character index.
+
+    ``_normalize_phrase`` collapses whitespace and can change the string
+    length, which makes its offsets useless for proximity work. This
+    variant maps every input character to exactly one output character,
+    so a match offset in the result is also an offset into ``text``.
+    Characters whose NFKD form expands (``ﬁ``, ``½``) keep only their
+    first base character — a rounding we accept because no municipality
+    alias contains one.
+    """
+    out: list[str] = []
+    for ch in text:
+        if ch.isspace():
+            out.append(" ")
+            continue
+        decomposed = unicodedata.normalize("NFKD", ch)
+        base = "".join(c for c in decomposed if not unicodedata.combining(c))
+        out.append(base[0].lower() if base else " ")
+    return "".join(out)
+
+
+def find_gemeente_mentions(full_text: str, index: WhitelistIndex) -> dict[str, tuple[int, ...]]:
+    """Return every gemeente named in the text, with its character offsets.
+
+    Called once per analyze request. The match is a word-boundary scan
+    on an offset-preserving normalization of the full text; bbox markers
+    like parentheses are stripped (in place) so "(gemeente Aalsmeer)"
+    still fires. The offsets let ``match_person_whitelist`` ask whether
+    the gemeente is near the detection or merely somewhere in the file.
+    Returns an empty mapping when no municipality is mentioned — the
     public-officials whitelist then stays inert.
     """
     if not index.alias_patterns:
-        return set()
-    haystack = _normalize_phrase(_strip_bbox_markers(full_text))
-    active: set[str] = set()
+        return {}
+    haystack = _normalize_keeping_offsets(_strip_bbox_markers(full_text))
+    mentions: dict[str, list[int]] = {}
     for pattern, gm_code in index.alias_patterns:
-        if gm_code in active:
-            continue
-        if pattern.search(haystack):
-            active.add(gm_code)
-    return active
+        for m in pattern.finditer(haystack):
+            mentions.setdefault(gm_code, []).append(m.start())
+    return {gm: tuple(sorted(set(offsets))) for gm, offsets in mentions.items()}
+
+
+def _gemeente_is_near(offsets: Sequence[int], start_char: int, end_char: int) -> bool:
+    """True when a mention of this gemeente vouches for this span.
+
+    Either the gemeente is named within ``_GEMEENTE_PROXIMITY_CHARS`` of
+    the detection, or its first mention sits in the letterhead, which
+    makes it the sender of the whole document.
+    """
+    if not offsets:
+        return False
+    if offsets[0] < _LETTERHEAD_CHARS:
+        return True
+    window_start = start_char - _GEMEENTE_PROXIMITY_CHARS
+    window_end = end_char + _GEMEENTE_PROXIMITY_CHARS
+    return any(window_start <= off <= window_end for off in offsets)
 
 
 def _initials_near_span(full_text: str, start_char: int, end_char: int, window: int = 30) -> str:
@@ -68,19 +161,22 @@ def _initials_near_span(full_text: str, start_char: int, end_char: int, window: 
     return initials_letters
 
 
-def _detection_surname(text: str) -> str:
-    """Isolate the surname portion of a detection string.
+def _detection_name_tokens(text: str, index: WhitelistIndex) -> list[str]:
+    """Split a detection string into normalized name tokens.
 
-    Strips honorifics and initials from the front; normalizes what's
-    left. Keeps tussenvoegsels attached ("de heer Van den Oever" →
-    "van den oever"). Returns ``""`` when nothing name-like remains.
+    Honorifics and initials are dropped from the front; what remains is
+    the given name(s), tussenvoegsels and surname, in document order.
+    A leading place name is stripped as well (#92): Deduce regularly
+    runs a name into the preceding city — "Assen Berkant Vecht" — and
+    without this the surname extraction lands on the city. The strip
+    only fires while at least two name tokens survive, so a real
+    "M.H. Assen" keeps its surname.
     """
     cleaned = _PAREN_RE.sub(" ", text or "")
     cleaned = _strip_bbox_markers(cleaned)
-    tokens = cleaned.split()
-    surname_tokens: list[str] = []
     honorific_bare = {h.strip(".") for h in _HONORIFIC_TOKENS}
-    for tok in tokens:
+    tokens: list[str] = []
+    for tok in cleaned.split():
         norm = tok.lower().rstrip(".")
         if norm in honorific_bare:
             continue
@@ -89,8 +185,13 @@ def _detection_surname(text: str) -> str:
         # Single-letter bare token ("R") — treat as initial fragment.
         if len(tok) == 1 and tok.isalpha():
             continue
-        surname_tokens.append(tok)
-    return _normalize_phrase(" ".join(surname_tokens))
+        normalized = _normalize_phrase(tok)
+        if normalized:
+            tokens.append(normalized)
+
+    while len(tokens) > 2 and tokens[0] in index.woonplaatsen:
+        tokens = tokens[1:]
+    return tokens
 
 
 def _surname_matches(detection_surname: str, official_surname: str) -> bool:
@@ -113,70 +214,140 @@ def _surname_matches(detection_surname: str, official_surname: str) -> bool:
     return det_tokens[-len(off_tokens) :] == off_tokens
 
 
+def _given_name_initial(det_tokens: Sequence[str], official_surname: str) -> str:
+    """First letter of the given name in front of the matched surname.
+
+    Returns ``""`` when the detection is a bare surname (optionally with
+    tussenvoegsels), which is the case #92 is about: nothing in the text
+    says *which* Groot or Westerman this is.
+    """
+    off_len = len(official_surname.split())
+    lead = list(det_tokens[: len(det_tokens) - off_len])
+    while lead and lead[-1] in _TUSSENVOEGSELS:
+        lead.pop()
+    if not lead:
+        return ""
+    return lead[0][:1]
+
+
+def _initials_compatible(visible: str, official: str) -> bool:
+    """True when two initial strings agree on their common prefix."""
+    if not visible or not official:
+        return False
+    return official.startswith(visible[: len(official)]) or visible.startswith(
+        official[: len(visible)]
+    )
+
+
+def _identity_verdict(
+    given_initial: str,
+    visible_initials: str,
+    official_initials: str,
+    is_common_surname: bool,
+) -> tuple[str, str]:
+    """Weigh the identity evidence for one candidate official.
+
+    Returns ``(verdict, reason)`` where verdict is one of:
+
+    - ``"confirmed"`` — a given name or initials pin this detection to
+      this official; safe to default the card to "niet lakken".
+    - ``"hint"``      — the surname fits but nothing identifies the
+      person; the reviewer gets the lead, the detection stays pending.
+    - ``"reject"``    — the evidence actively contradicts this official;
+      try the next one.
+    """
+    if given_initial:
+        if not official_initials:
+            # CSV row carried a parenthesised first name, which the
+            # loader drops — we cannot compare, so we do not claim.
+            return "hint", "official_without_initials"
+        if official_initials[0] != given_initial:
+            return "reject", ""
+        return "confirmed", ""
+
+    if visible_initials and official_initials:
+        if _initials_compatible(visible_initials, official_initials):
+            return "confirmed", ""
+        return "reject", ""
+
+    # Bare surname. A common surname carries no information at all, so
+    # it does not even earn a hint; an uncommon one does.
+    if is_common_surname:
+        return "reject", ""
+    return "hint", "no_given_name"
+
+
 def match_person_whitelist(
     detection_text: str,
     start_char: int,
     end_char: int,
     full_text: str,
-    active_gemeenten: set[str],
+    gemeente_mentions: Mapping[str, Sequence[int]],
     index: WhitelistIndex,
 ) -> PersonWhitelistHit | None:
     """Decide whether a Tier 2 persoon detection is a known public official.
 
-    Returns a ``PersonWhitelistHit`` when the detection's surname maps
-    to a raadslid / wethouder / burgemeester / Woo-contactpersoon of a
-    municipality mentioned in ``full_text`` (the ``active_gemeenten``
-    set). Common surnames additionally require the detection's visible
-    initials to prefix-match the official's — see ``_COMMON_SURNAMES``.
+    Returns a ``PersonWhitelistHit`` when the detection's surname maps to
+    a raadslid / wethouder / burgemeester / Woo-contactpersoon of a
+    municipality named in ``full_text``. ``hit.confirmed`` says how much
+    the hit is worth: ``True`` means a given name or initials identified
+    the person *and* the gemeente is named nearby, which is enough to
+    default the card to "niet lakken". ``False`` means the surname fits
+    but the identification does not — the caller must keep such a
+    detection pending and merely show the lead (#92).
+
+    A confirmed hit wins over a hint; when several officials share a
+    surname the first confirmation returns, otherwise the first hint does.
     """
-    if not active_gemeenten:
+    if not gemeente_mentions:
         return None
 
-    surname = _detection_surname(detection_text)
-    if not surname:
+    det_tokens = _detection_name_tokens(detection_text, index)
+    if not det_tokens:
         return None
+    surname = " ".join(det_tokens)
 
     visible_initials = _initials_near_span(full_text, start_char, end_char)
-    is_common = surname in _COMMON_SURNAMES
+    weak_hit: PersonWhitelistHit | None = None
 
-    for gm_code in active_gemeenten:
+    for gm_code, offsets in gemeente_mentions.items():
         officials = index.officials_by_gm.get(gm_code, ())
+        if not officials:
+            continue
+        near = _gemeente_is_near(offsets, start_char, end_char)
+
         for official in officials:
             if not _surname_matches(surname, official.surname_normalized):
                 continue
 
-            # Initials gate — common surnames are only whitelisted when
-            # the visible initials prefix-match the official's.
-            used_initials = False
-            if is_common:
-                if not visible_initials or not official.initials:
-                    continue
-                official_prefix = official.initials[: len(visible_initials)]
-                visible_prefix = visible_initials[: len(official.initials)]
-                if not official.initials.startswith(
-                    visible_prefix
-                ) and not visible_initials.startswith(official_prefix):
-                    continue
-                used_initials = True
-            elif visible_initials and official.initials:
-                # For uncommon surnames we still reject a hard mismatch
-                # on explicit initials: "M. Erdogan" should not be
-                # whitelisted against "H.H. Erdogan" just because their
-                # surnames agree.
-                first_visible = visible_initials[:1]
-                first_official = official.initials[:1]
-                if first_visible and first_official and first_visible != first_official:
-                    continue
-                used_initials = True
+            given_initial = _given_name_initial(det_tokens, official.surname_normalized)
+            verdict, reason = _identity_verdict(
+                given_initial,
+                visible_initials,
+                official.initials,
+                official.surname_normalized in _COMMON_SURNAMES,
+            )
+            if verdict == "reject":
+                continue
+            if verdict == "confirmed" and not near:
+                # Identified, but the gemeente is only named far away —
+                # that is a lead, not a licence to un-redact.
+                verdict, reason = "hint", "gemeente_far"
 
             municipality_name = next(
                 (m.official_name for m in index.municipalities if m.gm_code == gm_code),
                 gm_code,
             )
-            return PersonWhitelistHit(
+            hit = PersonWhitelistHit(
                 official=official,
                 municipality_name=municipality_name,
-                used_initials=used_initials,
+                used_initials=verdict == "confirmed",
+                confirmed=verdict == "confirmed",
+                hint_reason=reason,
             )
+            if hit.confirmed:
+                return hit
+            if weak_hit is None:
+                weak_hit = hit
 
-    return None
+    return weak_hit

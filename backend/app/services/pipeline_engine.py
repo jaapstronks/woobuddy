@@ -51,7 +51,7 @@ from app.services.title_match_rules import (
 from app.services.whitelist_engine import (
     PersonWhitelistHit,
     WhitelistIndex,
-    find_active_gemeenten,
+    find_gemeente_mentions,
     get_whitelist_index,
     match_address_whitelist,
     match_person_whitelist,
@@ -137,17 +137,18 @@ def _person_whitelist_to_detection(
     bboxes: list[Bbox],
     hit: PersonWhitelistHit,
 ) -> PipelineDetection:
-    """Map a gemeente-official whitelist hit onto a PipelineDetection.
+    """Map a *confirmed* gemeente-official whitelist hit onto a detection.
 
     Same semantics as a publiek-functionaris title match: the detection
     is emitted at ``review_status="rejected"`` so the reviewer sees the
     card but the default is "niet lakken". The reasoning names the
     municipality so the reviewer can verify the call in one glance.
+    Only ever called for ``hit.confirmed`` — an unconfirmed hit goes
+    through ``_person_whitelist_hint_to_detection`` instead (#92).
     """
-    initials_note = " (initialen komen overeen)" if hit.used_initials else ""
     reasoning = (
         f"{hit.official.functie} bij {hit.municipality_name} "
-        f"({hit.official.display_name}){initials_note} — "
+        f"({hit.official.display_name}) (initialen komen overeen) — "
         "gemeente wordt genoemd in het document."
     )
     return _pipeline_detection_from_ner(
@@ -161,6 +162,40 @@ def _person_whitelist_to_detection(
         reasoning=reasoning,
         source="whitelist_gemeente",
         subject_role="publiek_functionaris",
+    )
+
+
+# Why an otherwise-fitting whitelist hit was not good enough to reject on.
+_WHITELIST_HINT_REASON: dict[str, str] = {
+    "no_given_name": "alleen de achternaam staat er, geen voornaam of initialen",
+    "official_without_initials": "de lijst geeft geen initialen voor deze functionaris",
+    "gemeente_far": "de gemeente wordt elders in het document genoemd, niet hier",
+}
+
+
+def _person_whitelist_hint_to_detection(
+    det: NERDetection,
+    bboxes: list[Bbox],
+    hit: PersonWhitelistHit,
+) -> PipelineDetection:
+    """Surface an unconfirmed whitelist hit as a pending lead.
+
+    The surname is on a municipal officials list, but nothing in the
+    document says this is that person. Rejecting on that alone is how
+    private citizens kept their names in published documents (#92), so
+    the detection stays ``pending`` at its normal Woo article and the
+    reviewer gets the lead and the reason it is only a lead.
+    """
+    missing = _WHITELIST_HINT_REASON.get(hit.hint_reason, "niet bevestigd")
+    reasoning = (
+        f"Mogelijk {hit.official.functie.lower()} bij {hit.municipality_name} "
+        f"({hit.official.display_name}) — niet bevestigd: {missing}."
+    )
+    return _persoon_pending(
+        det,
+        bboxes,
+        reasoning=reasoning,
+        source="whitelist_gemeente_hint",
     )
 
 
@@ -273,7 +308,7 @@ class _DocContext:
 
     extraction: ExtractionResult
     whitelist_index: WhitelistIndex
-    active_gemeenten: set[str]
+    gemeente_mentions: dict[str, tuple[int, ...]]
     structure_spans: list[StructureSpan]
     official_names_normalized: set[str]
     has_environmental_content: bool
@@ -288,11 +323,11 @@ def _build_doc_context(
     official_names.discard("")
 
     whitelist_index = get_whitelist_index()
-    active_gemeenten = find_active_gemeenten(extraction.full_text, whitelist_index)
-    if active_gemeenten:
+    gemeente_mentions = find_gemeente_mentions(extraction.full_text, whitelist_index)
+    if gemeente_mentions:
         logger.info(
             "pipeline.whitelist_active_gemeenten",
-            count=len(active_gemeenten),
+            count=len(gemeente_mentions),
         )
 
     structure_spans = detect_structures(extraction)
@@ -307,7 +342,7 @@ def _build_doc_context(
     return _DocContext(
         extraction=extraction,
         whitelist_index=whitelist_index,
-        active_gemeenten=active_gemeenten,
+        gemeente_mentions=gemeente_mentions,
         structure_spans=structure_spans,
         official_names_normalized=official_names,
         has_environmental_content=check_environmental_content(extraction.full_text),
@@ -409,16 +444,21 @@ def _classify_persoon(
             subject_role="publiek_functionaris",
         )
 
-    # 2. Municipality officials whitelist — context-gated on active gemeenten
+    # 2. Municipality officials whitelist — gated on a gemeente named
+    # near the span *and* on a given name or initials that identify this
+    # official. Only a confirmed hit may reject here; an unconfirmed one
+    # is a lead and must not short-circuit the rules below, which can
+    # still classify the detection better (mandate cue, title, structure).
+    # It is picked up at the tail instead (#92).
     whitelist_hit = match_person_whitelist(
         det.text,
         det.start_char,
         det.end_char,
         ctx.extraction.full_text,
-        ctx.active_gemeenten,
+        ctx.gemeente_mentions,
         ctx.whitelist_index,
     )
-    if whitelist_hit is not None:
+    if whitelist_hit is not None and whitelist_hit.confirmed:
         return _person_whitelist_to_detection(det, bboxes, whitelist_hit)
 
     # 3. Mandate cue (#94) — "Gedeputeerde Staten van Drenthe, namens
@@ -451,7 +491,11 @@ def _classify_persoon(
         if rule_det is not None:
             return rule_det
 
-    # 7. Deduce fallback → pending
+    # 7. Unconfirmed whitelist lead → pending, with the lead spelled out
+    if whitelist_hit is not None:
+        return _person_whitelist_hint_to_detection(det, bboxes, whitelist_hit)
+
+    # 8. Deduce fallback → pending
     return _persoon_pending(det, bboxes, reasoning=det.reasoning, source="deduce")
 
 
