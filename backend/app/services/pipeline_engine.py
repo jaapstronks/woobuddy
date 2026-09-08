@@ -36,6 +36,7 @@ from app.services.pipeline_types import (
     PipelineReviewStatus,
     PipelineTier,
 )
+from app.services.role_engine import find_mandate_cue_before
 from app.services.span_resolver import resolve_occurrence_bboxes
 from app.services.structure_engine import (
     StructureSpan,
@@ -43,6 +44,7 @@ from app.services.structure_engine import (
     find_enclosing_structure,
 )
 from app.services.title_match_rules import (
+    mandate_cue_to_detection,
     match_function_title,
     title_match_to_detection,
 )
@@ -383,10 +385,11 @@ def _classify_persoon(
     Priority chain (first match wins):
       1. Reference list → rejected (publiek_functionaris)
       2. Municipality officials whitelist → rejected
-      3. Publiek title match → rejected
-      4. Structure enclosure → auto_accepted or pending
-      5. Ambtenaar title match → pending (pre-filled role)
-      6. Deduce fallback → pending
+      3. Mandate cue ("namens dezen") → pending (ambtenaar)
+      4. Publiek title match → rejected
+      5. Structure enclosure → auto_accepted or pending
+      6. Ambtenaar title match → pending (pre-filled role)
+      7. Deduce fallback → pending
     """
     # 1. Reference list (#17) — strongest signal, encodes reviewer knowledge
     if (
@@ -418,30 +421,37 @@ def _classify_persoon(
     if whitelist_hit is not None:
         return _person_whitelist_to_detection(det, bboxes, whitelist_hit)
 
-    # 3 + 5. Title match — computed once, split across publiek/ambtenaar
+    # 3. Mandate cue (#94) — "Gedeputeerde Staten van Drenthe, namens
+    # dezen, <naam>". The name is the ambtenaar who signed on the body's
+    # behalf, so it beats both the publiek-title rule below and the
+    # signature block's auto-accept: never rejected, never auto-redacted.
+    if find_mandate_cue_before(ctx.extraction.full_text, det.start_char):
+        return mandate_cue_to_detection(det, bboxes)
+
+    # 4 + 6. Title match — computed once, split across publiek/ambtenaar
     title_match = match_function_title(
         ctx.extraction.full_text, det.text, det.start_char, det.end_char
     )
 
-    # 3. Publiek title → rejected (beats structure: "Burgemeester X" in
+    # 4. Publiek title → rejected (beats structure: "Burgemeester X" in
     # a signature block must still be marked as not-to-redact)
     if title_match is not None and title_match.list_name == "publiek":
         rule_det = title_match_to_detection(det, bboxes, title_match)
         if rule_det is not None:
             return rule_det
 
-    # 4. Structure enclosure (email header / signature block / salutation)
+    # 5. Structure enclosure (email header / signature block / salutation)
     enclosing = find_enclosing_structure(ctx.structure_spans, det.start_char, det.end_char)
     if enclosing is not None:
         return _structure_to_pipeline_detection(det, bboxes, enclosing)
 
-    # 5. Ambtenaar title → pending with pre-filled role
+    # 6. Ambtenaar title → pending with pre-filled role
     if title_match is not None:
         rule_det = title_match_to_detection(det, bboxes, title_match)
         if rule_det is not None:
             return rule_det
 
-    # 6. Deduce fallback → pending
+    # 7. Deduce fallback → pending
     return _persoon_pending(det, bboxes, reasoning=det.reasoning, source="deduce")
 
 

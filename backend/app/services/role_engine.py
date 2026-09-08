@@ -14,6 +14,16 @@ hand-curated lists, we can classify the person's role without any model.
   pre-filled reason so the reviewer's click is a confirmation, not a
   classification from scratch.
 
+Two things keep the title lists from over-reading a signature block:
+
+- Bestuursorgaan phrases (`bestuursorganen.txt`) are masked out of the
+  context before any title is matched. "Gedeputeerde Staten van
+  Drenthe" is a college, not the title of the name printed next to it,
+  while "gedeputeerde Y. Turenhout" still is.
+- The mandate cue "namens dezen," marks the name after it as the
+  ambtenaar who signed on the body's behalf — see
+  `find_mandate_cue_before`.
+
 The rule engine intentionally only looks at a small window
 around each detection — it is not a parser, and cannot reason about
 who "the wethouder" refers to in a subordinate clause. Reviewers still
@@ -35,6 +45,7 @@ logger = get_logger(__name__)
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _PUBLIEK_FILE = _DATA_DIR / "functietitels_publiek.txt"
 _AMBTENAAR_FILE = _DATA_DIR / "functietitels_ambtenaar.txt"
+_BESTUURSORGANEN_FILE = _DATA_DIR / "bestuursorganen.txt"
 
 
 # Match window around each detection, in characters. 40 chars is enough
@@ -57,6 +68,38 @@ _MAX_TOKENS_BETWEEN = 2
 # (names + optional honorific prefixes + commas + "en"), so unrelated
 # titles further up the paragraph cannot bleed in.
 _LIST_CONTEXT_WINDOW_CHARS = 240
+
+# Padding around the scanned region when bestuursorgaan phrases are
+# masked. A phrase that straddles the edge of the window must still be
+# recognized as a whole, and the longest phrase in the file ("college
+# van burgemeester en wethouders") is 38 characters.
+_ORGAN_MASK_PAD_CHARS = 64
+
+# Every non-whitespace character of a bestuursorgaan phrase becomes this
+# one. Whitespace is left alone so the masked text keeps the same length
+# *and* the same token boundaries: character offsets and the
+# `tokens_between` distances computed around the span do not shift.
+_MASK_CHAR = "#"
+_NON_SPACE = re.compile(r"\S")
+
+# Mandate cue: "Gedeputeerde Staten van Drenthe, namens dezen, <naam>".
+# The name after this cue is the civil servant who signed on the body's
+# behalf — never the body's own office holder.
+_MANDATE_CUE_PATTERN = re.compile(r"\bnamens\s+dezen?\b", re.IGNORECASE)
+
+# How far back from the span the cue may sit. The signature block puts
+# the function title on its own line between cue and name ("namens
+# dezen, teamleider Ruimtelijke ontwikkeling, mevrouw M.A.E. Holwarda"),
+# so the window has to clear a title line plus an honorific.
+_MANDATE_WINDOW_CHARS = 120
+
+# ... but not an arbitrary amount of prose: the text between the cue and
+# the name must stay within a signature block's worth of tokens.
+_MANDATE_MAX_TOKENS_BETWEEN = 6
+
+# A blank line ends the signature block, so a cue on the other side of
+# one does not reach the name.
+_BLANK_LINE = re.compile(r"\n[^\S\n]*\n")
 
 # Text between the list-introducing title and the span must consist of
 # list-separator tokens only: honorific prefixes (dhr./mw./mr./drs./
@@ -95,11 +138,19 @@ class FunctionTitleLists:
     strings (lowercase, whitespace-collapsed). `patterns` holds the
     pre-compiled case-insensitive regexes for each title, keyed by
     `(list_name, title)` so we can iterate them quickly.
+
+    `bestuursorganen` holds the body phrases from
+    `bestuursorganen.txt` with their compiled patterns in
+    `organ_patterns` (same order). They are not titles and never
+    produce a match; they are masked out of the context first so the
+    titles inside them cannot fire.
     """
 
     publiek: tuple[str, ...]
     ambtenaar: tuple[str, ...]
     patterns: dict[tuple[ListName, str], re.Pattern[str]]
+    bestuursorganen: tuple[str, ...] = ()
+    organ_patterns: tuple[re.Pattern[str], ...] = ()
 
     def iter_all(self) -> list[tuple[ListName, str, re.Pattern[str]]]:
         """Yield every (list, title, pattern) triple. Longest titles
@@ -167,6 +218,25 @@ def _compile_title_pattern(title: str) -> re.Pattern[str]:
     return re.compile(rf"\b{body}\b", re.IGNORECASE)
 
 
+def _compile_organ_pattern(phrase: str) -> re.Pattern[str]:
+    """Compile a bestuursorgaan phrase for masking.
+
+    Same as `_compile_title_pattern` except the *leading* word boundary
+    is dropped. A redaction box sitting right before the phrase leaves
+    the extracted text with the two glued together — "Brian
+    Vechtburgemeester en wethouders van Emmen" is what pdf.js hands us
+    for a letter whose signature line was blacked out. With a leading
+    `\\b` the phrase would not be recognized there and its "wethouders"
+    would be read as the name's title, which is the exact bug this file
+    exists to prevent. Masking one token too many only costs a
+    publiek-functionaris rejection, and a name that reaches the reviewer
+    is the safe side of that trade.
+    """
+    parts = [re.escape(p) for p in phrase.split()]
+    body = r"\s+".join(parts)
+    return re.compile(rf"{body}\b", re.IGNORECASE)
+
+
 def load_function_title_lists() -> FunctionTitleLists:
     """Load both function-title files once and return compiled patterns.
 
@@ -176,6 +246,7 @@ def load_function_title_lists() -> FunctionTitleLists:
     """
     publiek = _load_title_file(_PUBLIEK_FILE)
     ambtenaar = _load_title_file(_AMBTENAAR_FILE)
+    bestuursorganen = _load_title_file(_BESTUURSORGANEN_FILE)
 
     patterns: dict[tuple[ListName, str], re.Pattern[str]] = {}
     for title in publiek:
@@ -183,12 +254,26 @@ def load_function_title_lists() -> FunctionTitleLists:
     for title in ambtenaar:
         patterns[("ambtenaar", title)] = _compile_title_pattern(title)
 
+    # Longest phrase first, so "college van burgemeester en wethouders"
+    # is masked as a whole before the shorter "burgemeester en
+    # wethouders" gets to nibble at its tail.
+    organ_patterns = tuple(
+        _compile_organ_pattern(phrase) for phrase in sorted(bestuursorganen, key=lambda p: -len(p))
+    )
+
     logger.info(
         "role_engine.lists_loaded",
         publiek=len(publiek),
         ambtenaar=len(ambtenaar),
+        bestuursorganen=len(bestuursorganen),
     )
-    return FunctionTitleLists(publiek=publiek, ambtenaar=ambtenaar, patterns=patterns)
+    return FunctionTitleLists(
+        publiek=publiek,
+        ambtenaar=ambtenaar,
+        patterns=patterns,
+        bestuursorganen=bestuursorganen,
+        organ_patterns=organ_patterns,
+    )
 
 
 # Module-level cache so callers (tests, lazy paths) don't have to thread
@@ -214,6 +299,23 @@ def init_function_title_lists() -> FunctionTitleLists:
 # ---------------------------------------------------------------------------
 
 
+def mask_organ_phrases(text: str, patterns: tuple[re.Pattern[str], ...]) -> str:
+    """Blank out bestuursorgaan phrases, keeping length and whitespace.
+
+    "Hoogachtend, Gedeputeerde Staten van Drenthe, namens dezen," becomes
+    "Hoogachtend, ############ ###### van Drenthe, namens dezen,". The
+    replacement is the same length and touches no whitespace, so a caller
+    can slice the masked text with the *original* character offsets and
+    still count the same number of tokens between a title and a span.
+    """
+    if not patterns:
+        return text
+    masked = text
+    for pattern in patterns:
+        masked = pattern.sub(lambda m: _NON_SPACE.sub(_MASK_CHAR, m.group(0)), masked)
+    return masked
+
+
 def _count_tokens(text: str) -> int:
     """Count whitespace-separated tokens in `text`.
 
@@ -222,6 +324,46 @@ def _count_tokens(text: str) -> int:
     the title is immediately adjacent.
     """
     return len(text.split())
+
+
+def find_mandate_cue_before(
+    full_text: str,
+    span_start: int,
+    window: int = _MANDATE_WINDOW_CHARS,
+) -> bool:
+    """Is this span the name of someone signing *in mandaat*?
+
+    Dutch government letters close with the body that took the decision,
+    then "namens dezen," (or "namens deze,"), then the civil servant who
+    actually signed:
+
+        Gedeputeerde Staten van Drenthe,
+        namens dezen,
+        W.J. van Elsacker,
+        teammanager a.i. Ruimte, Energie en Wonen
+
+    That name is an ambtenaar, and whether an ambtenaar's name is
+    redacted is a judgement call — so it must reach the reviewer as a
+    suggestion rather than be swallowed by the signature block's
+    auto-accept. The cue may sit a title line away from the name
+    ("namens dezen, teamleider Ruimtelijke ontwikkeling, mevrouw
+    M.A.E. Holwarda"), but not across a blank line and not across more
+    than a signature block's worth of tokens.
+    """
+    if span_start <= 0 or span_start > len(full_text):
+        return False
+
+    before = full_text[max(0, span_start - window) : span_start]
+    last: re.Match[str] | None = None
+    for m in _MANDATE_CUE_PATTERN.finditer(before):
+        last = m
+    if last is None:
+        return False
+
+    interior = before[last.end() :]
+    if _BLANK_LINE.search(interior):
+        return False
+    return _count_tokens(interior.replace(",", " ")) <= _MANDATE_MAX_TOKENS_BETWEEN
 
 
 def _is_better(candidate: FunctionTitleMatch, current: FunctionTitleMatch | None) -> bool:
@@ -260,20 +402,36 @@ def find_function_title_near(
 
     The matcher is case-insensitive and whole-word, so "wethouder" and
     "Wethouder" both fire but "wethouderschap" does not.
+
+    Bestuursorgaan phrases are masked out of the context first, so the
+    "gedeputeerde" in "Gedeputeerde Staten van Drenthe" cannot be read
+    as the title of the name printed beside it. Masking keeps offsets
+    and token distances intact, so everything below still slices the
+    text with the caller's original character positions.
     """
     if span_start < 0 or span_end <= span_start or span_end > len(full_text):
         return None
 
+    # One masked copy of everything the scans below can reach, padded so
+    # a phrase straddling a window edge is still matched as a whole.
+    region_start = max(0, span_start - _LIST_CONTEXT_WINDOW_CHARS - _ORGAN_MASK_PAD_CHARS)
+    region_end = min(len(full_text), span_end + window + _ORGAN_MASK_PAD_CHARS)
+    region = mask_organ_phrases(full_text[region_start:region_end], lists.organ_patterns)
+
+    def masked(start: int, end: int) -> str:
+        """Slice the masked region using absolute offsets into `full_text`."""
+        return region[start - region_start : end - region_start]
+
     before_start = max(0, span_start - window)
-    before_text = full_text[before_start:span_start]
+    before_text = masked(before_start, span_start)
     after_end = min(len(full_text), span_end + window)
-    after_text = full_text[span_end:after_end]
+    after_text = masked(span_end, after_end)
 
     # Wider slice used only for list-context matching (see below). We
     # compute it once instead of per-title because it is only consulted
     # when the narrow window produced no hit.
     list_start = max(0, span_start - _LIST_CONTEXT_WINDOW_CHARS)
-    list_before_text = full_text[list_start:span_start]
+    list_before_text = masked(list_start, span_start)
 
     best: FunctionTitleMatch | None = None
 
