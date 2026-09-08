@@ -255,7 +255,7 @@ class TruthResult:
     slot_kind: str
     slot_type: str | None
     in_wordlist: bool | None
-    outcome: str  # found | partial | rejected | missed
+    outcome: str  # found | unplaced | partial | rejected | missed
     #: `found` only because the uncovered remainder was a tussenvoegsel or a
     #: place name; `lenient_reason` says which. Coverage below still reports
     #: what was actually covered.
@@ -343,6 +343,7 @@ class DocReport:
     scanned_pages: list[int]
     truth: int = 0
     found: int = 0
+    unplaced: int = 0
     partial: int = 0
     rejected: int = 0
     missed: int = 0
@@ -574,10 +575,20 @@ def evaluate_document(
 
             uncovered = _uncovered_parts(item["value"], used)
             lenient, lenient_reason = False, ""
+            item_page = int(item["page"])
+            drawn = any(int(b["page"]) == item_page for r, _ in used for b in r.bboxes)
             if not matches:
                 outcome = "missed"
             elif not active:
                 outcome = "rejected"
+            elif not drawn:
+                # The pipeline found the text and resolved no bounding box
+                # on this page for it, so the reviewer sees a card with no
+                # bar and the export redacts nothing (#93). `_coverage`
+                # would have said 1.0 here: that is text containment, not
+                # a black rectangle, and scoring it as `found` inflated
+                # recall by exactly the number of unplaced detections.
+                outcome = "unplaced"
             elif coverage >= FULL_COVERAGE:
                 outcome = "found"
             else:
@@ -769,14 +780,16 @@ def _bucket_table(title: str, buckets: dict[str, Counter[str]], key_label: str) 
     lines = [
         f"### {title}",
         "",
-        f"| {key_label} | truth | found | (lenient) | partial | rejected | missed | recall |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|",
+        f"| {key_label} | truth | found | (lenient) | unplaced | partial | rejected "
+        "| missed | recall |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for key in sorted(buckets, key=lambda k: -buckets[k]["truth"]):
         c = buckets[key]
         lines.append(
-            f"| {key} | {c['truth']} | {c['found']} | {c['lenient']} | {c['partial']} | "
-            f"{c['rejected']} | {c['missed']} | {_rate(c['found'], c['truth'])} |"
+            f"| {key} | {c['truth']} | {c['found']} | {c['lenient']} | "
+            f"{c['unplaced']} | {c['partial']} | {c['rejected']} | {c['missed']} | "
+            f"{_rate(c['found'], c['truth'])} |"
         )
     lines.append("")
     return lines
@@ -819,6 +832,7 @@ def build_report(
         "truth_items": len(truth_results),
         "unknown_zones": sum(r.unknown_zones for r in reports),
         "found": sum(1 for t in truth_results if t.outcome == "found"),
+        "unplaced": sum(1 for t in truth_results if t.outcome == "unplaced"),
         "lenient": sum(1 for t in truth_results if t.lenient),
         "partial": sum(1 for t in truth_results if t.outcome == "partial"),
         "rejected": sum(1 for t in truth_results if t.outcome == "rejected"),
@@ -934,6 +948,7 @@ def render_markdown(data: dict[str, Any]) -> str:
     for label, key in (
         ("found", "found"),
         ("of which lenient (particle / place only)", "lenient"),
+        ("unplaced (found in text, no bounding box)", "unplaced"),
         ("partial", "partial"),
         ("rejected (found, then suppressed)", "rejected"),
         ("missed", "missed"),
@@ -1086,6 +1101,7 @@ def render_markdown(data: dict[str, Any]) -> str:
 
     for label, outcome in (
         ("Missed", "missed"),
+        ("Unplaced (found in text, no bounding box)", "unplaced"),
         ("Partial", "partial"),
         ("Rejected (found, then suppressed)", "rejected"),
     ):
@@ -1117,18 +1133,18 @@ def render_markdown(data: dict[str, Any]) -> str:
     out.append("## Per document")
     out.append("")
     out.append(
-        "| document | truth | found | partial | rejected | missed | FP hard | FP soft "
-        "| suppressed | pages | skipped |"
+        "| document | truth | found | unplaced | partial | rejected | missed "
+        "| FP hard | FP soft | suppressed | pages | skipped |"
     )
-    out.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    out.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for d in data["documents"]:
         fp_hard = str(d["fp_hard"])
         fp_soft = str(d["fp_soft"])
         if not d.get("fp_scored", True):
             fp_hard, fp_soft = "-", f"_{d['fp_excluded']} excl._"
         out.append(
-            f"| {d['name']} | {d['truth']} | {d['found']} | {d['partial']} | "
-            f"{d['rejected']} | {d['missed']} | {fp_hard} | {fp_soft} | "
+            f"| {d['name']} | {d['truth']} | {d['found']} | {d['unplaced']} | "
+            f"{d['partial']} | {d['rejected']} | {d['missed']} | {fp_hard} | {fp_soft} | "
             f"{d['suppressed']} | {d['pages']} | {len(d['scanned_pages'])} |"
         )
     out.append("")
@@ -1174,6 +1190,7 @@ def compare_to_baseline(data: dict[str, Any], baseline: dict[str, Any]) -> list[
         ]
 
     newly_found = moved("found")
+    newly_unplaced = moved("unplaced")
     newly_missed = moved("missed")
     newly_rejected = moved("rejected")
     gone_fp = [f for k, f in old_fp.items() if k not in new_fp]
@@ -1194,18 +1211,29 @@ def compare_to_baseline(data: dict[str, Any], baseline: dict[str, Any]) -> list[
     lines.append("")
     lines.append("| metric | baseline | now | delta |")
     lines.append("|---|---:|---:|---:|")
-    for key in ("found", "partial", "rejected", "missed", "fp_hard", "fp_soft", "suppressed"):
+    for key in (
+        "found",
+        "unplaced",
+        "partial",
+        "rejected",
+        "missed",
+        "fp_hard",
+        "fp_soft",
+        "suppressed",
+    ):
         a, b = ob.get(key, 0), nb.get(key, 0)
         lines.append(f"| {key} | {a} | {b} | {b - a:+d} |")
     lines.append("")
     lines.append(
-        f"Truth items newly found: {len(newly_found)}; newly missed: "
-        f"{len(newly_missed)}; newly rejected: {len(newly_rejected)}. "
+        f"Truth items newly found: {len(newly_found)}; newly unplaced: "
+        f"{len(newly_unplaced)}; newly missed: {len(newly_missed)}; newly rejected: "
+        f"{len(newly_rejected)}. "
         f"FP candidates new: {len(new_fps)}; gone: {len(gone_fp)}."
     )
     lines.append("")
     for label, rows in (
         ("Newly found", newly_found),
+        ("Newly unplaced", newly_unplaced),
         ("Newly missed", newly_missed),
         ("Newly rejected", newly_rejected),
     ):
@@ -1251,7 +1279,7 @@ def print_summary(data: dict[str, Any]) -> None:
     )
     print()
     print("--- recall ---")
-    for label in ("found", "partial", "rejected", "missed"):
+    for label in ("found", "unplaced", "partial", "rejected", "missed"):
         print(f"  {label:<10} {s[label]:4d}  {_rate(s[label], s['truth_items'])}")
     print(f"  {'(lenient)':<10} {s.get('lenient', 0):4d}  particle- or place-only remainder")
     print()
@@ -1260,8 +1288,8 @@ def print_summary(data: dict[str, Any]) -> None:
         print(
             f"  {typ:<18} {c.get('found', 0):3d}/{c['truth']:<3d} "
             f"{_rate(c.get('found', 0), c['truth'])}  "
-            f"(partial {c.get('partial', 0)}, rejected {c.get('rejected', 0)}, "
-            f"missed {c.get('missed', 0)})"
+            f"(unplaced {c.get('unplaced', 0)}, partial {c.get('partial', 0)}, "
+            f"rejected {c.get('rejected', 0)}, missed {c.get('missed', 0)})"
         )
     if data["per_wordlist"]:
         print()
@@ -1360,7 +1388,8 @@ def main() -> int:
             fp = f"FP {r.fp_hard}h/{r.fp_soft}s" if r.fp_scored else f"FP {r.fp_excluded} excl"
             print(
                 f"{r.name[:58]:58s} truth {r.found:3d}/{r.truth:<3d} "
-                f"(part {r.partial}, rej {r.rejected}, mis {r.missed})  "
+                f"(unpl {r.unplaced}, part {r.partial}, rej {r.rejected}, "
+                f"mis {r.missed})  "
                 f"{fp}  supp {r.suppressed}"
             )
 

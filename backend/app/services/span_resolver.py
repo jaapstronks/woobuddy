@@ -19,6 +19,13 @@ from app.services.pipeline_types import Bbox
 # baseline jitter — wider than that and we're looking at the next line.
 _SAME_LINE_TOL = 3.0
 
+# How far apart, across the reading direction, two lines of a wrapped span
+# may sit before we stop believing they are consecutive lines — expressed
+# in multiples of the taller box's own line height. Two is generous enough
+# for the extra leading of an address block and tight enough that a short
+# segment matched on the far side of the page is rejected.
+_MAX_WRAP_GAP_LINES = 2.0
+
 
 @dataclass(frozen=True)
 class _ReadingAxis:
@@ -559,7 +566,108 @@ def find_span_for_text(
     return results
 
 
+def _line_segments(search_text: str) -> list[tuple[int, str]]:
+    """``(offset, text)`` for each non-empty line of a span with a line break.
+
+    ``offset`` is relative to the start of ``search_text``, so a caller
+    holding the span's ``start_char`` can turn each segment back into an
+    absolute offset in the joined document text.
+    """
+    segments: list[tuple[int, str]] = []
+    pos = 0
+    for line in search_text.split("\n"):
+        stripped = line.strip()
+        if stripped:
+            segments.append((pos + len(line) - len(line.lstrip()), stripped))
+        pos += len(line) + 1
+    return segments
+
+
+def _page_rotation(pages: list[PageText], page: int) -> int:
+    for page_text in pages:
+        if page_text.page_number == page:
+            return page_text.rotation
+    return 0
+
+
+def _bbox_cross(axis: _ReadingAxis, box: Bbox) -> tuple[float, float]:
+    """The bbox's extent across the reading direction — its "line band"."""
+    return (box["y0"], box["y1"]) if axis.axis == "x" else (box["x0"], box["x1"])
+
+
+def _are_adjacent_lines(pages: list[PageText], boxes: list[Bbox]) -> bool:
+    """True iff ``boxes`` really are consecutive lines of one wrapped span.
+
+    Each segment of a line-broken span is resolved on its own, and a short
+    segment ("CA", "AA", "Van") occurs all over a document. Occurrence
+    counting picks one of them; this checks the geometry agrees that the
+    pieces sit under each other. Two boxes on the same line, on different
+    pages, or half a page apart are not a wrapped span — they are two
+    unrelated words that happened to match, and drawing a bar over each
+    would report a redaction of something we never detected.
+
+    Direction-agnostic on purpose: at /Rotate 180 the next line sits
+    *above* the previous one in viewer space, and the reading axis only
+    tracks direction along the line, not across it.
+    """
+    page = boxes[0]["page"]
+    if any(box["page"] != page for box in boxes):
+        return False
+    axis = _reading_axis(_page_rotation(pages, page))
+    prev: tuple[float, float] | None = None
+    for box in boxes:
+        band = _bbox_cross(axis, box)
+        if prev is not None:
+            if abs(band[0] - prev[0]) <= _SAME_LINE_TOL:
+                return False  # same line: the break was not a wrap
+            gap = max(band[0], prev[0]) - min(band[1], prev[1])
+            if gap > _MAX_WRAP_GAP_LINES * max(band[1] - band[0], prev[1] - prev[0]):
+                return False  # too far apart to be consecutive lines
+        prev = band
+    return True
+
+
 def resolve_occurrence_bboxes(
+    pages: list[PageText],
+    full_text: str,
+    search_text: str,
+    start_char: int | None,
+) -> list[Bbox]:
+    """Resolve one occurrence of ``search_text`` to the bboxes that cover it.
+
+    One bbox per visual line: normally that is a single box, but a span
+    that wraps ("6700\nCA", "Bladderswijk WZ 19\n7885 TH") gets one per
+    line. Every bbox this module builds stays on a single line — a box
+    spanning two lines would black out everything between them — so a
+    wrapped span cannot be answered with one rectangle.
+
+    Before #93 such a span resolved to nothing at all: no text item holds
+    the newline, and the same-line merge refuses to cross the line break.
+    The reviewer got a card with no bar on the page and the export
+    redacted nothing. Each line is now resolved on its own, and the
+    results are kept only when ``_are_adjacent_lines`` confirms they sit
+    under each other.
+    """
+    if "\n" in search_text:
+        segments = _line_segments(search_text)
+        if not segments:
+            return []
+        boxes: list[Bbox] = []
+        for offset, segment in segments:
+            at = None if start_char is None else start_char + offset
+            resolved = _resolve_single_line(pages, full_text, segment, at)
+            if not resolved:
+                # All lines or none. Half a bar under a name reports a
+                # redaction that only covered half of it.
+                return []
+            boxes.append(resolved[0])
+        if len(boxes) == 1:
+            return boxes
+        return boxes if _are_adjacent_lines(pages, boxes) else []
+    return _resolve_single_line(pages, full_text, search_text, start_char)
+
+
+def _resolve_single_line(
     pages: list[PageText],
     full_text: str,
     search_text: str,

@@ -226,11 +226,12 @@ with a summary on stdout.
 
 ### Recall
 
-Every planted value gets exactly one of four verdicts:
+Every planted value gets exactly one of five verdicts:
 
 | outcome | meaning |
 |---|---|
 | `found` | a live detection covers ≥ 90% of the value |
+| `unplaced` | a live detection matched the text but resolved no bounding box on that page, so nothing is drawn and the export redacts nothing. Counted apart from `found` since #93: text containment is not a black bar, and scoring it as `found` inflated recall by exactly the number of unplaced detections. |
 | `partial` | a live detection covers some of it — the report says which words were left uncovered |
 | `rejected` | the pipeline found the span and then *suppressed* it (`review_status == "rejected"`: a whitelist or the publiek-functionaris rule engine). The reviewer never sees it. A separate failure class, with the source and reasoning printed. |
 | `missed` | nothing at all |
@@ -240,7 +241,7 @@ Every planted value gets exactly one of four verdicts:
 
 Recall is broken down three ways: by planted type, by wordlist membership
 (name in the Meertens/CBS lists vs outside them), and by slot kind. The
-report also lists every miss, partial and rejection in full, with ±60
+report also lists every miss, unplaced value, partial and rejection in full, with ±60
 characters of context, so each one can be diagnosed rather than counted.
 
 ### False positives
@@ -297,7 +298,7 @@ All thresholds sit together at the top of `evaluate.py` under "Tunables".
 ```
 
 The diff section, printed and appended to the markdown, lists truth items
-newly found / newly missed / newly rejected (keyed by document + page +
+newly found / newly unplaced / newly missed / newly rejected (keyed by document + page +
 value) and false-positive candidates new / gone (keyed by document + page +
 normalised text), plus totals. A `--only` run compares only the documents
 both runs actually scored, so a one-document check does not read as a
