@@ -199,15 +199,28 @@ jobs:
             type=raw,value=latest,enable=${{ github.event_name == 'push' && !contains(github.ref_name, '-') }}
             ${{ needs.prepare.outputs.dispatch_tag && format('type=raw,value={0}', needs.prepare.outputs.dispatch_tag) || '' }}
 
+      # Built as an array rather than by splitting a `jq` string: annotation
+      # values are free text (the description can hold spaces) and word
+      # splitting on a command substitution would tear them apart. The
+      # annotations go on the index itself — the per-platform manifests already
+      # carry the same information as labels from the build job.
       - name: Create manifest list and push
         working-directory: ${{ runner.temp }}/digests
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
         run: |
           set -euo pipefail
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf "${IMAGE}@sha256:%s " *)
+          args=()
+          while IFS= read -r annotation; do
+            args+=(--annotation "$annotation")
+          done < <(jq -r '.annotations[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          while IFS= read -r tag; do
+            args+=(-t "$tag")
+          done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          for digest in *; do
+            args+=("${IMAGE}@sha256:${digest}")
+          done
+          docker buildx imagetools create "${args[@]}"
 
       # Proof, in the run log, that the published manifest really carries both
       # architectures — a merge job can succeed on a single-platform manifest.
