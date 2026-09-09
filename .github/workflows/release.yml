@@ -1,6 +1,6 @@
 name: Release images
 
-# Triggered by pushing a tag that matches `v*` (e.g. `v0.1.0`, `v0.2.0-rc1`).
+# Triggered by pushing a tag that matches `v*` (e.g. `v0.1.0`, `v0.2.0`).
 # Builds and pushes the API + frontend images to GHCR at the tag version.
 #
 # The GitHub Release itself is *not* made here: `release-please.yml` creates
@@ -11,36 +11,103 @@ name: Release images
 # Note that this only fires when the tag is pushed with a PAT
 # (`RELEASE_PLEASE_TOKEN`); a tag pushed by the built-in `GITHUB_TOKEN`
 # triggers no other workflows, so the images would silently not be built.
+#
+# `workflow_dispatch` exists to rehearse a release without minting a `v*` tag:
+# release-please owns those, and a hand-pushed one disturbs its version
+# bookkeeping. A dispatch run publishes under the `tag` input (default
+# `ci-<short sha>`) and never under `:latest`.
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag for this rehearsal run (default: ci-<short sha>)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
   packages: write
 
 jobs:
-  images:
-    name: Build & push ${{ matrix.image }} image
+  # ---------------------------------------------------------------------------
+  # Resolve the tag a dispatch run publishes under, once, so the build and
+  # merge jobs cannot disagree about it. Empty on a tag push: `metadata-action`
+  # derives the tags from the git ref there.
+  prepare:
+    name: Resolve image tag
     runs-on: ubuntu-latest
+    outputs:
+      dispatch_tag: ${{ steps.tag.outputs.value }}
+    steps:
+      - name: Resolve dispatch tag
+        id: tag
+        # Read through the environment rather than interpolating the input into
+        # the script: it is attacker-controlled text and ends up in a shell and
+        # in an image reference.
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "value=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          value="${INPUT_TAG:-ci-${GITHUB_SHA::7}}"
+          case "$value" in
+            latest)
+              echo "::error::refusing to publish a rehearsal run as :latest"
+              exit 1
+              ;;
+            *[!A-Za-z0-9_.-]* | -* | .* | "")
+              echo "::error::'$value' is not a valid Docker tag"
+              exit 1
+              ;;
+          esac
+          echo "value=$value" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # One job per image *and* platform, each on a runner of its own architecture.
+  #
+  # The previous shape built both platforms in one job on an amd64 runner with
+  # QEMU standing in for arm64. That works for the API image (~5 min) and does
+  # not for the frontend: `npm ci`, `npm run setup:tesseract` and the Vite build
+  # are thousands of short-lived Node processes, and Node under emulation is
+  # slow enough that the `v0.2.0` run (34259393699) hit GitHub's hard six-hour
+  # job timeout without producing an image. Native arm64 runners
+  # (`ubuntu-24.04-arm`, free for public repositories) remove the emulation
+  # instead of waiting it out.
+  #
+  # Each leg pushes an untagged image by digest; the merge job below stitches
+  # the digests into one multi-arch manifest per image. The build cache is
+  # scoped per image *and* architecture — one scope for both would have the two
+  # legs overwrite each other's cache on every run.
+  build:
+    name: Build ${{ matrix.image }} (${{ matrix.platform }})
+    needs: [prepare]
+    runs-on: ${{ matrix.runner }}
 
     strategy:
       fail-fast: false
       matrix:
+        image: [woobuddy-api, woobuddy-frontend]
+        platform: [linux/amd64, linux/arm64]
         include:
           - image: woobuddy-api
             context: ./backend
           - image: woobuddy-frontend
             context: ./frontend
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
 
     steps:
       - uses: actions/checkout@v7
-
-      # QEMU registers binfmt handlers so the amd64 GitHub-hosted runner can
-      # also build the arm64 image. Without this the linux/arm64 leg of the
-      # platforms matrix below fails with "exec format error".
-      - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v4
 
@@ -51,30 +118,130 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Produces both `:vX.Y.Z` (the tag itself) and `:latest` for stable
-      # releases. Pre-release tags (e.g. `v0.2.0-rc1`) only get the version
-      # tag, never `:latest`.
-      - name: Compute image tags
+      # Only for the OCI labels here; the tags are applied to the manifest in
+      # the merge job, since a digest-only push carries none.
+      - name: Compute image labels
         id: meta
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
             type=ref,event=tag
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+            ${{ needs.prepare.outputs.dispatch_tag && format('type=raw,value={0}', needs.prepare.outputs.dispatch_tag) || '' }}
 
-      - name: Build and push
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
-          push: true
-          # linux/arm64 covers Apple Silicon dev laptops and arm64 cloud
-          # instances (Hetzner CAX, AWS Graviton, etc.) that increasingly
-          # dominate the self-host audience. The arm64 leg builds under QEMU
-          # emulation on the amd64 runner, ~2x slower but still under 5 min.
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
+          platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }},mode=max
 
+      # The digest travels to the merge job as an empty file named after it —
+      # the artifact name carries the image and architecture, the file name the
+      # digest. Nothing else needs to cross the job boundary.
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${{ runner.temp }}/digests"
+          touch "${{ runner.temp }}/digests/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.image }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # One manifest list per image, pointing at the per-architecture digests, under
+  # the tags `metadata-action` computes: `:vX.Y.Z` for a tag push, plus
+  # `:latest` for a stable one (never for a pre-release, and never for a
+  # rehearsal dispatch).
+  merge:
+    name: Publish ${{ matrix.image }} manifest
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [woobuddy-api, woobuddy-frontend]
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-${{ matrix.image }}-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@v6
+        # The action annotates at the `manifest:` level by default, and
+        # `imagetools create` rejects those outright ("manifest annotations are
+        # not supported yet"). What it does take is `index:` — which is the
+        # right level here anyway: this step writes the index, the per-platform
+        # manifests were labelled in the build job.
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: index
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && !contains(github.ref_name, '-') }}
+            ${{ needs.prepare.outputs.dispatch_tag && format('type=raw,value={0}', needs.prepare.outputs.dispatch_tag) || '' }}
+
+      # Built as an array rather than by splitting a `jq` string: annotation
+      # values are free text (the description can hold spaces) and word
+      # splitting on a command substitution would tear them apart. The
+      # annotations go on the index itself — the per-platform manifests already
+      # carry the same information as labels from the build job.
+      - name: Create manifest list and push
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          args=()
+          while IFS= read -r annotation; do
+            args+=(--annotation "$annotation")
+          done < <(jq -r '.annotations[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          while IFS= read -r tag; do
+            args+=(-t "$tag")
+          done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          shopt -s nullglob
+          digests=(*)
+          # The whole point of this workflow is that a release does not quietly
+          # ship less than it promises, so refuse to publish a manifest that is
+          # missing a leg rather than tag a single-platform image as the release.
+          if [ "${#digests[@]}" -ne 2 ]; then
+            echo "::error::expected 2 digests (amd64, arm64), got ${#digests[@]}: ${digests[*]:-none}"
+            exit 1
+          fi
+          for digest in "${digests[@]}"; do
+            args+=("${IMAGE}@sha256:${digest}")
+          done
+          docker buildx imagetools create "${args[@]}"
+
+      # Proof, in the run log, that the published manifest really carries both
+      # architectures — a merge job can succeed on a single-platform manifest.
+      - name: Inspect published manifest
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: docker buildx imagetools inspect "${IMAGE}:${VERSION}"
