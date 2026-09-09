@@ -69,6 +69,23 @@ _PHONE_PATTERNS = [
     re.compile(  # 4+3+3: 0412 123 456
         r"\b(0[1-9]\d{2}" + _P + r"\d{3}" + _P + r"\d{3})\b"
     ),
+    # Netnummer between brackets — the shape Drenthe, the Rijksdienst and
+    # most municipal letter templates print: "(0592) 36 50 71",
+    # "(033) 421 74 56", "(0592) 365555". `\b` does not fire between a
+    # space and "(", so the left edge is a lookaround. Each alternation
+    # again sums to exactly 10 digits.
+    re.compile(  # (0592) 36 50 71
+        r"(?<!\w)(\(0[1-9]\d{1,2}\)" + _P + r"\d{2}" + _P + r"\d{2}" + _P + r"\d{2})(?!\w)"
+    ),
+    re.compile(  # (033) 421 74 56 / (071) 516 50 00
+        r"(?<!\w)(\(0[1-9]\d\)" + _P + r"\d{3}" + _P + r"\d{2}" + _P + r"\d{2})(?!\w)"
+    ),
+    re.compile(  # (033) 421 4567 / (0592) 365 555
+        r"(?<!\w)(\(0[1-9]\d{1,2}\)" + _P + r"\d{3}" + _P + r"\d{3,4})(?!\w)"
+    ),
+    re.compile(  # (0592) 365555 / (033) 4214567
+        r"(?<!\w)(\(0[1-9]\d{1,2}\)" + _P + r"?\d{6,7})(?!\w)"
+    ),
     re.compile(r"\b(06[\s.\-]?\d{8})\b"),  # mobile compact
     re.compile(  # mobile grouped: 06 1234 5678
         r"\b(06" + _P + r"\d{4}" + _P + r"\d{4})\b"

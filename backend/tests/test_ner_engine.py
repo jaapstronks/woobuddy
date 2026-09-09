@@ -8,6 +8,11 @@ import pytest
 
 from app.services.name_engine import load_name_lists
 from app.services.ner_engine import NERDetection, detect_all, detect_tier1, detect_tier2
+from app.services.ner_engine._org_context import (
+    functional_mailbox_prefix,
+    legal_form_lead,
+    organisation_context_reason,
+)
 from app.services.ner_engine._plausibility import _is_plausible_person_name
 from app.services.ner_engine._tier1 import (
     _is_plausible_birth_date,
@@ -167,6 +172,29 @@ class TestPhone:
         results = detect_tier1(text)
         phone_results = [r for r in results if r.entity_type == "telefoon"]
         assert len(phone_results) >= 1
+
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            # The shape Drenthe's letter templates and aanvraagformulieren
+            # print — three of the four planted phone numbers in the eval
+            # corpus were missed on this alone (#96, rule 5).
+            ("Telefoonnummer (0592) 36 50 71", "(0592) 36 50 71"),
+            ("Bel (033) 421 74 56 voor vragen", "(033) 421 74 56"),
+            ("T (071) 516 5000", "(071) 516 5000"),
+            ("Telefoon (0592) 365555", "(0592) 365555"),
+        ],
+    )
+    def test_netnummer_between_brackets_detected(self, text, expected):
+        results = detect_tier1(text)
+        assert expected in [r.text for r in results if r.entity_type == "telefoon"]
+
+    def test_year_between_brackets_is_not_a_phone_number(self):
+        """The negative the bracket patterns must not eat: a bracketed year
+        followed by numbers, as permit tables print them."""
+        text = "Oprichtingsvergunning (2010) 12 34 56 is verleend"
+        results = detect_tier1(text)
+        assert [r for r in results if r.entity_type == "telefoon"] == []
 
     def test_short_number_not_detected(self):
         """Numbers with too few digits should not match as phone numbers."""
@@ -1148,9 +1176,7 @@ class _StubAnnotations:
     def sorted(self, by, callbacks=None, deterministic=True):
         return sorted(
             self._annotations,
-            key=lambda a: a.get_sort_key(
-                by=by, callbacks=callbacks, deterministic=deterministic
-            ),
+            key=lambda a: a.get_sort_key(by=by, callbacks=callbacks, deterministic=deterministic),
         )
 
 
@@ -1199,9 +1225,7 @@ class TestDeterministicOrder:
 
         text = "Adres: Kerkstraat 3, 1234 EN Ede en Havenstraat 194, 5678 AB Delft."
         annotations = [
-            Annotation(
-                text=text[start:end], start_char=start, end_char=end, tag="locatie"
-            )
+            Annotation(text=text[start:end], start_char=start, end_char=end, tag="locatie")
             for start, end in (
                 (text.index("Kerkstraat 3"), text.index("Kerkstraat 3") + len("Kerkstraat 3")),
                 (text.index("1234 EN Ede"), text.index("1234 EN Ede") + len("1234 EN Ede")),
@@ -1795,3 +1819,190 @@ class TestProductionTextLineBoundaries:
 
         same_line = production_text("Afdeling gemeente Kerkstraat 3 is verkocht.\n")
         assert has_institutional_address_label(same_line, same_line.index("Kerkstraat")) is True
+
+
+# ---------------------------------------------------------------------------
+# Tier 1: organisation context (#96)
+# ---------------------------------------------------------------------------
+
+
+class TestFunctionalMailbox:
+    """Rule 1 — a desk address is not a person's address."""
+
+    @pytest.mark.parametrize(
+        "address,term",
+        [
+            ("post@drenthe.nl", "post"),
+            ("woo@minfin.nl", "woo"),
+            ("vth@drenthe.nl", "vth"),
+            ("jz@nationaleombudsman.nl", "jz"),
+            ("avg@nationaleombudsman.nl", "avg"),
+            ("info@laaglandarcheologie.nl", "info"),
+            ("bezwaarenberoepWoo@minfin.nl", "bezwaar"),
+            ("informatie@emmen.nl", "info"),
+        ],
+    )
+    def test_desk_addresses_are_recognised(self, address, term):
+        assert functional_mailbox_prefix(address) == term
+
+    @pytest.mark.parametrize(
+        "address",
+        [
+            # A named person at a government domain is exactly what we do
+            # want redacted — these must not be swallowed by a prefix.
+            "r.vanmelenhorst@minienw.nl",
+            "jort-jan.descheepstra@kpnmail.nl",
+            "postma.j@gemeente.nl",
+            "persoonlijk@example.nl",
+            "woonzaken@emmen.nl",
+        ],
+    )
+    def test_person_addresses_are_left_alone(self, address):
+        assert functional_mailbox_prefix(address) is None
+
+    def test_reason_names_the_term(self):
+        reason = organisation_context_reason("email", "woo@minfin.nl", "woo@minfin.nl", 0)
+        assert reason is not None
+        assert "woo@" in reason
+
+
+class TestPublishedUrl:
+    """Rule 2 — a published page is not personal data, a profile page is."""
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://www.nationaleombudsman.nl/wet-open-overheid-woo",
+            "https://loket.rechtspraak.nl/bestuursrecht",
+            "https://www.rijksoverheid.nl/onderwerpen/wet-open-overheid-woo",
+        ],
+    )
+    def test_public_site_is_not_a_person(self, url):
+        assert organisation_context_reason("url", url, url, 0) is not None
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://www.linkedin.com/in/jaapstronks",
+            "https://x.com/someone",
+            "https://www.instagram.com/someone",
+            "https://example.nl/~jansen/cv.html",
+        ],
+    )
+    def test_profile_url_keeps_the_tier1_default(self, url):
+        assert organisation_context_reason("url", url, url, 0) is None
+
+
+class TestLetterheadPhone:
+    """Rule 3 — the switchboard in the letterhead, not someone's line."""
+
+    def _reason(self, before: str, number: str) -> str | None:
+        text = production_text(before + number + "\n")
+        return organisation_context_reason("telefoon", number, text, text.index(number))
+
+    def test_number_under_a_postbus_line(self):
+        assert self._reason("Postbus 7001, 6700 CA Wageningen\nTelefoon ", "0317 49 15 78")
+
+    def test_number_after_an_institution_word(self):
+        assert self._reason("kan bij Rijksdienst voor het Cultureel Erfgoed (", "033 421 74 56")
+
+    def test_number_announced_as_the_general_line(self):
+        assert self._reason("U kunt bellen via het algemene telefoonnummer ", "(0592) 36 55 55")
+
+    def test_number_under_the_behandeld_door_label(self):
+        # The letterhead field a Dutch government letter prints its
+        # handling team and general number in.
+        assert self._reason(
+            "Behandeld door\nTeam Ruimte, Energie en Wonen\n", "(0592) 36 55 55"
+        )
+
+    def test_mobile_number_stays_auto_accepted(self):
+        # A `06` is issued to a handset. Even printed under a letterhead it
+        # is the one phone number in the block that belongs to a person.
+        assert self._reason("Provincie Drenthe, Postbus 122\nMobiel ", "06 12 34 56 78") is None
+
+    def test_landline_without_an_organisation_around_it_stays_auto_accepted(self):
+        # The negative that motivates the rule: a contact person's own
+        # number on a form must keep its black bar.
+        assert (
+            self._reason("Functie contactpersoon eigenaar\nTelefoonnummer ", "(0592) 36 50 71")
+            is None
+        )
+
+
+class TestOrganisationPostcode:
+    """Rule 4 — the postcode of the sender's own address block."""
+
+    def _reason(self, before: str, postcode: str) -> str | None:
+        text = production_text(before + postcode + " Assen\n")
+        return organisation_context_reason("postcode", postcode, text, text.index(postcode))
+
+    def test_legal_form_on_the_line_above(self):
+        assert self._reason("Laagland Archeologie BV\nVirulyweg 21F-G\n", "7602 RG")
+
+    def test_legal_form_on_the_same_line(self):
+        assert self._reason(
+            "verzonden aan Oosting Metalen Recycling B.V., P. de Keyserstraat 18, ", "7825 VE"
+        )
+
+    def test_maatschap_reaches_over_two_lines(self):
+        assert self._reason(
+            "Afschrift aan:\nMaatschap H.J. Kersten en C.H. Kersten - Ensing\nBladderswijk WZ 19\n",
+            "7885 TH",
+        )
+
+    def test_kvk_number_in_the_form_block(self):
+        assert self._reason(
+            "KvK-nummer 01155925\nStraat /postbus Bladderswijk\n"
+            "Huisnummer / postbusnummer 19\nToevoeging huisnummer w z\nPostcode 9471 AC Zuidlaren ",
+            "7885 TH",
+        )
+
+    def test_institution_word_reaches_over_the_letterhead(self):
+        assert self._reason(
+            "Contactpersoon\nT 070\nNationale ombudsman\nBezuidenhoutseweg 151\n", "2594 AG"
+        )
+
+    def test_a_citizen_postcode_under_a_finished_sentence_stays_auto_accepted(self):
+        # The negative that motivates the sentence cut: "gemeente Emmen"
+        # closes a paragraph, and the addressee's own postcode starts a
+        # new block right underneath it.
+        assert (
+            self._reason(
+                "U moet de gemeente Emmen hiervan op de hoogte stellen.\n"
+                "Kowalczyk\nSchoolpad 183a\n",
+                "7941 LA",
+            )
+            is None
+        )
+
+    def test_an_object_address_is_not_claimed_here(self):
+        # "zijnde <bedrijf>, <straat>" is the address of the installation a
+        # permit is about (#99), not of the sender. No organisation word,
+        # so this rule leaves it alone rather than guessing.
+        assert (
+            self._reason(
+                "• houder van de vergunning, zijnde Noord Oost Recycling, Data 12-16, ", "7741 MG"
+            )
+            is None
+        )
+
+
+class TestLegalFormLead:
+    """A name that follows a legal form is what a business trades under."""
+
+    def _form(self, before: str, name: str) -> str | None:
+        text = production_text(before + name + "\n")
+        return legal_form_lead(text, text.index(name))
+
+    def test_first_partner_of_a_maatschap(self):
+        assert self._form("Afschrift aan:\nMaatschap ", "H.J. Kersten") == "Maatschap"
+
+    def test_second_partner_of_a_maatschap(self):
+        assert self._form("Aan:\nMaatschap H.J. Kersten en ", "C.H. Kersten") == "Maatschap"
+
+    def test_a_verb_between_the_form_and_the_name_ends_the_trading_name(self):
+        assert self._form("Delphy BV heeft dit gemeld aan ", "Jan de Vries") is None
+
+    def test_a_plain_signature_block_is_untouched(self):
+        assert self._form("Hoogachtend,\n", "Jan de Vries") is None

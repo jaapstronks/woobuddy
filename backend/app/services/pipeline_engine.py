@@ -23,6 +23,10 @@ from app.services.custom_term_matcher import CustomTermLike
 from app.services.environmental_classifier import check_environmental_content
 from app.services.name_engine import normalize_reference_name
 from app.services.ner_engine import DEFAULT_WOO_ARTICLE, NERDetection, detect_all
+from app.services.ner_engine._org_context import (
+    legal_form_lead,
+    organisation_context_reason,
+)
 from app.services.pdf_engine import ExtractionResult
 
 # Re-export PipelineDetection/PipelineResult at the old import path so
@@ -380,7 +384,8 @@ def _classify_tier1(
     Priority:
       1. Address whitelist → rejected
       2. KvK → pending (public handelsregister data)
-      3. Default → auto_accepted
+      3. Organisation context → pending (#96)
+      4. Default → auto_accepted
     """
     # 1. Address whitelist (postcode / email / telefoon / url)
     addr_reason = match_address_whitelist(
@@ -407,7 +412,31 @@ def _classify_tier1(
             source=det.source,
         )
 
-    # 3. Default: auto-accept
+    # 3. Organisation context (#96): a desk mailbox, a published web
+    # page, the switchboard in the letterhead, the postcode of the
+    # sender's own address block. Auto-accepting these deletes public
+    # information from the export without anyone looking at it, which
+    # is exactly what #90 says a Tier 1 hit may not do without positive
+    # evidence of a person. Pending, never rejected — the reader gets
+    # the reason and decides.
+    org_reason = organisation_context_reason(
+        det.entity_type,
+        det.text,
+        ctx.extraction.full_text,
+        det.start_char,
+    )
+    if org_reason is not None:
+        return _pipeline_detection_from_ner(
+            det,
+            bboxes,
+            tier="1",
+            woo_article=det.woo_article,
+            review_status="pending",
+            reasoning=org_reason,
+            source=det.source,
+        )
+
+    # 4. Default: auto-accept
     return _ner_passthrough(det, bboxes, tier="1", review_status="auto_accepted")
 
 
@@ -422,10 +451,12 @@ def _classify_persoon(
       1. Reference list → rejected (publiek_functionaris)
       2. Municipality officials whitelist → rejected
       3. Mandate cue ("namens dezen") → pending (ambtenaar)
-      4. Publiek title match → rejected
-      5. Structure enclosure → auto_accepted or pending
-      6. Ambtenaar title match → pending (pre-filled role)
-      7. Deduce fallback → pending
+      4. Legal-form lead ("Maatschap …") → pending (trading name)
+      5. Publiek title match → rejected
+      6. Structure enclosure → auto_accepted or pending
+      7. Ambtenaar title match → pending (pre-filled role)
+      8. Unconfirmed whitelist lead → pending
+      9. Deduce fallback → pending
     """
     # 1. Reference list (#17) — strongest signal, encodes reviewer knowledge
     if (
@@ -469,19 +500,37 @@ def _classify_persoon(
     if find_mandate_cue_before(ctx.extraction.full_text, det.start_char):
         return mandate_cue_to_detection(det, bboxes)
 
-    # 4 + 6. Title match — computed once, split across publiek/ambtenaar
+    # 4. Legal-form lead (#96) — "Afschrift aan: Maatschap H.J. Kersten
+    # en C.H. Kersten-Ensing". The partners' names *are* the name the
+    # business trades under, which is why the publisher left them
+    # visible; the signature-block rule below would auto-redact them.
+    # Pending, not rejected: they are still names of natural persons and
+    # the reviewer may well decide to redact them anyway.
+    form = legal_form_lead(ctx.extraction.full_text, det.start_char)
+    if form is not None:
+        return _persoon_pending(
+            det,
+            bboxes,
+            reasoning=(
+                f"Naam volgt direct op een rechtsvorm ({form}) — vermoedelijk de "
+                "tenaamstelling van een bedrijf, niet een privépersoon."
+            ),
+            source="rule",
+        )
+
+    # 5 + 7. Title match — computed once, split across publiek/ambtenaar
     title_match = match_function_title(
         ctx.extraction.full_text, det.text, det.start_char, det.end_char
     )
 
-    # 4. Publiek title → rejected (beats structure: "Burgemeester X" in
+    # 5. Publiek title → rejected (beats structure: "Burgemeester X" in
     # a signature block must still be marked as not-to-redact)
     if title_match is not None and title_match.list_name == "publiek":
         rule_det = title_match_to_detection(det, bboxes, title_match)
         if rule_det is not None:
             return rule_det
 
-    # 5. Structure enclosure (email header / signature block / salutation).
+    # 6. Structure enclosure (email header / signature block / salutation).
     # The `Onderwerp:` line is part of the header block but carries prose,
     # not a header value, so a hit there falls through to the rules below
     # and stays at most `pending` (#105).
@@ -492,17 +541,17 @@ def _classify_persoon(
     ):
         return _structure_to_pipeline_detection(det, bboxes, enclosing)
 
-    # 6. Ambtenaar title → pending with pre-filled role
+    # 7. Ambtenaar title → pending with pre-filled role
     if title_match is not None:
         rule_det = title_match_to_detection(det, bboxes, title_match)
         if rule_det is not None:
             return rule_det
 
-    # 7. Unconfirmed whitelist lead → pending, with the lead spelled out
+    # 8. Unconfirmed whitelist lead → pending, with the lead spelled out
     if whitelist_hit is not None:
         return _person_whitelist_hint_to_detection(det, bboxes, whitelist_hit)
 
-    # 8. Deduce fallback → pending
+    # 9. Deduce fallback → pending
     return _persoon_pending(det, bboxes, reasoning=det.reasoning, source="deduce")
 
 

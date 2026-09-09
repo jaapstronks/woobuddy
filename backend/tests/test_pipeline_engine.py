@@ -10,6 +10,7 @@ import pytest
 from app.services.environmental_classifier import check_environmental_content
 from app.services.pipeline_engine import run_pipeline
 from app.services.pdf_engine import ExtractionResult, PageText, TextSpan
+from tests.text_shapes import production_text
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -25,7 +26,6 @@ def _make_extraction(text: str, page_count: int = 1) -> ExtractionResult:
         page_count=page_count,
         full_text=text,
     )
-
 
 
 def _make_multipage_extraction(page_texts: list[str]) -> ExtractionResult:
@@ -210,8 +210,7 @@ class TestCustomWordlist:
         `custom` detections, both at `review_status="accepted"` and
         tagged with the custom Woo-artikel."""
         extraction = _make_extraction(
-            "Project Apollo startte in 1961. "
-            "Het rapport over Project Apollo is vrijgegeven."
+            "Project Apollo startte in 1961. Het rapport over Project Apollo is vrijgegeven."
         )
         result = await run_pipeline(
             extraction,
@@ -271,3 +270,82 @@ class TestCustomWordlist:
         # Each occurrence carries exactly one box — no occurrence may inherit
         # another's geometry.
         assert [len(d.bounding_boxes) for d in customs] == [1, 1]
+
+
+# ---------------------------------------------------------------------------
+# Tier 1 organisation context (#96)
+# ---------------------------------------------------------------------------
+
+
+class TestTier1OrganisationContext:
+    """What auto-accepting costs: a Tier 1 hit leaves the export without
+    anyone looking at it. Organisation data has to reach the reviewer
+    instead — pending, with the reason, never rejected."""
+
+    async def _statuses(self, text: str, entity_type: str) -> list[tuple[str, str]]:
+        result = await run_pipeline(_make_extraction(production_text(text)))
+        return [
+            (d.entity_text, d.review_status)
+            for d in result.detections
+            if d.entity_type == entity_type
+        ]
+
+    @pytest.mark.asyncio
+    async def test_desk_mailbox_is_pending_and_a_person_mailbox_is_not(self):
+        hits = dict(
+            await self._statuses(
+                "Vragen kunt u stellen via woo@minfin.nl of via r.vanmelenhorst@minienw.nl.",
+                "email",
+            )
+        )
+        assert hits["woo@minfin.nl"] == "pending"
+        assert hits["r.vanmelenhorst@minienw.nl"] == "auto_accepted"
+
+    @pytest.mark.asyncio
+    async def test_published_url_is_pending(self):
+        hits = await self._statuses(
+            "Meer informatie staat op https://www.rijksoverheid.nl/onderwerpen/woo.",
+            "url",
+        )
+        assert hits and all(status == "pending" for _, status in hits)
+
+    @pytest.mark.asyncio
+    async def test_letterhead_postcode_is_pending_and_carries_its_reason(self):
+        result = await run_pipeline(
+            _make_extraction(
+                production_text(
+                    "Laagland Archeologie BV\nVirulyweg 21F-G\n7602 RG Almelo\n",
+                )
+            )
+        )
+        postcodes = [d for d in result.detections if d.entity_type == "postcode"]
+        assert [d.review_status for d in postcodes] == ["pending"]
+        assert "organisatie" in postcodes[0].reasoning
+
+    @pytest.mark.asyncio
+    async def test_a_citizen_postcode_keeps_its_black_bar(self):
+        # The negative that matters most: weakening Tier 1 must not cost a
+        # private address its automatic redaction.
+        hits = await self._statuses(
+            "U moet de gemeente Emmen hiervan op de hoogte stellen.\n"
+            "Kowalczyk\nSchoolpad 183a\n7941 LA Meppel\n",
+            "postcode",
+        )
+        assert hits == [("7941 LA", "auto_accepted")]
+
+    @pytest.mark.asyncio
+    async def test_partners_of_a_maatschap_are_not_auto_redacted(self):
+        result = await run_pipeline(
+            _make_extraction(
+                production_text(
+                    "Met vriendelijke groet,\nteammanager Vergunningverlening\n"
+                    "Afschrift aan:\nMaatschap H.J. Kersten en C.H. Kersten - Ensing\n"
+                    "Bladderswijk WZ 19\n"
+                )
+            )
+        )
+        persons = [d for d in result.detections if d.entity_type == "persoon"]
+        assert persons, "expected the partner names to be detected at all"
+        for d in persons:
+            assert d.review_status == "pending", f"{d.entity_text} was {d.review_status}"
+            assert "rechtsvorm" in d.reasoning.lower()
