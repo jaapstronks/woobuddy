@@ -23,6 +23,7 @@ from app.services.ner_engine._tier1 import (
     _validate_luhn,
 )
 from app.services.ner_engine._title_prefix import _detect_persoon_via_title_prefix
+from app.services.ner_engine._wordlist_pairs import detect_persoon_via_wordlists
 from tests.text_shapes import production_text
 
 # ---------------------------------------------------------------------------
@@ -2230,6 +2231,46 @@ class TestAnchorRuleMailDisplayName:
         """"Van" is a tussenvoegsel, so a walk that starts at the header
         label swallows it. The label is a separator, not a particle."""
         assert self._names("Van: Jan de Vries <j.devries@emmen.nl>\n", lists) == ["Jan de Vries"]
+
+
+class TestWordlistPairRule:
+    """Meertens ∧ CBS without a Deduce span (#97)."""
+
+    @pytest.fixture(scope="class")
+    def lists(self):
+        return load_name_lists()
+
+    def _names(self, text, lists):
+        return [h.text for h in detect_persoon_via_wordlists(text, lists)]
+
+    def test_first_name_and_surname_both_on_a_list(self, lists):
+        hits = detect_persoon_via_wordlists("Het perceel is verkocht aan Jan Bakker.", lists)
+        assert [h.text for h in hits] == ["Jan Bakker"]
+        assert hits[0].source == "wordlist_rule"
+        assert hits[0].confidence == 0.80
+
+    def test_tussenvoegsel_between_the_halves(self, lists):
+        assert self._names("Namens Marieke de Vries is bezwaar gemaakt.", lists) == [
+            "Marieke de Vries"
+        ]
+
+    def test_one_list_alone_is_not_enough(self, lists):
+        """"Jan" is a Meertens first name; "Wandelroute" is on no list."""
+        assert self._names("De Jan Wandelroute loopt langs het kanaal.", lists) == []
+
+    def test_an_organisation_is_refused(self, lists):
+        assert self._names("De Jan Bakker Stichting int de contributie.", lists) == []
+
+    def test_empty_lists_disable_the_rule(self):
+        from app.services.name_engine import NameLists
+
+        empty = NameLists(
+            first_names=frozenset(),
+            last_names=frozenset(),
+            tussenvoegsels=frozenset(),
+            tussenvoegsel_sequences=frozenset(),
+        )
+        assert detect_persoon_via_wordlists("Jan Bakker", empty) == []
 
 
 class TestDetectTier2WithAnchorRules:

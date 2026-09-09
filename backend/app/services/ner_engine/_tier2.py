@@ -35,6 +35,7 @@ from ._types import (
     _deduplicate,
     _merge_without_overlap,
 )
+from ._wordlist_pairs import detect_persoon_via_wordlists
 
 logger = get_logger(__name__)
 
@@ -225,6 +226,7 @@ def detect_tier2(text: str) -> list[NERDetection]:
     # 4. label-id     — "Klantnummer: 123" / "Kenmerk: OT-…"
     # 5. title-prefix — "de heer El Khatib" (non-CBS after salutation)
     # 6. anchors      — "Hoogachtend, / Yıldırım", "Naam: Djaimy Pijpker"
+    # 7. wordlists    — "Mandy Loon" (Meertens ∧ CBS, no Deduce span)
 
     # 1. Straatnaam: full Dutch street+number spans. The plausibility
     # filter drops institutional addresses AND every weak-suffix
@@ -285,7 +287,17 @@ def detect_tier2(text: str) -> list[NERDetection]:
         "ner.anchor_rule_dropped_overlap",
     )
 
-    # 7. Corroboration gate: a bare one-word persoon hit ("Roos",
+    # 7. Wordlist pairs: a Meertens given name next to a CBS surname
+    # that Deduce never proposed. Runs last of the persoon rules so
+    # every anchored span keeps its own, wider boundaries.
+    _merge_without_overlap(
+        detections,
+        detect_persoon_via_wordlists(text, name_lists),
+        "persoon",
+        "ner.wordlist_rule_dropped_overlap",
+    )
+
+    # 8. Corroboration gate: a bare one-word persoon hit ("Roos",
     # "Storm", "Kunst") survives only when the document vouches for it
     # — same token in a multi-word name, an anchored rule, or a
     # greeting right before it.
