@@ -42,8 +42,8 @@ import re
 
 from app.services.name_engine import NameLists
 
-from ._name_walk import walk_name
-from ._org_context import contains_org_vocabulary
+from ._name_walk import strip_trailing_punct, walk_name
+from ._org_context import contains_org_vocabulary, functional_mailbox_prefix
 from ._plausibility import _is_plausible_person_name
 from ._tier2_trim import is_role_or_section_word, trim_trailing_titles
 from ._types import NERDetection
@@ -206,6 +206,11 @@ def _candidate(
         return None
 
     name_text, span_start, span_end = trim_trailing_titles(name_text, span_start, span_end)
+    # The trim cuts at a word, so "Jan Jansen, Wethouder" hands back
+    # "Jan Jansen," — the comma belongs to the line, not to the name.
+    stripped = strip_trailing_punct(name_text)
+    span_end -= len(name_text) - len(stripped)
+    name_text = stripped
     if not name_text:
         return None
 
@@ -274,6 +279,14 @@ def _closing_names(
     return out
 
 
+def _desk_mailbox_after(line: str, pos: int) -> bool:
+    """True when the first bracketed address after `pos` is a desk
+    mailbox ("Van: Vergunningen <vergunningen@emmen.nl>"): its display
+    name is the desk, not a person."""
+    addr = _BRACKETED_ADDRESS.search(line, pos)
+    return addr is not None and functional_mailbox_prefix(addr.group(0).strip("<>")) is not None
+
+
 def _is_header_row(name_text: str) -> bool:
     """True when the "value" is made of field labels — a header row."""
     return any(tok.lower().strip(".,;:") in _FORM_FIELD_WORDS for tok in name_text.split())
@@ -312,6 +325,8 @@ def _label_names(
                 )
 
         for m in _MAIL_LABEL.finditer(line):
+            if _desk_mailbox_after(line, m.end()):
+                continue
             found = _candidate(
                 text,
                 start + m.end(),
@@ -361,6 +376,11 @@ def _mail_display_names(
     for start, end in lines:
         line = text[start:end]
         for m in _BRACKETED_ADDRESS.finditer(line):
+            # A desk mailbox prints the desk as its display name
+            # ("Vergunningen <vergunningen@emmen.nl>"); that is the
+            # same functional-mailbox judgment #96 makes on the address.
+            if functional_mailbox_prefix(m.group(0).strip("<>")) is not None:
+                continue
             before = line[: m.start()]
             # A mail client joins addressees with ";" or "," and opens
             # the line with "Van:" / "Aan:"; the display name reaches

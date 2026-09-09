@@ -2087,7 +2087,7 @@ class TestAnchorRuleClosing:
         assert self._names(text, lists) == ["Shaniqua Terlouw-Van Rossem"]
 
     def test_a_body_signing_the_letter_is_not_a_person(self, lists):
-        """"de Nationale ombudsman," leaves a lowercase word standing,
+        """ "de Nationale ombudsman," leaves a lowercase word standing,
         so the line is not entirely name and the family refuses it."""
         text = "Met vriendelijke groet,\nde Nationale ombudsman,\nnamens deze,\n"
         assert self._names(text, lists) == []
@@ -2105,6 +2105,17 @@ class TestAnchorRuleClosing:
         a second person."""
         text = "Met vriendelijke groet,\nYıldırım\nVergunningverlening en Handhaving\n"
         assert self._names(text, lists) == ["Yıldırım"]
+
+    def test_initials_keep_their_period_before_a_comma(self, lists):
+        """ "M.F.," is an initial run with a comma on it, not a bare
+        "M.F" — the comma comes off first, the period stays."""
+        assert self._names("Met vriendelijke groet,\nM.F.,\n", lists) == ["M.F."]
+
+    def test_the_comma_before_a_trimmed_title_is_not_part_of_the_name(self, lists):
+        text = "Hoogachtend,\nJan Jansen, Wethouder\n"
+        hits = detect_persoon_via_anchors(text, lists)
+        assert [h.text for h in hits] == ["Jan Jansen"]
+        assert text[hits[0].start_char : hits[0].end_char] == "Jan Jansen"
 
 
 class TestAnchorRuleFieldLabel:
@@ -2155,7 +2166,7 @@ class TestAnchorRuleFieldLabel:
         assert self._names("naam: Ramdhani\n", lists) == ["Ramdhani"]
 
     def test_bare_van_is_a_tussenvoegsel_not_a_header(self, lists):
-        """"Van" without a colon opens half the surnames in the CBS
+        """ "Van" without a colon opens half the surnames in the CBS
         list; only "Van:" is an e-mail header."""
         assert self._names("Ondertekend door Piet Van Rossem\n", lists) != ["Rossem"]
 
@@ -2193,6 +2204,10 @@ class TestAnchorRuleSalutation:
     def test_initials_after_bare_geachte(self, lists):
         assert self._names("Onderwerp:RE: iets\nGeachte R.C. ,\nTot nu toe\n", lists) == ["R.C."]
 
+    def test_initials_directly_followed_by_a_comma(self, lists):
+        """The corpus prints "B.D. ,"; a letter prints "B.D.,"."""
+        assert self._names("Geachte heer B.D.,\nMiddels deze brief\n", lists) == ["B.D."]
+
     def test_geachte_heer_mevrouw_addresses_nobody(self, lists):
         assert self._names("Geachte heer/mevrouw,\nHierbij ontvangt u\n", lists) == []
 
@@ -2228,9 +2243,17 @@ class TestAnchorRuleMailDisplayName:
         assert self._names(text, lists) == []
 
     def test_the_header_label_stays_outside_the_display_name(self, lists):
-        """"Van" is a tussenvoegsel, so a walk that starts at the header
+        """ "Van" is a tussenvoegsel, so a walk that starts at the header
         label swallows it. The label is a separator, not a particle."""
         assert self._names("Van: Jan de Vries <j.devries@emmen.nl>\n", lists) == ["Jan de Vries"]
+
+    def test_a_desk_mailbox_prints_the_desk_as_its_display_name(self, lists):
+        """ "Vergunningen <vergunningen@emmen.nl>" is the desk, not a
+        person — the same judgment #96 makes on the address itself.
+        Neither the display-name family nor the `Van:` label may claim
+        it."""
+        assert self._names("Van: Vergunningen <vergunningen@emmen.nl>\n", lists) == []
+        assert self._names("Aan: Woo Verzoeken <woo@emmen.nl>\n", lists) == []
 
 
 class TestWordlistPairRule:
@@ -2255,7 +2278,7 @@ class TestWordlistPairRule:
         ]
 
     def test_one_list_alone_is_not_enough(self, lists):
-        """"Jan" is a Meertens first name; "Wandelroute" is on no list."""
+        """ "Jan" is a Meertens first name; "Wandelroute" is on no list."""
         assert self._names("De Jan Wandelroute loopt langs het kanaal.", lists) == []
 
     def test_an_organisation_is_refused(self, lists):

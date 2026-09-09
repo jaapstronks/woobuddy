@@ -33,8 +33,11 @@ _NAME_INITIAL = re.compile(r"(?:[A-Z]\.)+")
 
 # Trailing sentence punctuation peeled off a token before it is
 # classified. Initials keep their period — stripping it would turn them
-# into bare capitals that no longer match `_NAME_INITIAL`.
+# into bare capitals that no longer match `_NAME_INITIAL`. The
+# non-period marks go first, so "B.D.," is still an initial run once
+# the comma is gone and only then decides whether its period stays.
 _NAME_TRAILING_PUNCT = ",.;:!?)]}"
+_NAME_TRAILING_PUNCT_EXCEPT_PERIOD = ",;:!?)]}"
 
 
 def is_cap_name_token(tok: str) -> bool:
@@ -47,6 +50,17 @@ def is_cap_name_token(tok: str) -> bool:
 def is_initial_token(tok: str) -> bool:
     """Return True if `tok` is an initial run ("W.", "A.M.")."""
     return _NAME_INITIAL.fullmatch(tok) is not None
+
+
+def strip_trailing_punct(text: str) -> str:
+    """Peel sentence punctuation off the end of `text`, keeping the
+    period of a closing initial run ("J. Jansen," → "J. Jansen",
+    "M.F.," → "M.F.")."""
+    clean = text.rstrip(_NAME_TRAILING_PUNCT_EXCEPT_PERIOD)
+    last = clean.rsplit(None, 1)[-1] if clean else ""
+    if is_initial_token(last):
+        return clean
+    return clean.rstrip(_NAME_TRAILING_PUNCT)
 
 
 @dataclass(frozen=True)
@@ -71,7 +85,7 @@ def _tokenize(text: str, start: int, end: int) -> list[tuple[str, int, int]]:
     tokens: list[tuple[str, int, int]] = []
     for m in re.finditer(r"\S+", text[start:end]):
         raw = m.group(0)
-        clean = raw if _NAME_INITIAL.fullmatch(raw) else raw.rstrip(_NAME_TRAILING_PUNCT)
+        clean = strip_trailing_punct(raw)
         if not clean:
             continue
         tok_start = start + m.start()
