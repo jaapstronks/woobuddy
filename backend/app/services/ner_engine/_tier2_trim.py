@@ -49,6 +49,15 @@ def trim_span(annotation_text: str, start_char: int, end_char: int) -> tuple[str
 # torn in two.
 _SPAN_BREAK = re.compile(r"(?<=[a-z])\.[ \t]+|\n")
 
+#: Abbreviated salutations and titles: the one place a lowercase letter,
+#: a period and a space sit *inside* a name. "dhr. Jansen" is one span,
+#: and the salutation is what the corroboration gate reads as the
+#: evidence for the bare surname behind it — cut it off and the card is
+#: lost, which is what the first cut of this split did.
+_ABBREVIATED_PREFIXES: frozenset[str] = frozenset(
+    {"dhr", "mevr", "mw", "mr", "mrs", "drs", "dr", "ir", "ing", "prof", "mgr", "jhr", "hr", "ds"}
+)
+
 
 def split_merged_span(text: str, start_char: int, end_char: int) -> list[tuple[str, int, int]]:
     """Cut a span at the boundaries Deduce should not have crossed.
@@ -61,6 +70,10 @@ def split_merged_span(text: str, start_char: int, end_char: int) -> list[tuple[s
     pieces: list[tuple[str, int, int]] = []
     cursor = 0
     for m in _SPAN_BREAK.finditer(text):
+        if m.group(0) != "\n":
+            before = text[cursor : m.start()].rsplit(None, 1)
+            if before and before[-1].lower() in _ABBREVIATED_PREFIXES:
+                continue
         pieces.append((text[cursor : m.start()], start_char + cursor, start_char + m.start()))
         cursor = m.end()
     pieces.append((text[cursor:], start_char + cursor, end_char))
@@ -423,6 +436,13 @@ def _strip_leading_titles(
             break
         cut += 1
     if cut == index:
+        return text, start_char, end_char
+    # What remains has to stand on its own, and a bare surname does not:
+    # the corroboration gate reads the salutation or the title in front
+    # of it as the evidence that "Jansen" is a person. So "Voorzitter
+    # Jansen" and "Mevrouw Wethouder Jansen" keep their prefix, wide bar
+    # and all, rather than lose the card.
+    if len(spans) - cut < 2:
         return text, start_char, end_char
 
     offset = spans[cut][0]

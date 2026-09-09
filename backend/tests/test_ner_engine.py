@@ -2484,14 +2484,30 @@ class TestLeadingFunctionTitleTrimmed:
     def test_title_before_the_name_is_cut(self):
         from app.services.ner_engine._tier2_trim import trim_trailing_titles
 
-        assert trim_trailing_titles("Voorzitter Jansen", 0, 17)[0] == "Jansen"
-        assert trim_trailing_titles("Mevrouw Wethouder Jansen", 0, 24)[0] == "Jansen"
+        assert trim_trailing_titles("Voorzitter Piet Jansen", 0, 22)[0] == "Piet Jansen"
+        assert trim_trailing_titles("Mevrouw Wethouder J. Jansen", 0, 27)[0] == "J. Jansen"
 
     def test_the_offsets_follow_the_cut(self):
         from app.services.ner_engine._tier2_trim import trim_trailing_titles
 
-        text, start, end = trim_trailing_titles("Voorzitter Jansen", 100, 117)
-        assert (text, start, end) == ("Jansen", 111, 117)
+        text, start, end = trim_trailing_titles("Voorzitter Piet Jansen", 100, 122)
+        assert (text, start, end) == ("Piet Jansen", 111, 122)
+
+    def test_a_bare_surname_keeps_its_title(self):
+        """The title is the evidence the corroboration gate reads for a
+        one-word name. Cut it off and `Jansen` is dropped as
+        uncorroborated — `main` gave a card here, so this must too."""
+        from app.services.ner_engine._tier2_trim import trim_trailing_titles
+
+        assert trim_trailing_titles("Voorzitter Jansen", 0, 17)[0] == "Voorzitter Jansen"
+        assert (
+            trim_trailing_titles("Mevrouw Wethouder Jansen", 0, 24)[0] == "Mevrouw Wethouder Jansen"
+        )
+        assert any("Jansen" in p for p in _persons("Voorzitter Jansen opent de vergadering.\n"))
+        assert any(
+            "Jansen" in p
+            for p in _persons("Aanwezig: Mevrouw Wethouder Jansen en de heer Pieters.\n")
+        )
 
     def test_a_span_that_is_only_a_title_still_disappears(self):
         from app.services.ner_engine._tier2_trim import trim_trailing_titles
@@ -2526,6 +2542,19 @@ class TestMergedSpanSplit:
         from app.services.ner_engine._tier2_trim import split_merged_span
 
         assert split_merged_span("A. Jans", 0, 7) == [("A. Jans", 0, 7)]
+
+    def test_an_abbreviated_salutation_is_not_a_sentence_boundary(self):
+        """`dhr.` ends in a lowercase letter and a period, exactly like a
+        finished sentence — but it is the salutation that vouches for
+        the bare surname behind it, and `main` kept the span whole."""
+        from app.services.ner_engine._tier2_trim import split_merged_span
+
+        assert split_merged_span("dhr. Jansen", 0, 11) == [("dhr. Jansen", 0, 11)]
+        assert split_merged_span("Mw. Jansen", 0, 10) == [("Mw. Jansen", 0, 10)]
+        assert split_merged_span("mr. J. Jansen", 0, 13) == [("mr. J. Jansen", 0, 13)]
+        for salutation in ("dhr.", "mevr.", "Mw.", "mr."):
+            text = f"Wij hebben {salutation} Jansen gesproken over de aanvraag.\n"
+            assert any("Jansen" in p for p in _persons(text)), salutation
 
     def test_reference_letter_glued_to_the_next_sentence_dropped(self):
         text = (
