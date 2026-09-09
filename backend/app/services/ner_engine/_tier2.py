@@ -12,6 +12,7 @@ from __future__ import annotations
 from app.logging_config import get_logger
 from app.services.name_engine import score_person_candidate
 
+from ._anchor_rules import detect_persoon_via_anchors
 from ._corroboration import suppress_uncorroborated_single_tokens
 from ._deduce import _DEDUCE_TAG_MAP, _get_deduce, _get_name_lists
 from ._huisnummer import _detect_adres_by_huisnummer
@@ -223,6 +224,7 @@ def detect_tier2(text: str) -> list[NERDetection]:
     # 3. initials     — "G.J. Stronks" (CBS surname miss)
     # 4. label-id     — "Klantnummer: 123" / "Kenmerk: OT-…"
     # 5. title-prefix — "de heer El Khatib" (non-CBS after salutation)
+    # 6. anchors      — "Hoogachtend, / Yıldırım", "Naam: Djaimy Pijpker"
 
     # 1. Straatnaam: full Dutch street+number spans. The plausibility
     # filter drops institutional addresses AND every weak-suffix
@@ -273,7 +275,17 @@ def detect_tier2(text: str) -> list[NERDetection]:
         "ner.title_rule_dropped_overlap",
     )
 
-    # 6. Corroboration gate: a bare one-word persoon hit ("Roos",
+    # 6. Structure anchors: a closing, a form label, an aanhef, or a
+    # mail display name says a person follows, whatever the wordlists
+    # know (#97). Deduped against existing persoon hits.
+    _merge_without_overlap(
+        detections,
+        detect_persoon_via_anchors(text, name_lists),
+        "persoon",
+        "ner.anchor_rule_dropped_overlap",
+    )
+
+    # 7. Corroboration gate: a bare one-word persoon hit ("Roos",
     # "Storm", "Kunst") survives only when the document vouches for it
     # — same token in a multi-word name, an anchored rule, or a
     # greeting right before it.

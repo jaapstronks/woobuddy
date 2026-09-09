@@ -163,6 +163,17 @@ _SWITCHBOARD_PHRASE = re.compile(
 _POSTCODE_LINE_END = re.compile(r"\b\d{4}\s?[A-Z]{2}\b[^\n]*\n")
 
 
+def contains_org_vocabulary(text: str) -> str | None:
+    """The organisation or legal-form word inside `text`, if any.
+
+    Used by the anchor rules (#97) to refuse a candidate name that is
+    really a body or a trading name — "Gemeente Emmen" after a closing,
+    "Oosting Metalen Recycling B.V." after a `Naam:` label.
+    """
+    m = _ORG_EVIDENCE.search(text)
+    return m.group(1) if m else None
+
+
 def organisation_evidence(full_text: str, start_char: int) -> str | None:
     """The organisation word that vouches for the block, if any."""
     window = block_before(full_text, start_char)
