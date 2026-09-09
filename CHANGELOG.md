@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.0](https://github.com/jaapstronks/woobuddy/compare/v0.2.0...v0.3.0) (2026-09-09)
+
+
+### Added
+
+* **detection:** find person names on structure anchors, not only via Deduce ([#140](https://github.com/jaapstronks/woobuddy/issues/140)) ([4dbc157](https://github.com/jaapstronks/woobuddy/commit/4dbc157a0cb4c034b7659a2839347b92105146ca))
+* **detection:** let organisation data reach the reviewer instead of the redactor ([#139](https://github.com/jaapstronks/woobuddy/issues/139)) ([9fec527](https://github.com/jaapstronks/woobuddy/commit/9fec527bc91a9600e8a6ffd0e99da39cc0e7a6dd))
+
+
+### Fixed
+
+* **ci:** build release images natively per architecture ([#138](https://github.com/jaapstronks/woobuddy/issues/138)) ([3714569](https://github.com/jaapstronks/woobuddy/commit/3714569f88e85ac1046500c0203b13031853d5a7))
+* **detection:** anchor the address line windows past a trailing newline ([#137](https://github.com/jaapstronks/woobuddy/issues/137)) ([5fee8d4](https://github.com/jaapstronks/woobuddy/commit/5fee8d4fc8145bef489161f732c48f8c768d4c3d))
+* **detection:** eight shapes a Tier 2 persoon span is not ([#142](https://github.com/jaapstronks/woobuddy/issues/142)) ([35d09b2](https://github.com/jaapstronks/woobuddy/commit/35d09b2a0bd01e4f84fde17157ea252b078e5ef8))
+* **detection:** give a span that wraps across a line break one bbox per line ([#135](https://github.com/jaapstronks/woobuddy/issues/135)) ([034c3a4](https://github.com/jaapstronks/woobuddy/commit/034c3a4fe48a4be0e5b4c16a46046fdf9070668f))
+* **detection:** keep the email-header auto-accept off the subject line ([#134](https://github.com/jaapstronks/woobuddy/issues/134)) ([69bb017](https://github.com/jaapstronks/woobuddy/commit/69bb017b04f19252b0349bbb270949c88f80fd7c))
+* **detection:** read a "namens deze" cue after the name, not only before ([#141](https://github.com/jaapstronks/woobuddy/issues/141)) ([983acab](https://github.com/jaapstronks/woobuddy/commit/983acabb9a95be74d9afa8928e1a2aa0c8695864))
+* **detection:** require a given name or initials before whitelisting a person ([#132](https://github.com/jaapstronks/woobuddy/issues/132)) ([8fe7c5e](https://github.com/jaapstronks/woobuddy/commit/8fe7c5e377541f2575fb7d0deb2b4c6711b334b2))
+* **detection:** sort detections so the same document gives the same list ([#136](https://github.com/jaapstronks/woobuddy/issues/136)) ([5e2c0d1](https://github.com/jaapstronks/woobuddy/commit/5e2c0d195527093a2d662f77c292747d969bbef8))
+
 ## [0.2.0](https://github.com/jaapstronks/woobuddy/compare/v0.1.0...v0.2.0) (2026-09-08)
 
 
