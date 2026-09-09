@@ -373,7 +373,14 @@ class DocReport:
 # --------------------------------------------------------------------------
 
 
-def _detection_context(full_text: str, det: Any, width: int = 60) -> str:
+#: How much text either side of a detection the report carries. The triage
+#: rules read this window, and #96 moved the organisation rules out to the
+#: whole address block — four short lines — so 60 characters no longer show
+#: the evidence the pipeline itself acted on.
+_CONTEXT_WIDTH = 120
+
+
+def _detection_context(full_text: str, det: Any, width: int = _CONTEXT_WIDTH) -> str:
     if det.start_char is None or det.end_char is None:
         return ""
     lo = max(0, det.start_char - width)

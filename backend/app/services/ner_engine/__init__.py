@@ -10,6 +10,7 @@ The engine is split across sub-modules by concern:
 
 - ``_types``            — ``NERDetection`` dataclass + dedup helpers
 - ``_tier1``            — Tier 1 regex patterns + validators
+- ``_org_context``      — organisation evidence around a hit (#96)
 - ``_deduce``           — lazy-init for Deduce + Meertens/CBS name lists
 - ``_plausibility``     — person-name heuristic filter
 - ``_title_prefix``     — salutation-anchored non-CBS name rule
