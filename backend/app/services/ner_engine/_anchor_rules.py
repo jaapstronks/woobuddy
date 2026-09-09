@@ -45,7 +45,11 @@ from app.services.name_engine import NameLists
 from ._name_walk import strip_trailing_punct, walk_name
 from ._org_context import contains_org_vocabulary, functional_mailbox_prefix
 from ._plausibility import _is_plausible_person_name
-from ._tier2_trim import is_role_or_section_word, trim_trailing_titles
+from ._tier2_trim import (
+    is_form_field_row,
+    is_role_or_section_word,
+    trim_trailing_titles,
+)
 from ._types import NERDetection
 
 # ---------------------------------------------------------------------------
@@ -98,39 +102,6 @@ _SALUTATION_ANCHOR = re.compile(
     r"(?=[\s,])",
     re.IGNORECASE,
 )
-
-#: The column headers of a Dutch e-form, printed as one row above the
-#: row that holds the values ("Voorletters Tussenvoegsels Achternaam").
-#: A label whose value is another label is a header row, not a filled
-#: field, so the label family refuses a candidate built out of these.
-_FORM_FIELD_WORDS = frozenset(
-    {
-        "naam",
-        "namen",
-        "achternaam",
-        "voornaam",
-        "voornamen",
-        "voorletters",
-        "initialen",
-        "tussenvoegsel",
-        "tussenvoegsels",
-        "aanhef",
-        "contactpersoon",
-        "aanvrager",
-        "ondertekenaar",
-        "behandeld",
-        "ingediend",
-        "opgesteld",
-        "ondertekend",
-        "straat",
-        "huisnummer",
-        "toevoeging",
-        "postcode",
-        "plaats",
-        "gegevens",
-    }
-)
-
 
 #: An e-mail address in angle brackets, the way mail clients print it
 #: after a display name.
@@ -287,11 +258,6 @@ def _desk_mailbox_after(line: str, pos: int) -> bool:
     return addr is not None and functional_mailbox_prefix(addr.group(0).strip("<>")) is not None
 
 
-def _is_header_row(name_text: str) -> bool:
-    """True when the "value" is made of field labels — a header row."""
-    return any(tok.lower().strip(".,;:") in _FORM_FIELD_WORDS for tok in name_text.split())
-
-
 def _label_names(
     text: str, lines: list[tuple[int, int]], name_lists: NameLists
 ) -> list[NERDetection]:
@@ -313,7 +279,7 @@ def _label_names(
                 name_lists,
                 max_capitalized=_MAX_INLINE_CAPITALS,
             )
-            if found is not None and not _is_header_row(found[0]):
+            if found is not None and not is_form_field_row(found[0]):
                 out.append(
                     _detection(
                         *found,

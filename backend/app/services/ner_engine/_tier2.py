@@ -10,7 +10,7 @@ The heavy lifting lives in sibling modules:
 from __future__ import annotations
 
 from app.logging_config import get_logger
-from app.services.name_engine import score_person_candidate
+from app.services.name_engine import NameLists, score_person_candidate
 
 from ._anchor_rules import detect_persoon_via_anchors
 from ._corroboration import suppress_uncorroborated_single_tokens
@@ -18,6 +18,7 @@ from ._deduce import _DEDUCE_TAG_MAP, _get_deduce, _get_name_lists
 from ._huisnummer import _detect_adres_by_huisnummer
 from ._initials import _detect_persoon_via_initials
 from ._label_anchored_id import _detect_label_anchored_ids
+from ._person_shape import drop_non_person_spans
 from ._plausibility import _is_plausible_person_name
 from ._straatnaam import _detect_adres_by_straatnaam
 from ._tier2_filters import (
@@ -27,7 +28,7 @@ from ._tier2_filters import (
     is_plausible_home_address,
     is_recent_event_date,
 )
-from ._tier2_trim import trim_span, trim_trailing_titles
+from ._tier2_trim import split_merged_span, trim_span, trim_trailing_titles
 from ._title_prefix import _detect_persoon_via_title_prefix
 from ._types import (
     DEFAULT_WOO_ARTICLE,
@@ -38,6 +39,84 @@ from ._types import (
 from ._wordlist_pairs import detect_persoon_via_wordlists
 
 logger = get_logger(__name__)
+
+
+def _persoon_detection(
+    text: str,
+    start_char: int,
+    end_char: int,
+    name_lists: NameLists,
+) -> NERDetection | None:
+    """Judge one candidate `persoon` span and build its detection.
+
+    Split out of the loop because a Deduce annotation is not always one
+    span (#98): "Jansen. Jansen" and "M.F.\\nVan" are two, and each half
+    has to face the plausibility heuristic and the name lists on its own
+    evidence rather than inherit the other half's.
+    """
+    # Cheap heuristic pre-filter for `persoon` false positives. Deduce
+    # was trained on medical records and over-tags institution names,
+    # fragments, and common nouns as persons. Drop the obvious garbage
+    # here before it ever enters the review list.
+    if not _is_plausible_person_name(text):
+        logger.debug("ner.persoon_dropped_by_heuristic", text_length=len(text))
+        return None
+
+    # Name-list scoring: after the structural heuristic passes, raise
+    # the bar by requiring at least one token to match Meertens (first
+    # name) or CBS (surname). When the lists are empty (e.g. tests with
+    # missing fixtures) we fall back to the heuristic-only verdict to
+    # keep the pipeline working.
+    confidence = 0.80
+    reasoning = (
+        "Persoonsnaam gedetecteerd door NER. "
+        "Classificatie nodig: burger, ambtenaar, of publiek functionaris."
+    )
+    if name_lists.first_names or name_lists.last_names:
+        score = score_person_candidate(text, name_lists)
+        if not score.is_plausible:
+            logger.debug("ner.persoon_dropped_by_name_lists", text_length=len(text))
+            return None
+        # Boost confidence for positive list hits. +0.10 for a known
+        # first name, +0.05 extra if a known surname also appears. Cap
+        # at 0.95 so manual review still sees a sliver of uncertainty.
+        if score.has_known_first_name:
+            confidence = min(confidence + 0.10, 0.95)
+        if score.has_known_last_name:
+            confidence = min(confidence + 0.05, 0.95)
+        # Attribution string — exact wording matters because
+        # `Tier2Card.svelte` pattern-matches "Meertens Instituut" to
+        # render the link back to the NVB.
+        if score.has_known_first_name and score.has_known_last_name:
+            reasoning = (
+                "Persoonsnaam herkend: voornaam op lijst van het "
+                "Meertens Instituut (Nederlandse Voornamenbank), "
+                "achternaam op CBS-achternamenlijst."
+            )
+        elif score.has_known_first_name:
+            reasoning = "Voornaam herkend in Nederlandse Voornamenbank (Meertens Instituut)."
+        else:
+            reasoning = "Achternaam herkend op CBS-achternamenlijst."
+
+    trimmed_text, trimmed_start, trimmed_end = trim_span(text, start_char, end_char)
+    if not trimmed_text:
+        return None
+    # Strip trailing job titles Deduce absorbed into person spans
+    trimmed_text, trimmed_start, trimmed_end = trim_trailing_titles(
+        trimmed_text, trimmed_start, trimmed_end
+    )
+    if not trimmed_text:
+        return None
+
+    return NERDetection.tier2(
+        text=trimmed_text,
+        entity_type="persoon",
+        confidence=confidence,
+        start_char=trimmed_start,
+        end_char=trimmed_end,
+        reasoning=reasoning,
+        woo_article=DEFAULT_WOO_ARTICLE,
+    )
 
 
 def detect_tier2(text: str) -> list[NERDetection]:
@@ -85,62 +164,20 @@ def detect_tier2(text: str) -> list[NERDetection]:
             )
             continue
 
-        # Cheap heuristic pre-filter for `persoon` false positives.
-        # Deduce was trained on medical records and over-tags
-        # institution names, fragments, and common nouns as persons.
-        # We drop the obvious garbage here before it ever enters the
-        # review list.
-        if entity_type == "persoon" and not _is_plausible_person_name(annotation.text):
-            logger.debug(
-                "ner.persoon_dropped_by_heuristic",
-                text_length=len(annotation.text),
-            )
+        # Persons are the primary Tier 2 entity. One annotation may hold
+        # more than one span — Deduce reaches over a sentence boundary
+        # and over a line break — so split first and judge each piece on
+        # its own evidence (#98).
+        if entity_type == "persoon":
+            for piece, piece_start, piece_end in split_merged_span(
+                annotation.text, annotation.start_char, annotation.end_char
+            ):
+                persoon = _persoon_detection(piece, piece_start, piece_end, name_lists)
+                if persoon is not None:
+                    detections.append(persoon)
             continue
 
-        # Persons are the primary Tier 2 entity
-        if entity_type == "persoon":
-            # Name-list scoring: after the structural heuristic passes,
-            # raise the bar by requiring at least one token to match
-            # Meertens (first name) or CBS (surname). When the lists
-            # are empty (e.g. tests with missing fixtures) we fall back
-            # to the heuristic-only verdict to keep the pipeline working.
-            confidence = 0.80
-            reasoning = (
-                "Persoonsnaam gedetecteerd door NER. "
-                "Classificatie nodig: burger, ambtenaar, of publiek functionaris."
-            )
-            if name_lists.first_names or name_lists.last_names:
-                score = score_person_candidate(annotation.text, name_lists)
-                if not score.is_plausible:
-                    logger.debug(
-                        "ner.persoon_dropped_by_name_lists",
-                        text_length=len(annotation.text),
-                    )
-                    continue
-                # Boost confidence for positive list hits. +0.10 for a
-                # known first name, +0.05 extra if a known surname
-                # also appears. Cap at 0.95 so manual review still
-                # sees a sliver of uncertainty.
-                if score.has_known_first_name:
-                    confidence = min(confidence + 0.10, 0.95)
-                if score.has_known_last_name:
-                    confidence = min(confidence + 0.05, 0.95)
-                # Attribution string — exact wording matters because
-                # `Tier2Card.svelte` pattern-matches "Meertens Instituut"
-                # to render the link back to the NVB.
-                if score.has_known_first_name and score.has_known_last_name:
-                    reasoning = (
-                        "Persoonsnaam herkend: voornaam op lijst van het "
-                        "Meertens Instituut (Nederlandse Voornamenbank), "
-                        "achternaam op CBS-achternamenlijst."
-                    )
-                elif score.has_known_first_name:
-                    reasoning = (
-                        "Voornaam herkend in Nederlandse Voornamenbank (Meertens Instituut)."
-                    )
-                else:
-                    reasoning = "Achternaam herkend op CBS-achternamenlijst."
-        elif entity_type == "adres":
+        if entity_type == "adres":
             if not is_plausible_home_address(annotation.text, text, annotation.start_char):
                 logger.debug(
                     "ner.adres_dropped_by_org_filter",
@@ -192,14 +229,6 @@ def detect_tier2(text: str) -> list[NERDetection]:
         )
         if not trimmed_text:
             continue
-
-        # Strip trailing job titles Deduce absorbed into person spans
-        if entity_type == "persoon":
-            trimmed_text, trimmed_start, trimmed_end = trim_trailing_titles(
-                trimmed_text, trimmed_start, trimmed_end
-            )
-            if not trimmed_text:
-                continue
 
         detections.append(
             NERDetection.tier2(
@@ -297,7 +326,15 @@ def detect_tier2(text: str) -> list[NERDetection]:
         "ner.wordlist_rule_dropped_overlap",
     )
 
-    # 8. Corroboration gate: a bare one-word persoon hit ("Roos",
+    # 8. Shape gate: the four shapes every persoon rule mistakes for a
+    # name — a list marker ("A. Gemengd"), a street with a house number
+    # ("P. de Keyserstraat 18"), an author in a reference list, a place
+    # absorbed into the span ("Kersten te Nieuw-Dordrecht"). Runs over
+    # the merged list because each of them arrived by more than one
+    # route (#98).
+    detections = drop_non_person_spans(detections, text, name_lists)
+
+    # 9. Corroboration gate: a bare one-word persoon hit ("Roos",
     # "Storm", "Kunst") survives only when the document vouches for it
     # — same token in a multi-word name, an anchored rule, or a
     # greeting right before it.

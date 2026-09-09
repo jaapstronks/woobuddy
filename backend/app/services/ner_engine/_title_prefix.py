@@ -26,7 +26,7 @@ from app.services.name_engine import NameLists
 
 from ._name_walk import walk_name
 from ._plausibility import _is_plausible_person_name
-from ._tier2_trim import trim_trailing_titles
+from ._tier2_trim import is_form_field_row, trim_trailing_titles
 from ._types import NERDetection
 
 # Salutation / family anchors. Case-insensitive whole-word match, with a
@@ -93,6 +93,14 @@ def _detect_persoon_via_title_prefix(
         # Sanity filter — reuses the Deduce heuristic so organisation-
         # keyword false positives are dropped here too.
         if not _is_plausible_person_name(name_text):
+            continue
+
+        # A form prints its salutation as a field of its own, so the
+        # capitals under "Aanhef Mevr." are the *next* label, not the
+        # name: "Straat en huisnummer" gave a `Straat` card (#98). The
+        # anchor rules refuse a value made of field labels for the same
+        # reason.
+        if is_form_field_row(name_text):
             continue
 
         detections.append(

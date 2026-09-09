@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 
-from ._types import ORGANIZATION_KEYWORDS
+from ._types import LEGAL_FORM_ABBREVIATIONS, ORGANIZATION_KEYWORDS
 
 # Dutch articles and demonstratives that signal a Deduce hit is a
 # generic noun phrase rather than a name. Matched case-insensitively
@@ -39,6 +39,11 @@ _NON_NAME_STARTERS = {
     "jouw",
     "uw",
 }
+
+
+def _fold_legal_form(token: str) -> str:
+    """Strip the dots and trailing punctuation a legal form is written with."""
+    return re.sub(r"[.,;:()]", "", token)
 
 
 def _is_plausible_person_name(text: str) -> bool:
@@ -86,6 +91,15 @@ def _is_plausible_person_name(text: str) -> bool:
     # "Stichting Woo Buddy", etc. The keyword has to appear as a whole
     # token — "Schoolstraat" does not trigger on "school".
     if ORGANIZATION_KEYWORDS & set(lower_tokens):
+        return False
+
+    # Same move for the legal-form abbreviations, which the keyword set
+    # cannot carry: they are only a company when they follow the name
+    # ("Oosting Metalen Recycling B.V."). Leading them are initials —
+    # "C.V. Jansen", "N.V. Bakker" — so the first token is exempt. The
+    # dots are folded away because a document writes both "B.V." and
+    # "BV", and a trailing comma must not hide either (#98).
+    if any(_fold_legal_form(t) in LEGAL_FORM_ABBREVIATIONS for t in lower_tokens[1:]):
         return False
 
     # Reject if the text contains a sentence-ending period followed

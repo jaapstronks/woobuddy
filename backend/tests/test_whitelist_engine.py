@@ -408,6 +408,28 @@ def test_person_whitelist_given_name_match_confirms(index):
     hit = match_person_whitelist(needle, start, end, text, mentions, index)
     assert hit is not None
     assert hit.confirmed is True
+    # The evidence was the given name's initial, not a written-out
+    # initials run — the card must not claim "initialen komen overeen"
+    # for it (#98).
+    assert hit.used_initials is False
+
+
+def test_person_whitelist_initials_match_says_so(index):
+    # "A.M. Bakker" against an official whose initials are "a.m.": here
+    # the initials really are what confirmed the identity, and
+    # `used_initials` is what the reasoning string reads.
+    official = _official_with_initials(index, "gm0482")
+    if official is None:
+        pytest.skip("no single-token Alblasserdam official with initials in this CSV")
+    initials = "".join(f"{letter.upper()}." for letter in official.initials)
+    surname = official.surname_normalized.title()
+    text = f"Gemeente Alblasserdam: {initials} {surname} was aanwezig."
+    mentions = find_gemeente_mentions(text, index)
+    needle = f"{initials} {surname}"
+    start, end = _span(text, needle)
+    hit = match_person_whitelist(needle, start, end, text, mentions, index)
+    assert hit is not None
+    assert hit.confirmed is True
     assert hit.used_initials is True
 
 

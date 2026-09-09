@@ -255,6 +255,10 @@ def _identity_verdict(
       person; the reviewer gets the lead, the detection stays pending.
     - ``"reject"``    — the evidence actively contradicts this official;
       try the next one.
+
+    For a confirmation the reason names *which* evidence confirmed —
+    ``"given_initial"`` or ``"initials"`` — so the card can say what it
+    actually compared instead of claiming initials either way (#98).
     """
     if given_initial:
         if not official_initials:
@@ -263,11 +267,11 @@ def _identity_verdict(
             return "hint", "official_without_initials"
         if official_initials[0] != given_initial:
             return "reject", ""
-        return "confirmed", ""
+        return "confirmed", "given_initial"
 
     if visible_initials and official_initials:
         if _initials_compatible(visible_initials, official_initials):
-            return "confirmed", ""
+            return "confirmed", "initials"
         return "reject", ""
 
     # Bare surname. A common surname carries no information at all, so
@@ -341,9 +345,9 @@ def match_person_whitelist(
             hit = PersonWhitelistHit(
                 official=official,
                 municipality_name=municipality_name,
-                used_initials=verdict == "confirmed",
+                used_initials=verdict == "confirmed" and reason == "initials",
                 confirmed=verdict == "confirmed",
-                hint_reason=reason,
+                hint_reason="" if verdict == "confirmed" else reason,
             )
             if hit.confirmed:
                 return hit

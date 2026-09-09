@@ -242,6 +242,17 @@ def _normalize(token: str) -> str:
     return ascii_only.lower()
 
 
+def normalize_name_token(token: str) -> str:
+    """`_normalize` under a name other modules may use.
+
+    The place index in `ner_engine._person_shape` (#98) has to be keyed
+    the same way the Meertens and CBS lists are, or "Nieuw-Dordrecht"
+    and "Fryslân" miss. Importing a private from another module to get
+    that is worse than naming it here.
+    """
+    return _normalize(token)
+
+
 def normalize_reference_name(text: str) -> str:
     """Normalize a full name for reference-list matching (#17).
 
