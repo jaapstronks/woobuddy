@@ -111,9 +111,36 @@ ORG_KEYWORDS = (
     "bureau",
     "kantoor",
     "advocaten",
+    # Mirrors `_EXTRA_ORG_WORDS` in `app/services/ner_engine/_org_context.py`
+    # (#96): the triage has to label what the rule now acts on.
+    "rijksdienst",
+    "rijksoverheid",
+    "belastingdienst",
+    "hoogheemraadschap",
+    "afdeling",
+    "directie",
+    "bestuur",
+    "secretariaat",
+    "griffie",
+    "rechtsvorm",
+    "kvk",
+    "postbus",
 )
 
-LEGAL_FORMS = ("b.v.", "n.v.", "v.o.f.", " bv", " nv", "gmbh", " ltd", "vof")
+LEGAL_FORMS = (
+    "b.v.",
+    "n.v.",
+    "v.o.f.",
+    "c.v.",
+    " bv",
+    " nv",
+    "gmbh",
+    " ltd",
+    "vof",
+    "maatschap",
+    "eenmanszaak",
+    "handelsonderneming",
+)
 
 STREET_SUFFIXES = (
     "straat",
@@ -222,6 +249,13 @@ def _has(text: str, needles: tuple[str, ...]) -> bool:
     return any(n in low for n in needles)
 
 
+#: How much of the address block the org rules read. The production rule
+#: (`_org_context.block_before`) walks back four lines and stops at a blank
+#: one; the report context is collapsed to a single line, so the closest
+#: mirror here is the character budget those four lines fit in.
+_BLOCK_WINDOW = 120
+
+
 def _window_before(item: TriageItem, chars: int) -> str:
     return item.before[-chars:].lower()
 
@@ -316,13 +350,15 @@ FP_RULES: tuple[TriageRule, ...] = (
         lambda i: (
             i.entity_type == "telefoon"
             and (
-                _has(_window_before(i, 80), ORG_KEYWORDS)
+                _has(_window_before(i, _BLOCK_WINDOW), ORG_KEYWORDS)
                 or re.search(
-                    r"(postbus|www\.|\bt\b\s*:?\s*$|telefoon)", _window_before(i, 80), re.I
+                    r"(www\.|algeme\w*\s+(?:telefoon)?nummer|centrale)",
+                    _window_before(i, _BLOCK_WINDOW),
+                    re.I,
                 )
                 is not None
                 or _functional_mailbox(
-                    _window_before(i, 80).split()[-1] if i.before.split() else ""
+                    _window_before(i, _BLOCK_WINDOW).split()[-1] if i.before.split() else ""
                 )
             )
         ),
@@ -335,9 +371,8 @@ FP_RULES: tuple[TriageRule, ...] = (
         lambda i: (
             i.entity_type in {"postcode", "adres"}
             and (
-                _has(_window_before(i, 60), ORG_KEYWORDS)
-                or _has(_window_before(i, 60), LEGAL_FORMS)
-                or "postbus" in _window_before(i, 60)
+                _has(_window_before(i, _BLOCK_WINDOW), ORG_KEYWORDS)
+                or _has(_window_before(i, _BLOCK_WINDOW), LEGAL_FORMS)
             )
         ),
         "#96",
@@ -412,20 +447,6 @@ FP_RULES: tuple[TriageRule, ...] = (
         ),
         "#95",
         "The signature-block heuristic took the whole block",
-    ),
-    TriageRule(
-        "merged_over_line",
-        "fp",
-        lambda i: (
-            i.entity_type in {"persoon", "adres"}
-            and len(_tokens(i.text)) >= 3
-            and (
-                re.search(r"\d{4}\s?[A-Z]{2}", i.text) is not None
-                or any(tok.lower().strip(".,") in place_names() for tok in _tokens(i.text)[1:])
-            )
-        ),
-        "#95",
-        "One span ran across a line break and merged two fields",
     ),
     TriageRule(
         "object_address",
