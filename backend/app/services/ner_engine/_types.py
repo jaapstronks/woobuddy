@@ -27,7 +27,15 @@ NEREntityType = Literal[
 
 NERTier = Literal["1", "2"]
 
-NERSource = Literal["regex", "deduce", "rule", "initials_rule", "title_rule"]
+NERSource = Literal[
+    "regex",
+    "deduce",
+    "rule",
+    "initials_rule",
+    "title_rule",
+    "anchor_rule",
+    "wordlist_rule",
+]
 
 # Default Woo article for personal-data detections (Art. 5.1.2e —
 # "bijzondere persoonsgegevens"). Used by both tiers unless overridden

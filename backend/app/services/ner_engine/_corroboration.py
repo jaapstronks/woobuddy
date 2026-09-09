@@ -14,7 +14,8 @@ corroborates it:
 - the same token also appears inside a multi-token persoon hit
   ("Jan Jansen" earlier → later bare "Jansen" is the same person);
 - it was produced by an anchored rule (`title_rule` after "de heer",
-  `initials_rule` after "G.J."), or its token appears in one;
+  `initials_rule` after "G.J.", `anchor_rule` after a closing, a
+  field label or an aanhef), or its token appears in one;
 - a greeting / mail-header cue sits right before it on the same line
   ("Beste Roos,", "Hoi Storm", "Van: Jansen", "T.a.v. Bos").
 
@@ -37,7 +38,7 @@ from ._types import NERDetection
 logger = get_logger(__name__)
 
 # Sources whose single-token output is already anchored by context.
-_ANCHORED_SOURCES = frozenset({"title_rule", "initials_rule"})
+_ANCHORED_SOURCES = frozenset({"title_rule", "initials_rule", "anchor_rule"})
 
 # Greeting / header cues that vouch for a bare name on the same line.
 # Anchored at the end of the look-behind window so the cue must sit

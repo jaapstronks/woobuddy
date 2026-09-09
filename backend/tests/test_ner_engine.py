@@ -8,6 +8,7 @@ import pytest
 
 from app.services.name_engine import load_name_lists
 from app.services.ner_engine import NERDetection, detect_all, detect_tier1, detect_tier2
+from app.services.ner_engine._anchor_rules import detect_persoon_via_anchors
 from app.services.ner_engine._org_context import (
     functional_mailbox_prefix,
     legal_form_lead,
@@ -22,6 +23,7 @@ from app.services.ner_engine._tier1 import (
     _validate_luhn,
 )
 from app.services.ner_engine._title_prefix import _detect_persoon_via_title_prefix
+from app.services.ner_engine._wordlist_pairs import detect_persoon_via_wordlists
 from tests.text_shapes import production_text
 
 # ---------------------------------------------------------------------------
@@ -2043,3 +2045,274 @@ class TestLegalFormLead:
 
     def test_a_plain_signature_block_is_untouched(self):
         assert self._form("Hoogachtend,\n", "Jan de Vries") is None
+
+
+# ---------------------------------------------------------------------------
+# Structure-anchored name rule (#97)
+#
+# Four anchor families that say "a person follows" regardless of what
+# Meertens and CBS know: a closing, a form/header label, an aanhef, and
+# a mail display name. Every family has at least one negative — the case
+# the family must NOT eat.
+# ---------------------------------------------------------------------------
+
+
+class TestAnchorRuleClosing:
+    """Family 1 — `Hoogachtend,` / `Met vriendelijke groet,`."""
+
+    @pytest.fixture(scope="class")
+    def lists(self):
+        return load_name_lists()
+
+    def _names(self, text, lists):
+        return [h.text for h in detect_persoon_via_anchors(text, lists)]
+
+    def test_bare_surname_under_a_closing(self, lists):
+        text = "Een kopie van de stukken doen wij u toekomen.\nMet vriendelijke groet,\nYıldırım\n"
+        hits = detect_persoon_via_anchors(text, lists)
+        assert [h.text for h in hits] == ["Yıldırım"]
+        assert hits[0].source == "anchor_rule"
+        assert hits[0].confidence == 0.75
+        assert hits[0].tier == "2"
+        assert "briefafsluiting" in hits[0].reasoning
+
+    def test_initials_only_under_a_closing(self, lists):
+        """The anchor supplies the noun the initials stand for, so a
+        signature that is nothing but initials is still a person."""
+        text = "Als ik geen reactie heb, gaat de ontheffing uit.\nMet vriendelijke groet,\nM.F.\n"
+        assert self._names(text, lists) == ["M.F."]
+
+    def test_full_name_with_hyphenated_surname_under_hoogachtend(self, lists):
+        text = "kunt u kijken op de site.\nHoogachtend,\nShaniqua Terlouw-Van Rossem\n"
+        assert self._names(text, lists) == ["Shaniqua Terlouw-Van Rossem"]
+
+    def test_a_body_signing_the_letter_is_not_a_person(self, lists):
+        """ "de Nationale ombudsman," leaves a lowercase word standing,
+        so the line is not entirely name and the family refuses it."""
+        text = "Met vriendelijke groet,\nde Nationale ombudsman,\nnamens deze,\n"
+        assert self._names(text, lists) == []
+
+    def test_an_organisation_under_a_closing_is_refused(self, lists):
+        assert self._names("Met vriendelijke groet,\nGemeente Emmen\n", lists) == []
+
+    def test_a_function_title_under_a_closing_is_refused(self, lists):
+        """The trailing-title trim eats "Financiën" and leaves a
+        three-token span that reads like a name. It is a job title."""
+        assert self._names("Hoogachtend,\nDe Staatssecretaris van Financiën\n", lists) == []
+
+    def test_only_the_first_line_under_the_closing_is_read(self, lists):
+        """The line below the name is the signer's function or org, not
+        a second person."""
+        text = "Met vriendelijke groet,\nYıldırım\nVergunningverlening en Handhaving\n"
+        assert self._names(text, lists) == ["Yıldırım"]
+
+    def test_initials_keep_their_period_before_a_comma(self, lists):
+        """ "M.F.," is an initial run with a comma on it, not a bare
+        "M.F" — the comma comes off first, the period stays."""
+        assert self._names("Met vriendelijke groet,\nM.F.,\n", lists) == ["M.F."]
+
+    def test_the_comma_before_a_trimmed_title_is_not_part_of_the_name(self, lists):
+        text = "Hoogachtend,\nJan Jansen, Wethouder\n"
+        hits = detect_persoon_via_anchors(text, lists)
+        assert [h.text for h in hits] == ["Jan Jansen"]
+        assert text[hits[0].start_char : hits[0].end_char] == "Jan Jansen"
+
+
+class TestAnchorRuleFieldLabel:
+    """Family 2 — `Naam:`, `Contactpersoon`, `Behandeld door`, `Van:`."""
+
+    @pytest.fixture(scope="class")
+    def lists(self):
+        return load_name_lists()
+
+    def _names(self, text, lists):
+        return [h.text for h in detect_persoon_via_anchors(text, lists)]
+
+    def test_name_after_a_naam_label(self, lists):
+        hits = detect_persoon_via_anchors("Datum: 3 mei 2021\nNaam: Djaimy Pijpker\n", lists)
+        assert [h.text for h in hits] == ["Djaimy Pijpker"]
+        assert "label" in hits[0].reasoning
+
+    def test_the_company_after_the_value_is_not_part_of_the_name(self, lists):
+        """A `Naam:` field followed by the trading name of the applicant.
+        Two capitals is the canonical Dutch shape, so the walk stops
+        before the company."""
+        text = "Naam: Djaimy Pijpker Oosting Metalen Recycling B.V. te Emmen\n"
+        assert self._names(text, lists) == ["Djaimy Pijpker"]
+
+    def test_tussenvoegsel_in_the_value(self, lists):
+        text = "Naam: Mandy van Loon Oosting Metalen Recycling B.V. te Emmen\n"
+        assert self._names(text, lists) == ["Mandy van Loon"]
+
+    def test_two_labels_on_one_line(self, lists):
+        """A "Klant / Adviseur" table prints the label mid-line, twice."""
+        text = "Naam Sanne-Marijke Sotthewes Maatschap Kersten-Ensing Naam F.B. 11 juni 2020\n"
+        assert self._names(text, lists) == ["Sanne-Marijke Sotthewes", "F.B."]
+
+    def test_contactpersoon_label(self, lists):
+        text = "Onze referentie\n2025-0000525385\nContactpersoon Okonkwo\nwoo@minfin.nl\n"
+        assert self._names(text, lists) == ["Okonkwo"]
+
+    def test_a_team_behind_behandeld_door_is_not_a_person(self, lists):
+        text = "Behandeld door Team Ruimte, Energie en Wonen (0592) 36 55 55\n"
+        assert self._names(text, lists) == []
+
+    def test_the_noun_naam_in_prose_is_not_a_label(self, lists):
+        """Lowercase and without a colon, "naam" is a word, not a field."""
+        text = "In dit besluit staat de naam van de Aanvrager niet vermeld.\n"
+        assert self._names(text, lists) == []
+
+    def test_lowercase_label_with_a_colon_is_a_label(self, lists):
+        assert self._names("naam: Ramdhani\n", lists) == ["Ramdhani"]
+
+    def test_bare_van_is_a_tussenvoegsel_not_a_header(self, lists):
+        """ "Van" without a colon opens half the surnames in the CBS
+        list; only "Van:" is an e-mail header."""
+        assert self._names("Ondertekend door Piet Van Rossem\n", lists) != ["Rossem"]
+
+    def test_a_job_title_after_the_value_is_trimmed_off(self, lists):
+        assert self._names("Naam: Jan Jansen Medewerker\n", lists) == ["Jan Jansen"]
+
+    def test_a_form_header_row_holds_no_value(self, lists):
+        """A DigiD form prints its column headers on their own row. A
+        label whose "value" is the next label is a header, not a name."""
+        text = "Uw gegevens\nNaam\nVoorletters Tussenvoegsels Achternaam\nV.M.\nAanhef Mevr.\n"
+        assert self._names(text, lists) == []
+
+
+class TestAnchorRuleSalutation:
+    """Family 3 — `Geachte` / `Beste`, with or without heer/mevrouw."""
+
+    @pytest.fixture(scope="class")
+    def lists(self):
+        return load_name_lists()
+
+    def _names(self, text, lists):
+        return [h.text for h in detect_persoon_via_anchors(text, lists)]
+
+    def test_bare_surname_after_geachte(self, lists):
+        hits = detect_persoon_via_anchors("Pagina 1 van 12\nGeachte Hadžić ,\n", lists)
+        assert [h.text for h in hits] == ["Hadžić"]
+        assert "aanhef" in hits[0].reasoning
+
+    def test_tussenvoegsel_surname_after_geachte(self, lists):
+        assert self._names("Onderwerp: iets\nGeachte ter Felder ,\n", lists) == ["ter Felder"]
+
+    def test_initials_after_geachte_heer(self, lists):
+        assert self._names("Geachte heer B.D. ,\nMiddels deze brief\n", lists) == ["B.D."]
+
+    def test_initials_after_bare_geachte(self, lists):
+        assert self._names("Onderwerp:RE: iets\nGeachte R.C. ,\nTot nu toe\n", lists) == ["R.C."]
+
+    def test_initials_directly_followed_by_a_comma(self, lists):
+        """The corpus prints "B.D. ,"; a letter prints "B.D.,"."""
+        assert self._names("Geachte heer B.D.,\nMiddels deze brief\n", lists) == ["B.D."]
+
+    def test_geachte_heer_mevrouw_addresses_nobody(self, lists):
+        assert self._names("Geachte heer/mevrouw,\nHierbij ontvangt u\n", lists) == []
+
+    def test_geachte_college_is_a_body(self, lists):
+        assert self._names("Geachte College van burgemeester en wethouders,\n", lists) == []
+
+
+class TestAnchorRuleMailDisplayName:
+    """Family 4 — the capitals directly before `<adres@domein>`."""
+
+    @pytest.fixture(scope="class")
+    def lists(self):
+        return load_name_lists()
+
+    def _names(self, text, lists):
+        return [h.text for h in detect_persoon_via_anchors(text, lists)]
+
+    def test_display_name_before_an_address(self, lists):
+        hits = detect_persoon_via_anchors("Berkant Djojosoeparto <berkantd@drenthe.nl>\n", lists)
+        assert [h.text for h in hits] == ["Berkant Djojosoeparto"]
+        assert "e-mailadres" in hits[0].reasoning
+
+    def test_an_anonymised_address_has_no_display_name(self, lists):
+        assert self._names("Aan: <@emmen.nl>; <@drenthe.nl>\n", lists) == []
+
+    def test_a_desk_mailbox_keeps_its_organisation(self, lists):
+        assert self._names("Provincie Drenthe <post@drenthe.nl>\n", lists) == []
+
+    def test_a_lowercase_organisation_before_a_desk_mailbox(self, lists):
+        """The walk cannot start on "provincie", so reading only what it
+        can start on would call the mailbox a person named Drenthe."""
+        text = "Aan: < @noordenveld.nl>; provincie Drenthe <post@drenthe.nl>\n"
+        assert self._names(text, lists) == []
+
+    def test_the_header_label_stays_outside_the_display_name(self, lists):
+        """ "Van" is a tussenvoegsel, so a walk that starts at the header
+        label swallows it. The label is a separator, not a particle."""
+        assert self._names("Van: Jan de Vries <j.devries@emmen.nl>\n", lists) == ["Jan de Vries"]
+
+    def test_a_desk_mailbox_prints_the_desk_as_its_display_name(self, lists):
+        """ "Vergunningen <vergunningen@emmen.nl>" is the desk, not a
+        person — the same judgment #96 makes on the address itself.
+        Neither the display-name family nor the `Van:` label may claim
+        it."""
+        assert self._names("Van: Vergunningen <vergunningen@emmen.nl>\n", lists) == []
+        assert self._names("Aan: Woo Verzoeken <woo@emmen.nl>\n", lists) == []
+
+
+class TestWordlistPairRule:
+    """Meertens ∧ CBS without a Deduce span (#97)."""
+
+    @pytest.fixture(scope="class")
+    def lists(self):
+        return load_name_lists()
+
+    def _names(self, text, lists):
+        return [h.text for h in detect_persoon_via_wordlists(text, lists)]
+
+    def test_first_name_and_surname_both_on_a_list(self, lists):
+        hits = detect_persoon_via_wordlists("Het perceel is verkocht aan Jan Bakker.", lists)
+        assert [h.text for h in hits] == ["Jan Bakker"]
+        assert hits[0].source == "wordlist_rule"
+        assert hits[0].confidence == 0.80
+
+    def test_tussenvoegsel_between_the_halves(self, lists):
+        assert self._names("Namens Marieke de Vries is bezwaar gemaakt.", lists) == [
+            "Marieke de Vries"
+        ]
+
+    def test_one_list_alone_is_not_enough(self, lists):
+        """ "Jan" is a Meertens first name; "Wandelroute" is on no list."""
+        assert self._names("De Jan Wandelroute loopt langs het kanaal.", lists) == []
+
+    def test_an_organisation_is_refused(self, lists):
+        assert self._names("De Jan Bakker Stichting int de contributie.", lists) == []
+
+    def test_empty_lists_disable_the_rule(self):
+        from app.services.name_engine import NameLists
+
+        empty = NameLists(
+            first_names=frozenset(),
+            last_names=frozenset(),
+            tussenvoegsels=frozenset(),
+            tussenvoegsel_sequences=frozenset(),
+        )
+        assert detect_persoon_via_wordlists("Jan Bakker", empty) == []
+
+
+class TestDetectTier2WithAnchorRules:
+    """The anchor rules are wired into `detect_tier2`, so a name no
+    wordlist knows still reaches the reviewer."""
+
+    def test_signer_outside_the_wordlists_is_rescued(self):
+        text = "Wij komen hier op terug.\n\nMet vriendelijke groet,\nYıldırım\n"
+        persons = [r for r in detect_tier2(text) if r.entity_type == "persoon"]
+        assert any("Yıldırım" in p.text for p in persons)
+
+    def test_a_form_label_value_is_rescued(self):
+        text = "Aanvraag omgevingsvergunning\nNaam: Djaimy Pengel\nOnderwerp: wijziging\n"
+        persons = [r for r in detect_tier2(text) if r.entity_type == "persoon"]
+        assert any("Pengel" in p.text for p in persons)
+
+    def test_the_corroboration_gate_keeps_a_single_token_anchor_hit(self):
+        """A bare surname is normally dropped unless the document
+        vouches for it; an anchor is that vouching (#90)."""
+        text = "Onze referentie 2025-0000525385\nContactpersoon Okonkwo\nwoo@minfin.nl\n"
+        persons = [r for r in detect_tier2(text) if r.entity_type == "persoon"]
+        assert any("Okonkwo" in p.text for p in persons)

@@ -181,6 +181,22 @@ _LEADING_STRIP_WORDS: frozenset[str] = frozenset(
 )
 
 
+def is_role_or_section_word(token: str) -> bool:
+    """True when `token` is a function title, role noun or section heading.
+
+    The anchor rules (#97) use this to refuse a candidate whose *first*
+    token is not a name at all — "Behandeld door Team Ruimte" must not
+    yield "Ruimte", and "Hoogachtend, / De Staatssecretaris" must not
+    yield a person. Trailing occurrences are handled by
+    `trim_trailing_titles`, which truncates rather than refuses.
+    """
+    normalized = token.lower().strip(".,;:()")
+    if not normalized:
+        return False
+    vocab = _get_trailing_titles()
+    return normalized in vocab.words or normalized in _LEADING_STRIP_WORDS
+
+
 def trim_trailing_titles(text: str, start_char: int, end_char: int) -> tuple[str, int, int]:
     """Strip trailing job titles and section headings from a person span.
 
