@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import re
 
-from ._types import ORGANIZATION_KEYWORDS
+from ._types import LEGAL_FORM_ABBREVIATIONS, ORGANIZATION_KEYWORDS
 
 # ---------------------------------------------------------------------------
 # The window: the address block, not a character count
@@ -109,26 +109,23 @@ _EXTRA_ORG_WORDS = frozenset(
     }
 )
 
-#: Legal forms. Written with the dots the documents use; the boundary
-#: lookarounds below take care of the ones that end in a dot.
-_LEGAL_FORMS = frozenset(
-    {
-        "b.v.",
-        "bv",
-        "n.v.",
-        "nv",
-        "v.o.f.",
-        "vof",
-        "c.v.",
-        "maatschap",
-        "coöperatie",
-        "cooperatie",
-        "eenmanszaak",
-        "handelsonderneming",
-        "gmbh",
-        "ltd",
-    }
-)
+#: Legal forms. The undotted abbreviations come from
+#: `LEGAL_FORM_ABBREVIATIONS` so the person filter (#98) and this
+#: letterhead reader agree on what one is; the dotted spellings and the
+#: written-out forms are listed here because they are what the documents
+#: print, and the boundary lookarounds below take care of the ones that
+#: end in a dot.
+_LEGAL_FORMS = LEGAL_FORM_ABBREVIATIONS | {
+    "b.v.",
+    "n.v.",
+    "v.o.f.",
+    "c.v.",
+    "maatschap",
+    "coöperatie",
+    "cooperatie",
+    "eenmanszaak",
+    "handelsonderneming",
+}
 
 
 def _alternation(words: frozenset[str]) -> str:

@@ -2316,3 +2316,261 @@ class TestDetectTier2WithAnchorRules:
         text = "Onze referentie 2025-0000525385\nContactpersoon Okonkwo\nwoo@minfin.nl\n"
         persons = [r for r in detect_tier2(text) if r.entity_type == "persoon"]
         assert any("Okonkwo" in p.text for p in persons)
+
+
+# ---------------------------------------------------------------------------
+# #98 — the shapes every persoon rule mistakes for a name
+# ---------------------------------------------------------------------------
+
+
+def _persons(text: str) -> list[str]:
+    """Person spans `detect_tier2` returns for `text`, as plain strings."""
+    return [r.text for r in detect_tier2(production_text(text)) if r.entity_type == "persoon"]
+
+
+class TestEnumerationMarkerNotAPerson:
+    """1. `A. Gemengd kunststof` is a list item, not initial + surname."""
+
+    def test_list_marker_before_lowercase_prose_dropped(self):
+        text = (
+            "Te scheiden volgens de minimumstandaarden zoals hieronder beschreven.\n"
+            "A. Gemengd kunststof (excl. kunstgras)\n"
+            "Indien bovenstaande verwerking voor gemengde fracties plaatsvindt.\n"
+        )
+        assert _persons(text) == []
+
+    def test_shouted_section_heading_dropped(self):
+        text = "Voordat op dat verzoek is beslist.\n3\nI. VOORSCHRIFTEN\nInhoudsopgave\n"
+        assert _persons(text) == []
+
+    def test_marker_before_a_count_dropped(self):
+        text = "Bijlagen\nA. Relevante artikelen uit de Woo\nB. Overzicht 20 verzoeken\n"
+        assert _persons(text) == []
+
+    def test_signed_name_on_its_own_line_survives(self):
+        """The negative: a signature opens a line too. What separates it
+        is the comma and the job title behind it — and `Jans` is a CBS
+        surname, which a list item's word never is."""
+        text = (
+            "Gedeputeerde Staten van Drenthe,\n"
+            "namens dezen,\n"
+            "A. Jans, teamleider Vergunningen RUD Drenthe\n"
+        )
+        assert any("Jans" in p for p in _persons(text))
+
+    def test_name_in_running_prose_survives(self):
+        text = "De aanvraag is beoordeeld door P. Bakker namens het college.\n"
+        assert any("Bakker" in p for p in _persons(text))
+
+
+class TestStreetWithInitialNotAPerson:
+    """2. `P. de Keyserstraat 18` is an address the adres rule handles."""
+
+    def test_street_with_house_number_dropped(self):
+        text = (
+            "Op 6 september 2010 is aan Oosting Metalen Recycling B.V. voor de locatie\n"
+            "P. de Keyserstraat 18 te Emmen een omgevingsvergunning verleend.\n"
+        )
+        assert _persons(text) == []
+
+    def test_surname_that_ends_like_a_street_survives(self):
+        """`Van der Laan` carries no house number, so it stays a name."""
+        text = "Beste Piet van der Laan,\n\nDank voor uw brief van vorige week.\n"
+        assert any("Laan" in p for p in _persons(text))
+
+
+class TestLegalFormNotAPerson:
+    """3. A trading name is not a natural person."""
+
+    def test_legal_form_after_the_name_dropped(self):
+        assert _is_plausible_person_name("Oosting Metalen Recycling B.V.") is False
+        assert _is_plausible_person_name("Kuipers VOF") is False
+        assert _is_plausible_person_name("Bakker Holding GmbH") is False
+
+    def test_initials_that_look_like_a_legal_form_survive(self):
+        """`C.V. Jansen` and `N.V. Bakker` open with initials, not with a
+        rechtsvorm — the check therefore skips the first token."""
+        assert _is_plausible_person_name("C.V. Jansen") is True
+        assert _is_plausible_person_name("N.V. Bakker") is True
+
+
+class TestBibliographyAuthorNotAPerson:
+    """4. An author in a reference list is not a data subject."""
+
+    def test_author_before_a_publication_year_dropped(self):
+        text = (
+            "Berendsen, H.J.A., 2008. De vorming van het land. Assen.\n"
+            "Tol, A.J., J.W.H.P. Verhagen en M. Verbruggen, 2012. Leidraad "
+            "inventariserend veldonderzoek.\n"
+        )
+        assert _persons(text) == []
+
+    def test_a_signature_without_a_year_survives(self):
+        text = "Hoogachtend,\nnamens dezen,\nM. Verbruggen, teammanager Vergunningen\n"
+        assert any("Verbruggen" in p for p in _persons(text))
+
+    def test_a_letter_date_is_not_a_citation(self):
+        from app.services.ner_engine._person_shape import is_bibliography_author
+
+        text = "M. Verbruggen\nAssen, 11 mei 2023\n"
+        assert is_bibliography_author(text, len("M. Verbruggen")) is False
+
+
+class TestTitleScanStopsAtPunctuation:
+    """5. A salutation whose name was blacked out leaves a lone period."""
+
+    def test_word_after_a_redacted_salutation_dropped(self):
+        text = (
+            "Op het verzoek was eerder al een besluit genomen, gericht aan mevrouw .\n"
+            "Hierbij zijn diverse documenten aan u verstrekt.\n"
+        )
+        assert _persons(text) == []
+
+    def test_form_label_after_a_salutation_field_dropped(self):
+        text = (
+            "DigiD - gegevens\nNaam\nVoorletters Tussenvoegsels Achternaam\n"
+            "V.M.\nAanhef Mevr.\nStraat en huisnummer\n"
+        )
+        assert "Straat" not in _persons(text)
+
+    def test_a_real_name_after_a_salutation_survives(self):
+        text = "Wij spraken met mevrouw Yıldırım over het verzoek.\n"
+        assert any("Yıldırım" in p for p in _persons(text))
+
+
+class TestPlaceInPersonSpan:
+    """6. A place name absorbed into the span."""
+
+    def test_te_plaats_is_trimmed_off(self):
+        text = (
+            "Hierbij sturen wij u een ontgrondingsaanvraag van de heer Kersten te\n"
+            "Nieuw-Dordrecht, die wij al enige tijd terug hebben ontvangen.\n"
+        )
+        persons = _persons(text)
+        assert "Kersten" in persons
+        assert not any("Nieuw-Dordrecht" in p for p in persons)
+
+    def test_noun_plus_place_dropped(self):
+        text = (
+            "De gronden zijn volgens het bestemmingsplan Buitengebied Emmen bestemd\n"
+            "als agrarisch met waarden.\n"
+        )
+        assert _persons(text) == []
+
+    def test_farm_noun_dropped(self):
+        text = (
+            "Er is gesproken over de herontwikkeling van de Willem Alexander Hoeve\n"
+            "in Alteveer. Het perceel heeft nu een maatschappelijke bestemming.\n"
+        )
+        assert _persons(text) == []
+
+    def test_surname_that_is_also_a_village_survives(self):
+        """Two hundred Dutch villages are surnames too. A tussenvoegsel
+        before the token settles it: `de Oosterwijk` is a family."""
+        text = "Met vriendelijke groet,\nShaniqua de Oosterwijk\n"
+        assert any("Oosterwijk" in p for p in _persons(text))
+
+    def test_van_der_hoeve_survives(self):
+        from app.services.ner_engine._person_shape import ends_in_place_noun
+
+        lists = load_name_lists()
+        assert ends_in_place_noun("Willem Alexander Hoeve", lists) is True
+        assert ends_in_place_noun("Van der Hoeve", lists) is False
+
+
+class TestLeadingFunctionTitleTrimmed:
+    """7. The card was right; the black bar was two words too wide."""
+
+    def test_title_before_the_name_is_cut(self):
+        from app.services.ner_engine._tier2_trim import trim_trailing_titles
+
+        assert trim_trailing_titles("Voorzitter Piet Jansen", 0, 22)[0] == "Piet Jansen"
+        assert trim_trailing_titles("Mevrouw Wethouder J. Jansen", 0, 27)[0] == "J. Jansen"
+
+    def test_the_offsets_follow_the_cut(self):
+        from app.services.ner_engine._tier2_trim import trim_trailing_titles
+
+        text, start, end = trim_trailing_titles("Voorzitter Piet Jansen", 100, 122)
+        assert (text, start, end) == ("Piet Jansen", 111, 122)
+
+    def test_a_bare_surname_keeps_its_title(self):
+        """The title is the evidence the corroboration gate reads for a
+        one-word name. Cut it off and `Jansen` is dropped as
+        uncorroborated — `main` gave a card here, so this must too."""
+        from app.services.ner_engine._tier2_trim import trim_trailing_titles
+
+        assert trim_trailing_titles("Voorzitter Jansen", 0, 17)[0] == "Voorzitter Jansen"
+        assert (
+            trim_trailing_titles("Mevrouw Wethouder Jansen", 0, 24)[0] == "Mevrouw Wethouder Jansen"
+        )
+        assert any("Jansen" in p for p in _persons("Voorzitter Jansen opent de vergadering.\n"))
+        assert any(
+            "Jansen" in p
+            for p in _persons("Aanwezig: Mevrouw Wethouder Jansen en de heer Pieters.\n")
+        )
+
+    def test_a_span_that_is_only_a_title_still_disappears(self):
+        from app.services.ner_engine._tier2_trim import trim_trailing_titles
+
+        assert trim_trailing_titles("Voorzitter", 0, 10)[0] == ""
+        assert trim_trailing_titles("De heer Voorzitter", 0, 18)[0] == ""
+
+    def test_a_plain_name_is_untouched(self):
+        from app.services.ner_engine._tier2_trim import trim_trailing_titles
+
+        assert trim_trailing_titles("De heer Jansen", 0, 14)[0] == "De heer Jansen"
+        assert trim_trailing_titles("Jan de Vries", 0, 12)[0] == "Jan de Vries"
+
+
+class TestMergedSpanSplit:
+    """8. One Deduce span that was never one name."""
+
+    def test_sentence_boundary_splits(self):
+        from app.services.ner_engine._tier2_trim import split_merged_span
+
+        assert split_merged_span("Jansen. Jansen", 10, 24) == [
+            ("Jansen", 10, 16),
+            ("Jansen", 18, 24),
+        ]
+
+    def test_line_break_splits(self):
+        from app.services.ner_engine._tier2_trim import split_merged_span
+
+        assert split_merged_span("M.F.\nVan", 0, 8) == [("M.F.", 0, 4), ("Van", 5, 8)]
+
+    def test_initials_are_not_torn_in_two(self):
+        from app.services.ner_engine._tier2_trim import split_merged_span
+
+        assert split_merged_span("A. Jans", 0, 7) == [("A. Jans", 0, 7)]
+
+    def test_an_abbreviated_salutation_is_not_a_sentence_boundary(self):
+        """`dhr.` ends in a lowercase letter and a period, exactly like a
+        finished sentence — but it is the salutation that vouches for
+        the bare surname behind it, and `main` kept the span whole."""
+        from app.services.ner_engine._tier2_trim import split_merged_span
+
+        assert split_merged_span("dhr. Jansen", 0, 11) == [("dhr. Jansen", 0, 11)]
+        assert split_merged_span("Mw. Jansen", 0, 10) == [("Mw. Jansen", 0, 10)]
+        assert split_merged_span("mr. J. Jansen", 0, 13) == [("mr. J. Jansen", 0, 13)]
+        for salutation in ("dhr.", "mevr.", "Mw.", "mr."):
+            text = f"Wij hebben {salutation} Jansen gesproken over de aanvraag.\n"
+            assert any("Jansen" in p for p in _persons(text)), salutation
+
+    def test_reference_letter_glued_to_the_next_sentence_dropped(self):
+        text = (
+            "De kenmerken zijn vermeld in de onderwerpregel en in bijlage B.\n"
+            "Naast de genoemde 20 verzoeken heb ik er nog 25 ontvangen.\n"
+        )
+        assert _persons(text) == []
+
+    def test_initials_survive_the_line_break_they_were_glued_across(self):
+        """`M.F.` is a planted value; only the `Van:` under it was wrong.
+        Keeping the initials is what turns a bbox-less span into a bar."""
+        text = "Met vriendelijke groet,\nM.F.\nVan: griffie@emmen.nl\n"
+        assert "M.F." in _persons(text)
+
+    def test_a_single_initial_before_a_line_break_is_not_a_name(self):
+        from app.services.ner_engine._initials import _detect_persoon_via_initials
+
+        assert _detect_persoon_via_initials("in bijlage B.\nNaast de genoemde") == []
+        assert [d.text for d in _detect_persoon_via_initials("M.F.\nVan de rest")] == ["M.F."]

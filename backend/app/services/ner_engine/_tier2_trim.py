@@ -37,6 +37,49 @@ def trim_span(annotation_text: str, start_char: int, end_char: int) -> tuple[str
     return text, start, end
 
 
+# Where a Deduce person span was never one name to begin with. Deduce
+# reaches across a sentence boundary ("Klacht ingediend door Jansen.
+# Jansen stelt …" → one span "Jansen. Jansen") and across a line break,
+# which in a Woo PDF can join two blocks forty points apart ("M.F." from
+# a signature block glued to the "Van:" of a forwarded mail header, #93).
+# Both halves are then judged as one name that nobody wrote.
+#
+# The period has to follow a *lowercase* letter: that is a finished
+# sentence. After a capital it is an initial, and "A. Jans" must not be
+# torn in two.
+_SPAN_BREAK = re.compile(r"(?<=[a-z])\.[ \t]+|\n")
+
+#: Abbreviated salutations and titles: the one place a lowercase letter,
+#: a period and a space sit *inside* a name. "dhr. Jansen" is one span,
+#: and the salutation is what the corroboration gate reads as the
+#: evidence for the bare surname behind it — cut it off and the card is
+#: lost, which is what the first cut of this split did.
+_ABBREVIATED_PREFIXES: frozenset[str] = frozenset(
+    {"dhr", "mevr", "mw", "mr", "mrs", "drs", "dr", "ir", "ing", "prof", "mgr", "jhr", "hr", "ds"}
+)
+
+
+def split_merged_span(text: str, start_char: int, end_char: int) -> list[tuple[str, int, int]]:
+    """Cut a span at the boundaries Deduce should not have crossed.
+
+    Returns one (text, start, end) triple per piece, offsets absolute,
+    each still to be validated on its own — which is the point: a half
+    that no wordlist and no anchor vouches for is dropped by the gates
+    downstream instead of riding along on the other half's evidence.
+    """
+    pieces: list[tuple[str, int, int]] = []
+    cursor = 0
+    for m in _SPAN_BREAK.finditer(text):
+        if m.group(0) != "\n":
+            before = text[cursor : m.start()].rsplit(None, 1)
+            if before and before[-1].lower() in _ABBREVIATED_PREFIXES:
+                continue
+        pieces.append((text[cursor : m.start()], start_char + cursor, start_char + m.start()))
+        cursor = m.end()
+    pieces.append((text[cursor:], start_char + cursor, end_char))
+    return [(t, s, e) for t, s, e in pieces if t.strip()]
+
+
 @dataclass(frozen=True)
 class _TrailingTitleVocab:
     """Compiled trailing-title vocabulary for person-span trimming."""
@@ -181,6 +224,47 @@ _LEADING_STRIP_WORDS: frozenset[str] = frozenset(
 )
 
 
+#: The column headers of a Dutch e-form, printed as one row above the
+#: row that holds the values ("Voorletters Tussenvoegsels Achternaam").
+#: A label whose value is another label is a header row, not a filled
+#: field. Lives here rather than in `_anchor_rules` because the
+#: salutation rule needs the same refusal: "Aanhef Mevr." followed on
+#: the next line by "Straat en huisnummer" handed it "Straat" as a
+#: surname (#98).
+FORM_FIELD_WORDS: frozenset[str] = frozenset(
+    {
+        "naam",
+        "namen",
+        "achternaam",
+        "voornaam",
+        "voornamen",
+        "voorletters",
+        "initialen",
+        "tussenvoegsel",
+        "tussenvoegsels",
+        "aanhef",
+        "contactpersoon",
+        "aanvrager",
+        "ondertekenaar",
+        "behandeld",
+        "ingediend",
+        "opgesteld",
+        "ondertekend",
+        "straat",
+        "huisnummer",
+        "toevoeging",
+        "postcode",
+        "plaats",
+        "gegevens",
+    }
+)
+
+
+def is_form_field_row(name_text: str) -> bool:
+    """True when the "value" is made of field labels — a header row."""
+    return any(tok.lower().strip(".,;:") in FORM_FIELD_WORDS for tok in name_text.split())
+
+
 def is_role_or_section_word(token: str) -> bool:
     """True when `token` is a function title, role noun or section heading.
 
@@ -293,6 +377,13 @@ def trim_trailing_titles(text: str, start_char: int, end_char: int) -> tuple[str
             start_char = end_char - len(after)
             text = after
 
+    # Pass 3b: a function title *opening* the name. Pass 2 only looks
+    # from the third token on, so "Voorzitter Jansen" and "Mevrouw
+    # Wethouder Jansen" kept a bar that is wider than the name (#98).
+    # The salutation is stepped over rather than dropped: it is what the
+    # corroboration gate reads as evidence for a bare surname.
+    text, start_char, end_char = _strip_leading_titles(text, start_char, end_char, vocab)
+
     # Pass 4: nothing but a function title left — "Wethouder",
     # "Voorzitter", or a salutation + title ("De heer Voorzitter",
     # "Mevrouw De Wethouder"). Deduce emits the latter because "Heer"
@@ -313,6 +404,49 @@ _SALUTATION_PREFIX = re.compile(
     r"dhr\.?|mevr\.?|mw\.?|heer)(?:\s+|$)",
     re.IGNORECASE,
 )
+
+
+def _strip_leading_titles(
+    text: str,
+    start_char: int,
+    end_char: int,
+    vocab: _TrailingTitleVocab,
+) -> tuple[str, int, int]:
+    """Cut a function title — and any salutation before it — off the front.
+
+    "Voorzitter Jansen" → "Jansen", "Mevrouw Wethouder Jansen" →
+    "Jansen". The card was right in both cases; the black bar was two
+    words too wide, and a title is not personal data. The whole prefix
+    goes so the span stays one contiguous run of characters, which is
+    what the bbox resolver needs.
+
+    The last token is never taken: a span that is *only* a title is
+    pass 4's business and it has to see the span whole.
+    """
+    spans = [m.span() for m in re.finditer(r"\S+", text)]
+    if len(spans) < 2:
+        return text, start_char, end_char
+
+    salutation = _SALUTATION_PREFIX.match(text)
+    index = len(text[: salutation.end()].split()) if salutation else 0
+    cut = index
+    while cut < len(spans) - 1:
+        token = text[spans[cut][0] : spans[cut][1]].lower().strip(".,;:()")
+        if token not in vocab.words:
+            break
+        cut += 1
+    if cut == index:
+        return text, start_char, end_char
+    # What remains has to stand on its own, and a bare surname does not:
+    # the corroboration gate reads the salutation or the title in front
+    # of it as the evidence that "Jansen" is a person. So "Voorzitter
+    # Jansen" and "Mevrouw Wethouder Jansen" keep their prefix, wide bar
+    # and all, rather than lose the card.
+    if len(spans) - cut < 2:
+        return text, start_char, end_char
+
+    offset = spans[cut][0]
+    return text[offset:], start_char + offset, end_char
 
 
 def _is_only_title(text: str, vocab: _TrailingTitleVocab) -> bool:

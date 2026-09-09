@@ -111,6 +111,26 @@ ORGANIZATION_KEYWORDS: frozenset[str] = frozenset(
     }
 )
 
+# Legal-form abbreviations, written without their dots — a token is
+# compared after "b.v." has been folded to "bv". Kept apart from
+# `ORGANIZATION_KEYWORDS` because they are only evidence *after* the
+# first token: "C.V. Jansen" opens with a pair of initials, while
+# "Oosting Metalen Recycling B.V." closes with a legal form (#98).
+# `cv` is deliberately absent — it collides with initials far too often
+# to be worth the two documents it would catch.
+LEGAL_FORM_ABBREVIATIONS: frozenset[str] = frozenset(
+    {
+        "bv",
+        "nv",
+        "vof",
+        "gmbh",
+        "ltd",
+        "inc",
+        "plc",
+        "sarl",
+    }
+)
+
 
 @dataclass
 class NERDetection:

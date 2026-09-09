@@ -17,8 +17,8 @@ from collections.abc import Callable
 
 import pytest
 
-from app.services.pipeline_engine import run_pipeline
 from app.services.pdf_engine import ExtractionResult, PageText, TextSpan
+from app.services.pipeline_engine import run_pipeline
 from app.services.structure_engine import (
     StructureSpan,
     detect_structures,

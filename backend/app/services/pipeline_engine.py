@@ -151,9 +151,14 @@ def _person_whitelist_to_detection(
     Only ever called for ``hit.confirmed`` — an unconfirmed hit goes
     through ``_person_whitelist_hint_to_detection`` instead (#92).
     """
+    # Which evidence confirmed the identity, in the reviewer's words. A
+    # confirmation runs on the given-name initial as often as on the
+    # initials themselves, and saying "initialen komen overeen" for both
+    # told the reviewer something the code had not checked (#98).
+    evidence = "initialen komen overeen" if hit.used_initials else "voornaam-initiaal komt overeen"
     reasoning = (
         f"{hit.official.functie} bij {hit.municipality_name} "
-        f"({hit.official.display_name}) (initialen komen overeen) — "
+        f"({hit.official.display_name}) ({evidence}) — "
         "gemeente wordt genoemd in het document."
     )
     return _pipeline_detection_from_ner(

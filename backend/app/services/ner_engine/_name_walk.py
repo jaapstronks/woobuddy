@@ -81,13 +81,21 @@ class NameWalk:
 
 
 def _tokenize(text: str, start: int, end: int) -> list[tuple[str, int, int]]:
-    """Whitespace-split `text[start:end]`, keeping absolute char offsets."""
+    """Whitespace-split `text[start:end]`, keeping absolute char offsets.
+
+    A token that is nothing but sentence punctuation **ends** the run
+    rather than being skipped. Skipping it is how "gericht aan mevrouw
+    .\\nHierbij zijn diverse documenten" — a salutation whose name was
+    blacked out, leaving the period behind — handed the salutation rule
+    the first word of the next sentence as a surname (#98). Nothing that
+    is name-shaped stands behind a lone comma or period.
+    """
     tokens: list[tuple[str, int, int]] = []
     for m in re.finditer(r"\S+", text[start:end]):
         raw = m.group(0)
         clean = strip_trailing_punct(raw)
         if not clean:
-            continue
+            break
         tok_start = start + m.start()
         tokens.append((clean, tok_start, tok_start + len(clean)))
     return tokens

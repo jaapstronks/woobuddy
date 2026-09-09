@@ -8,8 +8,8 @@ LLM verification pass in the future.
 import pytest
 
 from app.services.environmental_classifier import check_environmental_content
-from app.services.pipeline_engine import run_pipeline
 from app.services.pdf_engine import ExtractionResult, PageText, TextSpan
+from app.services.pipeline_engine import run_pipeline
 from tests.text_shapes import production_text
 
 # ---------------------------------------------------------------------------

@@ -89,6 +89,10 @@ _SURNAME_WORD = (
     r"(?:-[A-ZÄËÏÖÜÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛ][A-Za-zëéèïüöäáíóúàìòùâêîôû'’]+)?"
 )
 
+# An initials run and nothing else, used to check what is left when a
+# line break is cut out of a match.
+_INITIALS_ONLY = re.compile(r"(?:[A-Z]\.[ \t]*)+")
+
 _INITIALS_PATTERN = re.compile(
     r"(?<![\w.])"  # left anchor: not mid-word, not mid-initial run
     rf"({_INITIALS})"
@@ -120,6 +124,21 @@ def _detect_persoon_via_initials(text: str) -> list[NERDetection]:
             continue
 
         span_text = text[start:end].strip()
+
+        # A line break inside the span means the pattern joined two
+        # blocks: "…in bijlage B." plus the "Naast" that opens the next
+        # sentence, or an initials line in a signature block plus the
+        # "Van:" of the mail header under it (#93, #98). The initials
+        # themselves are still a name, and drawing one bar over them is
+        # what the reviewer needs — so keep that half and drop the rest.
+        # A single initial is not enough: "bijlage B." is a reference,
+        # not a person.
+        if "\n" in span_text:
+            head = span_text.split("\n", 1)[0].strip()
+            if _INITIALS_ONLY.fullmatch(head) is None or head.count(".") < 2:
+                continue
+            span_text = head
+            end = start + len(span_text)
 
         # Drop legal-form / academic abbreviations masquerading as
         # initials ("N.V. Nederlandse Spoorwegen", "B.V. Kuipers

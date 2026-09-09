@@ -73,7 +73,6 @@ class TestSingleItemMatch:
         # (name starts at char 8 of 57), is strictly smaller than the
         # full span, and strictly larger than the char-count estimate
         # (glyph weighting lengthens wide-letter slices).
-        naive_x0 = 1000 * (8 / len(sentence))
         naive_x1 = 1000 * (20 / len(sentence))
         assert bbox["x0"] > 0
         assert bbox["x1"] - bbox["x0"] < 1000
