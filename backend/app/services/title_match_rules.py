@@ -9,14 +9,15 @@ tested and grown in isolation. The two public helpers are:
 - `title_match_to_detection`: map a `FunctionTitleMatch` onto a
   `PipelineDetection` with the correct review semantics (publiek →
   rejected, ambtenaar → pending with pre-filled role).
-- `mandate_cue_to_detection`: map a "namens dezen" hit onto a pending
-  ambtenaar card (#94).
+- `mandate_cue_to_detection`: map a "namens dezen" hit — on either
+  side of the name — onto a pending ambtenaar card (#94, #111).
 """
 
 from app.services.ner_engine import DEFAULT_WOO_ARTICLE, NERDetection
 from app.services.pipeline_types import Bbox, PipelineDetection
 from app.services.role_engine import (
     FunctionTitleMatch,
+    Position,
     find_function_title_near,
     get_function_title_lists,
     mask_organ_phrases,
@@ -130,6 +131,7 @@ def title_match_to_detection(
 def mandate_cue_to_detection(
     det: NERDetection,
     bboxes: list[Bbox],
+    position: Position = "before",
 ) -> PipelineDetection:
     """Map a "namens dezen" hit onto a pending ambtenaar card (#94).
 
@@ -138,7 +140,16 @@ def mandate_cue_to_detection(
     has not settled (brief #99, question 3). Until it is, the card goes
     to the reviewer with the role already filled in — which is still a
     change, because the signature block used to auto-accept it.
+
+    `position` says which side of the name the cue was found on (#111).
+    It only shapes the reasoning the reviewer reads; the verdict is the
+    same either way.
     """
+    cue = (
+        "'namens dezen' vlak vóór de naam"
+        if position == "before"
+        else "'namens deze' vlak ná de naam, onder het mandaterende ambt"
+    )
     return PipelineDetection(
         entity_text=det.text,
         entity_type="persoon",
@@ -148,8 +159,7 @@ def mandate_cue_to_detection(
         review_status="pending",
         bounding_boxes=bboxes,
         reasoning=(
-            "Ondertekenaar in mandaat: 'namens dezen' vlak vóór de naam. "
-            "Beoordeel of deze ambtenaar gelakt moet worden."
+            f"Ondertekenaar in mandaat: {cue}. Beoordeel of deze ambtenaar gelakt moet worden."
         ),
         source="rule",
         subject_role="ambtenaar",

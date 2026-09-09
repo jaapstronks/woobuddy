@@ -20,9 +20,11 @@ Two things keep the title lists from over-reading a signature block:
   context before any title is matched. "Gedeputeerde Staten van
   Drenthe" is a college, not the title of the name printed next to it,
   while "gedeputeerde Y. Turenhout" still is.
-- The mandate cue "namens dezen," marks the name after it as the
-  ambtenaar who signed on the body's behalf — see
-  `find_mandate_cue_before`.
+- The mandate cue "namens dezen," marks the name printed next to it
+  as the ambtenaar who signed on the body's behalf. The cue can sit on
+  either side of that name: before it in a Drenthe-style closing, after
+  it in a rijksbrief that prints the signatory first — see
+  `find_mandate_cue_before` and `find_mandate_cue_after`.
 
 The rule engine intentionally only looks at a small window
 around each detection — it is not a parser, and cannot reason about
@@ -96,6 +98,14 @@ _MANDATE_WINDOW_CHARS = 120
 # ... but not an arbitrary amount of prose: the text between the cue and
 # the name must stay within a signature block's worth of tokens.
 _MANDATE_MAX_TOKENS_BETWEEN = 6
+
+# The same cue, read forward. A rijksbrief prints the signatory first
+# and the mandating office after it, so the text between name and cue is
+# an office designation on its own line ("De Staatssecretaris van
+# Financiën – Herstel en Toeslagen") rather than a title plus honorific.
+# Such a designation is longer than the six tokens the backward scan
+# allows, and the em dash in it counts as a token of its own.
+_MANDATE_AFTER_MAX_TOKENS_BETWEEN = 10
 
 # A blank line ends the signature block, so a cue on the other side of
 # one does not reach the name.
@@ -364,6 +374,72 @@ def find_mandate_cue_before(
     if _BLANK_LINE.search(interior):
         return False
     return _count_tokens(interior.replace(",", " ")) <= _MANDATE_MAX_TOKENS_BETWEEN
+
+
+def _names_an_office(text: str, lists: FunctionTitleLists) -> bool:
+    """Does `text` designate an office rather than carry prose?
+
+    Empty counts: the cue can follow the name directly. Otherwise the
+    text has to name a bestuursorgaan ("Gedeputeerde Staten van
+    Drenthe") or hold a function title from either list ("De
+    Staatssecretaris van Financiën"). Ten tokens of ordinary sentence
+    ("... ingediend en vervolgens beoordeeld. Het besluit is") do
+    neither, which is the point: without this the forward scan would
+    reach a cue anywhere in the same paragraph.
+    """
+    if not text.strip():
+        return True
+    if mask_organ_phrases(text, lists.organ_patterns) != text:
+        return True
+    return any(pattern.search(text) is not None for _, _, pattern in lists.iter_all())
+
+
+def find_mandate_cue_after(
+    full_text: str,
+    span_end: int,
+    lists: FunctionTitleLists | None = None,
+    window: int = _MANDATE_WINDOW_CHARS,
+) -> bool:
+    """Is this span the name of someone signing *in mandaat*, cue after?
+
+    The mirror of `find_mandate_cue_before`. A rijksbrief closes the
+    other way round: the signatory's name first, then the office that
+    holds the authority, then the cue, then the signatory's own
+    function.
+
+        Hoogachtend,
+        Shaniqua Terlouw-Van Rossem
+        De Staatssecretaris van Financiën – Herstel en Toeslagen
+        namens deze,
+        Afdelingshoofd Openbaarmaking en Transparantie
+
+    Read forward from the name, the first thing the title scan meets is
+    "Staatssecretaris" — a publiek title, two tokens away — and the name
+    would be rejected as a public official's. The cue says otherwise:
+    everything between the name and it is the *mandating* office, and
+    the signatory is the ambtenaar below. Same guards as the backward
+    scan: not across a blank line, and not across more than an office
+    designation's worth of tokens. On top of that the text between name
+    and cue must actually *name* an office — a bestuursorgaan phrase or
+    a function title. Reading forward there is no honorific or comma to
+    bound the scan the way the backward one is bounded, so without that
+    requirement a "namens deze" anywhere in the paragraph below a name
+    would claim it.
+    """
+    if span_end < 0 or span_end >= len(full_text):
+        return False
+
+    after = full_text[span_end : span_end + window]
+    first = _MANDATE_CUE_PATTERN.search(after)
+    if first is None:
+        return False
+
+    interior = after[: first.start()]
+    if _BLANK_LINE.search(interior):
+        return False
+    if _count_tokens(interior.replace(",", " ")) > _MANDATE_AFTER_MAX_TOKENS_BETWEEN:
+        return False
+    return _names_an_office(interior, lists if lists is not None else get_function_title_lists())
 
 
 def _is_better(candidate: FunctionTitleMatch, current: FunctionTitleMatch | None) -> bool:

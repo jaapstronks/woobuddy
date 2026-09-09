@@ -40,7 +40,7 @@ from app.services.pipeline_types import (
     PipelineReviewStatus,
     PipelineTier,
 )
-from app.services.role_engine import find_mandate_cue_before
+from app.services.role_engine import find_mandate_cue_after, find_mandate_cue_before
 from app.services.span_resolver import resolve_occurrence_bboxes
 from app.services.structure_engine import (
     StructureSpan,
@@ -493,12 +493,16 @@ def _classify_persoon(
     if whitelist_hit is not None and whitelist_hit.confirmed:
         return _person_whitelist_to_detection(det, bboxes, whitelist_hit)
 
-    # 3. Mandate cue (#94) — "Gedeputeerde Staten van Drenthe, namens
-    # dezen, <naam>". The name is the ambtenaar who signed on the body's
-    # behalf, so it beats both the publiek-title rule below and the
-    # signature block's auto-accept: never rejected, never auto-redacted.
+    # 3. Mandate cue (#94, #111) — "Gedeputeerde Staten van Drenthe,
+    # namens dezen, <naam>", or the rijksbrief order that prints the
+    # signatory first and the mandating office after it. Either way the
+    # name is the ambtenaar who signed on the body's behalf, so it beats
+    # both the publiek-title rule below and the signature block's
+    # auto-accept: never rejected, never auto-redacted.
     if find_mandate_cue_before(ctx.extraction.full_text, det.start_char):
         return mandate_cue_to_detection(det, bboxes)
+    if find_mandate_cue_after(ctx.extraction.full_text, det.end_char):
+        return mandate_cue_to_detection(det, bboxes, position="after")
 
     # 4. Legal-form lead (#96) — "Afschrift aan: Maatschap H.J. Kersten
     # en C.H. Kersten-Ensing". The partners' names *are* the name the

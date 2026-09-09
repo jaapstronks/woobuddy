@@ -21,6 +21,7 @@ from app.services.pdf_engine import ExtractionResult, PageText, TextSpan
 from app.services.pipeline_engine import run_pipeline
 from app.services.role_engine import (
     find_function_title_near,
+    find_mandate_cue_after,
     find_mandate_cue_before,
     load_function_title_lists,
 )
@@ -173,6 +174,17 @@ W.J. van Elsacker,
 teammanager Ruimte, Energie en Wonen
 """
 
+#: A rijksbrief closes the other way round: signatory first, then the
+#: mandating office, then the cue, then the signatory's own function
+#: (#111). Taken from `rijksoverheid-woo-besluit-diverse.pdf` p.7.
+_RIJKS_CLOSING = """\
+Hoogachtend,
+Shaniqua Terlouw-Van Rossem
+De Staatssecretaris van Financiën – Herstel en Toeslagen
+namens deze,
+Afdelingshoofd Openbaarmaking en Transparantie
+"""
+
 
 class TestBestuursorganen:
     def test_gedeputeerde_staten_is_not_a_title(self, lists, shape):
@@ -260,6 +272,39 @@ class TestMandateCue:
         assert find_mandate_cue_before(text, start) is False
 
 
+class TestMandateCueAfter:
+    """#111: the cue on the other side of the name."""
+
+    def test_cue_reaches_across_the_mandating_office(self, shape):
+        text = shape(_RIJKS_CLOSING)
+        _start, end = _span_of(text, "Shaniqua Terlouw-Van Rossem")
+        assert find_mandate_cue_after(text, end) is True
+
+    def test_cue_directly_after_the_name(self):
+        text = "Hoogachtend,\nJan de Vries\nnamens deze,\nafdelingshoofd Vergunningen\n"
+        _start, end = _span_of(text, "Jan de Vries")
+        assert find_mandate_cue_after(text, end) is True
+
+    def test_cue_does_not_reach_the_signatory_below_it(self, shape):
+        """The name printed *after* the cue is covered by the backward scan."""
+        text = shape(_RIJKS_CLOSING)
+        _start, end = _span_of(text, "Afdelingshoofd Openbaarmaking en Transparantie")
+        assert find_mandate_cue_after(text, end) is False
+
+    def test_cue_does_not_reach_across_a_blank_line(self):
+        text = "Jan de Vries\n\nDe Staatssecretaris van Financiën\nnamens deze,\n"
+        _start, end = _span_of(text, "Jan de Vries")
+        assert find_mandate_cue_after(text, end) is False
+
+    def test_cue_does_not_reach_across_prose(self):
+        text = (
+            "De aanvraag is door Jan de Vries ingediend en vervolgens door de "
+            "afdeling beoordeeld. Het besluit is namens deze genomen."
+        )
+        _start, end = _span_of(text, "Jan de Vries")
+        assert find_mandate_cue_after(text, end) is False
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("reshape", [lambda t: t, production_text], ids=["pymupdf", "production"])
 async def test_pipeline_mandate_signatory_stays_pending(reshape):
@@ -286,3 +331,26 @@ async def test_pipeline_mandate_signatory_stays_pending(reshape):
     addressee = by_text.get("Stefanie Öztürk")
     assert addressee is not None, f"expected the refilled name, got {list(by_text)}"
     assert addressee.review_status != "rejected"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reshape", [lambda t: t, production_text], ids=["pymupdf", "production"])
+async def test_pipeline_rijks_mandate_signatory_stays_pending(reshape):
+    """#111: a mandating office *after* the name is not that name's title.
+
+    Read forward, "De Staatssecretaris van Financiën" sits two tokens
+    behind the signatory and used to reject her as a public official —
+    a decision nobody asked for, since the publisher redacted her. The
+    "namens deze," below the office says she signed in mandaat, so she
+    reaches the reviewer as a pending ambtenaar card instead.
+    """
+    text = reshape(_RIJKS_CLOSING)
+    result = await run_pipeline(_make_extraction(text))
+
+    by_text = {d.entity_text: d for d in result.detections if d.entity_type == "persoon"}
+    signatory = by_text.get("Shaniqua Terlouw-Van Rossem")
+    assert signatory is not None, f"expected the signatory, got {list(by_text)}"
+    assert signatory.review_status == "pending"
+    assert signatory.subject_role == "ambtenaar"
+    assert signatory.source == "rule"
+    assert "namens deze" in signatory.reasoning
