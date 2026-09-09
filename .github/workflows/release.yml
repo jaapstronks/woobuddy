@@ -224,7 +224,16 @@ jobs:
           while IFS= read -r tag; do
             args+=(-t "$tag")
           done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
-          for digest in *; do
+          shopt -s nullglob
+          digests=(*)
+          # The whole point of this workflow is that a release does not quietly
+          # ship less than it promises, so refuse to publish a manifest that is
+          # missing a leg rather than tag a single-platform image as the release.
+          if [ "${#digests[@]}" -ne 2 ]; then
+            echo "::error::expected 2 digests (amd64, arm64), got ${#digests[@]}: ${digests[*]:-none}"
+            exit 1
+          fi
+          for digest in "${digests[@]}"; do
             args+=("${IMAGE}@sha256:${digest}")
           done
           docker buildx imagetools create "${args[@]}"
