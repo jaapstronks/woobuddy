@@ -137,8 +137,44 @@ That is why the repository's Dependabot traffic — dozens of `chore(deps)` comm
    number by hand — it is derived from what is in the PR.
 4. The tag triggers `.github/workflows/release.yml`, which builds and pushes the
    multi-arch images `ghcr.io/jaapstronks/woobuddy-api:vX.Y.Z` and
-   `-frontend:vX.Y.Z` (plus `:latest` for stable tags).
+   `-frontend:vX.Y.Z` (plus `:latest` for stable tags). See
+   [How the images are built](#how-the-images-are-built).
 5. Deploy from the tag, not from an arbitrary commit on `main`.
+
+### How the images are built
+
+Both images are published for `linux/amd64` and `linux/arm64`: amd64 is what the
+production VPS runs, arm64 covers Apple Silicon laptops and the arm64 cloud
+instances (Hetzner CAX, AWS Graviton) that a cost-conscious self-hoster tends to
+pick.
+
+`release.yml` builds each architecture on a runner of that architecture — amd64 on
+`ubuntu-latest`, arm64 on `ubuntu-24.04-arm`, which is free for public
+repositories. Each of the four legs pushes an untagged image **by digest**, and a
+merge job per image stitches the two digests into one manifest list under the tags
+`docker/metadata-action` computes. So the run is four builds plus two manifest
+pushes, not two builds.
+
+That shape exists because the obvious one does not work. Until `v0.2.1` both
+platforms were built in a single job on an amd64 runner with QEMU emulating arm64.
+The API image survived it (under five minutes); the frontend image did not. `npm
+ci`, `npm run setup:tesseract` and the Vite build are thousands of short-lived Node
+processes, and Node under emulation is slow enough that the `v0.2.0` run was killed
+by GitHub's hard six-hour job timeout — leaving a tagged release with no frontend
+image on GHCR at all. Emulation was not a slow path here, it was a wall; native
+runners remove it rather than wait it out.
+
+Two consequences worth knowing:
+
+- **The build cache is scoped per image *and* architecture** (`type=gha,scope=<image>-<arch>`).
+  A shared scope would have the two legs overwrite each other's cache every run.
+- **A release can be rehearsed without minting a tag.** release-please owns the
+  `v*` tags and a hand-pushed one disturbs its version bookkeeping, so
+  `release.yml` also takes a `workflow_dispatch` with a `tag` input (default
+  `ci-<short sha>`). A dispatch run publishes under that tag and never under
+  `:latest`. Use it when the build itself changed; verify with
+  `docker buildx imagetools inspect ghcr.io/jaapstronks/woobuddy-frontend:<tag>`
+  and delete the rehearsal tag from the GHCR package afterwards.
 
 ### Two changelogs, on purpose
 
