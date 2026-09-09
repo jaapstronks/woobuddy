@@ -192,6 +192,13 @@ jobs:
       - name: Compute image tags
         id: meta
         uses: docker/metadata-action@v6
+        # The action annotates at the `manifest:` level by default, and
+        # `imagetools create` rejects those outright ("manifest annotations are
+        # not supported yet"). What it does take is `index:` — which is the
+        # right level here anyway: this step writes the index, the per-platform
+        # manifests were labelled in the build job.
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: index
         with:
           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
