@@ -154,10 +154,22 @@ _SWITCHBOARD_PHRASE = re.compile(
 )
 
 
+#: A closed postcode line ends an address block. The sender's block
+#: closes with "7800 RA Emmen", and what follows — "Aan", the addressee,
+#: a citizen's own street — is a new block that the sender's Postbus must
+#: not vouch for. Only the postcode rule reads this cut: a letterhead
+#: prints its phone numbers *below* its postcode line, so the phone rule
+#: still needs the lines above it.
+_POSTCODE_LINE_END = re.compile(r"\b\d{4}\s?[A-Z]{2}\b[^\n]*\n")
+
+
 def organisation_evidence(full_text: str, start_char: int) -> str | None:
     """The organisation word that vouches for the block, if any."""
     window = block_before(full_text, start_char)
-    m = _ORG_EVIDENCE.search(window)
+    cut = 0
+    for line_end in _POSTCODE_LINE_END.finditer(window):
+        cut = line_end.end()
+    m = _ORG_EVIDENCE.search(window[cut:])
     return m.group(1) if m else None
 
 
@@ -264,7 +276,7 @@ def is_profile_url(url: str) -> bool:
 
 #: A `06`-number is issued to a handset, not to a desk, so it keeps the
 #: Tier 1 default whatever surrounds it.
-_MOBILE = re.compile(r"^\s*(?:06|\+\s?31\s?\(?0?\)?\s?6)", re.IGNORECASE)
+_MOBILE = re.compile(r"^\s*(?:06|(?:\+|00)\s?31\s?\(?0?\)?\s?6)", re.IGNORECASE)
 
 
 def _is_mobile(number: str) -> bool:
@@ -347,11 +359,13 @@ def organisation_context_reason(
 #: "Maatschap H.J. Kersten en C.H. Kersten-Ensing": everything between
 #: the legal form and the span is initials, capitalised name parts, and
 #: the connectors that join two partners. Anything else — a verb, a
-#: lowercase word, a line break — ends the trading name.
+#: lowercase word, a line break — ends the trading name. The line break
+#: matters: "Delphy BV\nJan de Vries" is a company and the person who
+#: signs for it, and that person keeps the signature-block default.
 _LEGAL_FORM_LEAD = re.compile(
-    r"(?P<form>(?i:" + _alternation(_LEGAL_FORMS) + r"))"
-    r"(?:\s+(?:en|&|\+|[A-ZÀ-Ÿ][\wÀ-ÿ'’-]*|(?:[A-Z]\.){1,4}))*"
-    r"[\s,-]*\Z"
+    r"(?<![\w.])(?P<form>(?i:" + _alternation(_LEGAL_FORMS) + r"))"
+    r"(?:[ \t]+(?:en|&|\+|[A-ZÀ-Ÿ][\wÀ-ÿ'’-]*|(?:[A-Z]\.){1,4}))*"
+    r"[ \t,-]*\Z"
 )
 _LEGAL_FORM_LEAD_WINDOW_CHARS = 80
 

@@ -189,6 +189,11 @@ class TestPhone:
         results = detect_tier1(text)
         assert expected in [r.text for r in results if r.entity_type == "telefoon"]
 
+    @pytest.mark.parametrize("text", ["Tel (0592) 365 5555", "Tel (033) 421 456"])
+    def test_bracket_shapes_need_exactly_ten_digits(self, text):
+        # Eleven or nine digits is not a Dutch number, however it is grouped.
+        assert [r for r in detect_tier1(text) if r.entity_type == "telefoon"] == []
+
     def test_year_between_brackets_is_not_a_phone_number(self):
         """The negative the bracket patterns must not eat: a bracketed year
         followed by numbers, as permit tables print them."""
@@ -1912,14 +1917,15 @@ class TestLetterheadPhone:
     def test_number_under_the_behandeld_door_label(self):
         # The letterhead field a Dutch government letter prints its
         # handling team and general number in.
-        assert self._reason(
-            "Behandeld door\nTeam Ruimte, Energie en Wonen\n", "(0592) 36 55 55"
-        )
+        assert self._reason("Behandeld door\nTeam Ruimte, Energie en Wonen\n", "(0592) 36 55 55")
 
     def test_mobile_number_stays_auto_accepted(self):
         # A `06` is issued to a handset. Even printed under a letterhead it
         # is the one phone number in the block that belongs to a person.
         assert self._reason("Provincie Drenthe, Postbus 122\nMobiel ", "06 12 34 56 78") is None
+
+    def test_mobile_with_international_prefix_stays_auto_accepted(self):
+        assert self._reason("Provincie Drenthe, Postbus 122\nMobiel ", "0031 6 12345678") is None
 
     def test_landline_without_an_organisation_around_it_stays_auto_accepted(self):
         # The negative that motivates the rule: a contact person's own
@@ -1976,6 +1982,28 @@ class TestOrganisationPostcode:
             is None
         )
 
+    def test_the_addressee_under_the_senders_closed_block_stays_auto_accepted(self):
+        # The most common shape a citizen's address takes in a government
+        # letter: right under the sender's own block. That block closes
+        # with its postcode line, and its Postbus must not vouch for the
+        # postcode below it.
+        assert (
+            self._reason(
+                "Gemeente Emmen\nPostbus 30001, 7800 RA Emmen\nAan\n"
+                "De heer J. Jansen\nSchoolpad 183a\n",
+                "7941 LA",
+            )
+            is None
+        )
+
+    def test_the_senders_second_postcode_is_still_the_senders(self):
+        # Bezoekadres above, postadres below: the second block carries its
+        # own evidence, so the cut after the first postcode line costs
+        # nothing.
+        assert self._reason(
+            "Gemeente Emmen\nRaadhuisplein 1\n7811 AP Emmen\nPostbus 30001\n", "7800 RA"
+        )
+
     def test_an_object_address_is_not_claimed_here(self):
         # "zijnde <bedrijf>, <straat>" is the address of the installation a
         # permit is about (#99), not of the sender. No organisation word,
@@ -2003,6 +2031,15 @@ class TestLegalFormLead:
 
     def test_a_verb_between_the_form_and_the_name_ends_the_trading_name(self):
         assert self._form("Delphy BV heeft dit gemeld aan ", "Jan de Vries") is None
+
+    def test_a_line_break_ends_the_trading_name(self):
+        # "Delphy BV" and, on the next line, the person who signs for it.
+        # The signatory is not the trading name; the signature-block rule
+        # keeps its say.
+        assert self._form("Hoogachtend,\nDelphy BV\n", "Jan de Vries") is None
+
+    def test_a_word_that_merely_ends_in_a_form_is_not_one(self):
+        assert self._form("Namens Winv ", "Jansen") is None
 
     def test_a_plain_signature_block_is_untouched(self):
         assert self._form("Hoogachtend,\n", "Jan de Vries") is None
