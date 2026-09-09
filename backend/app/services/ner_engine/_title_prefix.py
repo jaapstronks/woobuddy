@@ -13,6 +13,9 @@ functionaris filter (#13) still runs on the full pipeline, so
 intentionally does not fire on functietitels. Confidence is lower
 (0.75 vs 0.90 on a CBS hit) because the false-positive potential is
 higher.
+
+The forward token walk itself lives in `_name_walk`; `_anchor_rules`
+(#97) uses the same walk from a wider set of anchors.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ import re
 
 from app.services.name_engine import NameLists
 
+from ._name_walk import walk_name
 from ._plausibility import _is_plausible_person_name
 from ._tier2_trim import trim_trailing_titles
 from ._types import NERDetection
@@ -45,31 +49,6 @@ _TITLE_ANCHOR_PATTERN = re.compile(
 # tokens. Generous enough to cover "dhr., " or "mevr.\n" spacing.
 _TITLE_SCAN_WINDOW_CHARS = 80
 
-# A "name token" — a sequence of Unicode letters (plus apostrophe and
-# hyphen) of length ≥ 2. The uppercase check is done in Python via
-# ``str.isupper()`` on the first character, which correctly handles
-# Turkish ("Yılmaz", "Öztürk"), Polish ("Łukasz"), Czech ("Čermák") and
-# other extended-Latin alphabets that a fixed ASCII-range class misses.
-# The upstream `_is_plausible_person_name` still vets the span.
-_NAME_TOKEN = re.compile(r"[^\W\d_][\w'\-]+", re.UNICODE)
-
-
-def _is_cap_name_token(tok: str) -> bool:
-    """Return True if `tok` is a capitalized name-like token."""
-    m = _NAME_TOKEN.fullmatch(tok)
-    if m is None:
-        return False
-    return tok[:1].isupper()
-
-
-# A "name token" in general: either an initial ("W.", "A.M."), a
-# lowercase-led tussenvoegsel candidate, or a capitalized token.
-# Tokenization is whitespace-delimited; the caller strips trailing
-# sentence punctuation for everything except initials (where the
-# trailing period is load-bearing).
-_NAME_INITIAL = re.compile(r"(?:[A-Z]\.)+")
-_NAME_TRAILING_PUNCT = ",.;:!?)]}"
-
 
 def _detect_persoon_via_title_prefix(
     text: str,
@@ -91,93 +70,17 @@ def _detect_persoon_via_title_prefix(
     Caller is responsible for overlap-deduping against higher-confidence
     Deduce hits — see `detect_tier2`.
     """
-    tussen_single = name_lists.tussenvoegsels
-    tussen_sequences = name_lists.tussenvoegsel_sequences
-    max_seq_len = max((len(s) for s in tussen_sequences), default=0)
-
     detections: list[NERDetection] = []
 
     for anchor in _TITLE_ANCHOR_PATTERN.finditer(text):
         scan_start = anchor.end()
         scan_end = min(len(text), scan_start + _TITLE_SCAN_WINDOW_CHARS)
-        window = text[scan_start:scan_end]
 
-        # Tokenize by whitespace, keeping absolute char offsets.
-        # Initials ("W.") keep their trailing period — stripping it
-        # would turn them into bare capitals that no longer match the
-        # initial pattern. Every other trailing sentence punctuation
-        # mark is peeled off so "Khatib," / "Kowalski." still parse.
-        tokens: list[tuple[str, int, int]] = []
-        for m in re.finditer(r"\S+", window):
-            raw = m.group(0)
-            raw_clean = raw if _NAME_INITIAL.fullmatch(raw) else raw.rstrip(_NAME_TRAILING_PUNCT)
-            if not raw_clean:
-                continue
-            tokens.append(
-                (
-                    raw_clean,
-                    scan_start + m.start(),
-                    scan_start + m.start() + len(raw_clean),
-                )
-            )
-
-        if not tokens:
+        walk = walk_name(text, scan_start, scan_end, name_lists)
+        if walk is None or walk.capitalized == 0:
             continue
 
-        span_start: int | None = None
-        span_end: int | None = None
-        has_capitalized = False
-        i = 0
-
-        while i < len(tokens):
-            tok, tok_start, tok_end = tokens[i]
-
-            # Multi-token tussenvoegsel sequence ("van den", "de la", …).
-            matched_seq = False
-            if max_seq_len >= 2 and len(tokens) - i >= 2:
-                for seq_len in range(min(max_seq_len, len(tokens) - i), 1, -1):
-                    window_tup = tuple(tokens[i + k][0].lower() for k in range(seq_len))
-                    if window_tup in tussen_sequences:
-                        if span_start is None:
-                            span_start = tok_start
-                        span_end = tokens[i + seq_len - 1][2]
-                        i += seq_len
-                        matched_seq = True
-                        break
-            if matched_seq:
-                continue
-
-            # Initial: "W.", "A."
-            if _NAME_INITIAL.fullmatch(tok):
-                if span_start is None:
-                    span_start = tok_start
-                span_end = tok_end
-                i += 1
-                continue
-
-            # Single-token tussenvoegsel ("de", "van", "el", "di", …).
-            if tok.lower() in tussen_single:
-                if span_start is None:
-                    span_start = tok_start
-                span_end = tok_end
-                i += 1
-                continue
-
-            # Capitalized name token ("Khatib", "Yılmaz", "Kowalski").
-            if _is_cap_name_token(tok):
-                has_capitalized = True
-                if span_start is None:
-                    span_start = tok_start
-                span_end = tok_end
-                i += 1
-                continue
-
-            # Anything else (lowercase non-tussenvoegsel, digits, …): stop.
-            break
-
-        if not has_capitalized or span_start is None or span_end is None:
-            continue
-
+        span_start, span_end = walk.start_char, walk.end_char
         name_text = text[span_start:span_end]
 
         # Strip function titles the walk absorbed ("mevrouw Wethouder
