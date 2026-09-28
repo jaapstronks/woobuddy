@@ -70,8 +70,13 @@ Two DNS records at INWX (the DNS host for `woobuddy.nl`; managed with
 
 - **DKIM** — `TXT 4304a571-309f-4113-91a2-13f55f5e8bf2._domainkey` with the key from
   `scw -p bolster tem domain get <id>`.
-- **SPF** — the apex `TXT` gained `include:_spf.tem.scaleway.com` alongside the
-  existing Brevo and ImprovMX includes.
+- **SPF** — the apex `TXT` is `v=spf1 include:spf.improvmx.com
+  include:_spf.tem.scaleway.com ~all`. The Brevo include and its `brevo1`/`brevo2`
+  DKIM records are gone; nothing sends through Brevo any more.
+
+DMARC (`_dmarc` TXT) is `p=none; rua=mailto:dmarc@dreamkit.eu`: aggregate reports
+go to the shared Dreamkit DMARC mailbox, which `dreamkit.eu` authorises for
+external domains.
 
 Scaleway's dashboard also proposes an MX record pointing at
 `blackhole.tem.scaleway.com`. **Do not add it.** `woobuddy.nl` receives mail through
