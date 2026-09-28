@@ -25,9 +25,12 @@ logger = get_logger(__name__)
 # Rate limiting
 # ---------------------------------------------------------------------------
 
-# `get_remote_address` keys on the direct client IP. When the app is behind
-# a reverse proxy, the proxy should strip untrusted `X-Forwarded-For` headers
-# — we intentionally do NOT trust client-supplied headers for rate limiting.
+# `get_remote_address` keys on `request.client.host`. Behind Caddy that is
+# the real visitor only because uvicorn runs with `--proxy-headers` and
+# FORWARDED_ALLOW_IPS names the proxy (docker-compose.prod.yml); without it
+# every request comes from Caddy's container and shares one bucket. The app
+# itself never reads `X-Forwarded-For`: only uvicorn does, and only from a
+# trusted peer.
 #
 # Default limit applies to every route; individual endpoints can tighten it
 # via `@limiter.limit("...")`.
@@ -41,6 +44,14 @@ limiter = Limiter(
 
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Response:
     """Return a 429 without echoing any request body content."""
+    # The client IP is logged here and nowhere else: a rate-limit hit is
+    # the one event where knowing who is hammering the API is the point.
+    logger.warning(
+        "http.rate_limited",
+        client_ip=get_remote_address(request),
+        path=request.url.path,
+        limit=str(exc.limit.limit) if exc.limit else "",
+    )
     return Response(
         content='{"detail":"Te veel verzoeken. Probeer het later opnieuw."}',
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,

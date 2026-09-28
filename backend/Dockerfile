@@ -30,4 +30,8 @@ USER appuser
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --proxy-headers only takes effect for peers listed in FORWARDED_ALLOW_IPS
+# (uvicorn default: 127.0.0.1). docker-compose.prod.yml sets it to the
+# Docker ranges Caddy lives in; an image run without a proxy keeps the
+# default, so a client cannot pick its own rate-limit key.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

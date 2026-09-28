@@ -86,6 +86,15 @@ services:
       - "8000"
     environment:
       - DATABASE_URL=postgresql+asyncpg://woobuddy:${DBASE_PASSWORD}@postgres:5432/woobuddy
+      # Caddy is the only way in, so trust the X-Forwarded-For it sets.
+      # Without this uvicorn sees Caddy's container IP on every request and
+      # slowapi puts all visitors in one rate-limit bucket. Caddy replaces
+      # (not appends to) X-Forwarded-For from untrusted clients, so a
+      # visitor cannot spoof it. The ranges are Docker's private address
+      # pools: the compose network's subnet is assigned at creation, so
+      # pinning one address would break on the next network rebuild.
+      # uvicorn reads this env var as --forwarded-allow-ips.
+      - FORWARDED_ALLOW_IPS=172.16.0.0/12,192.168.0.0/16,10.0.0.0/8
       # Marks this as a real deployment: the API logs a loud error at boot
       # when the lead-mail config below is missing instead of shrugging the
       # way it does in local dev.
