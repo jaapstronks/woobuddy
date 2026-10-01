@@ -6,7 +6,7 @@
 # slim image has no gcc to build one. The `Images build` job now catches
 # that, but the chown below still hardcodes the version: move all four
 # together, or not at all.
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
