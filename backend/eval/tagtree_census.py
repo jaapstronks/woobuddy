@@ -56,7 +56,7 @@ import pikepdf  # noqa: E402
 from app.services.pdf_engine import apply_redactions  # noqa: E402
 
 DEFAULT_CORPUS = Path(
-    os.environ.get("WOOBUDDY_EVAL_CORPUS") or Path.home() / "Github NW/woobuddy-eval-corpus"
+    os.environ.get("WOOBUDDY_EVAL_CORPUS") or Path(__file__).resolve().parents[3] / "woobuddy-eval-corpus"
 )
 
 #: Structure types that make a tree worth parsing. A tree of nothing but

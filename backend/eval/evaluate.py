@@ -146,7 +146,7 @@ def _lenient_reason(truth_type: str, uncovered: str) -> str | None:
 
 
 DEFAULT_CORPUS = Path(
-    os.environ.get("WOOBUDDY_EVAL_CORPUS") or Path.home() / "Github NW/woobuddy-eval-corpus"
+    os.environ.get("WOOBUDDY_EVAL_CORPUS") or Path(__file__).resolve().parents[3] / "woobuddy-eval-corpus"
 )
 
 FP_CAVEAT = (

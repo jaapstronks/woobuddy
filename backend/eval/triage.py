@@ -34,7 +34,7 @@ sys.path.insert(0, str(_HERE))
 from triage_rules import ALL_RULES, TriageItem, classify  # noqa: E402, I001
 
 DEFAULT_CORPUS = Path(
-    os.environ.get("WOOBUDDY_EVAL_CORPUS") or Path.home() / "Github NW/woobuddy-eval-corpus"
+    os.environ.get("WOOBUDDY_EVAL_CORPUS") or Path(__file__).resolve().parents[3] / "woobuddy-eval-corpus"
 )
 
 #: How many examples to print per cause. Enough to see a pattern, few enough

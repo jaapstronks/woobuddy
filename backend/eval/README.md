@@ -10,7 +10,7 @@ and instruments do not fail builds. Detector code is never touched from here.
 ## The corpus
 
 The documents live **outside this repository**, at
-`~/Github NW/woobuddy-eval-corpus` by default (override with `--corpus` or the
+`../woobuddy-eval-corpus` (a sibling of this repo) by default (override with `--corpus` or the
 `WOOBUDDY_EVAL_CORPUS` environment variable). They are public, but they are
 also a few hundred MB of PDFs, which does not belong in a source tree.
 
@@ -156,7 +156,7 @@ pdf.js" below), or pass `--extractor pymupdf`.
 
 ```
 --corpus DIR      corpus root (default: $WOOBUDDY_EVAL_CORPUS, else
-                  ~/Github NW/woobuddy-eval-corpus)
+                  ../woobuddy-eval-corpus)
 --only GLOB       glob over document stems, e.g. --only '5_*'
 --extractor X     pdfjs (default) or pymupdf — see below
 --baseline PATH   diff this run against an earlier report's .json

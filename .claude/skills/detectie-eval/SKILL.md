@@ -18,7 +18,7 @@ hele rapport moet lezen.
 
 ## 1. Voorwaarden
 
-- Corpus op `$WOOBUDDY_EVAL_CORPUS`, standaard `~/Github NW/woobuddy-eval-corpus`.
+- Corpus op `$WOOBUDDY_EVAL_CORPUS`, standaard `../woobuddy-eval-corpus` (naast de repo, `~/Github NW/Woobuddy/` op de Mac).
   **Het corpus staat niet in git** - het zijn een paar honderd MB PDF's naast
   de repo. Ontbreekt het, dan stopt `evaluate.py` netjes; niet zelf opnieuw
   downloaden zonder het te vragen.
